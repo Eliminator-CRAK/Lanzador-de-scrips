@@ -1,0 +1,22 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Proyecto WPF del lanzador de scripts PowerShell. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>manifiesto.manifest</ApplicationManifest>
+    <AssemblyName>LanzadorScripts</AssemblyName>
+    <RootNamespace>LanzadorScripts</RootNamespace>
+    <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Page Remove="Aplicacion.xaml" />
+    <ApplicationDefinition Include="Aplicacion.xaml" />
+  </ItemGroup>
+
+</Project>
