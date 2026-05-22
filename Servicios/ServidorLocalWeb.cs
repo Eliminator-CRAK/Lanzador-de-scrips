@@ -28,7 +28,12 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly HttpListener _escuchador = new();
     private readonly CancellationTokenSource _cancelacion = new();
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
+    private readonly ServicioTokensAdmin _servicioTokensAdmin = new();
+    private readonly ServicioTokenMaestro _servicioTokenMaestro = new();
+    private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion = new();
+    private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
     private readonly GestorEjecucionesWeb _gestorEjecuciones = new();
+    private volatile bool _tokenMaestroSesionActiva;
 
     private ServidorLocalWeb(int puerto)
     {
@@ -133,7 +138,29 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/usuario", StringComparison.OrdinalIgnoreCase))
         {
-            await EscribirJsonAsync(contexto, 200, ObtenerUsuarioActual());
+            var usuario = ObtenerUsuarioActual();
+            AsegurarTokenAdmin(usuario);
+            await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario));
+            return;
+        }
+
+        if (metodo == "POST" && ruta.Equals("/api/token-maestro/desbloquear", StringComparison.OrdinalIgnoreCase))
+        {
+            var cuerpo = await LeerJsonAsync(contexto.Request);
+            var token = LeerTexto(cuerpo, "token", string.Empty);
+            if (!_servicioTokenMaestro.Validar(token, out var payload))
+            {
+                await EscribirJsonAsync(contexto, 403, new { error = "Token maestro no valido." });
+                return;
+            }
+
+            _tokenMaestroSesionActiva = true;
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                exito = true,
+                mensaje = "Acceso maestro desbloqueado para esta sesion.",
+                emisor = payload
+            });
             return;
         }
 
@@ -145,7 +172,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/ajustes", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador())
+            if (!UsuarioEsAdministrador(contexto.Request))
             {
                 await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
@@ -157,7 +184,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/ajustes", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador())
+            if (!UsuarioEsAdministrador(contexto.Request))
             {
                 await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
@@ -171,7 +198,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/configuracion-app", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador())
+            if (!UsuarioEsAdministrador(contexto.Request))
             {
                 await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
@@ -188,7 +215,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/configuracion-app", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador())
+            if (!UsuarioEsAdministrador(contexto.Request))
             {
                 await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
@@ -200,6 +227,19 @@ public sealed class ServidorLocalWeb : IDisposable
             configuracion.RutaScripts = LeerTexto(cuerpo, "carpetaScripts", configuracion.RutaScripts);
             _servicioConfiguracion.Guardar(configuracion);
             await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion de la aplicacion guardada exitosamente." });
+            return;
+        }
+
+        if (metodo == "GET" && ruta.Equals("/api/configuracion-paquete/exportar", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!UsuarioEsAdministrador(contexto.Request))
+            {
+                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
+                return;
+            }
+
+            var paquete = _servicioPaquetesConfiguracion.Exportar(_servicioConfiguracion.Cargar());
+            await EscribirJsonAsync(contexto, 200, paquete);
             return;
         }
 
@@ -354,9 +394,63 @@ public sealed class ServidorLocalWeb : IDisposable
             Math.Clamp(maximo, 1, 50));
     }
 
-    private bool UsuarioEsAdministrador()
+    private object CrearUsuarioClienteSesion(UsuarioCliente usuario)
     {
-        return string.Equals(ObtenerUsuarioActual().Rol, "admin", StringComparison.OrdinalIgnoreCase);
+        // Aplica el desbloqueo maestro solo a la sesion actual.
+        if (!_tokenMaestroSesionActiva)
+        {
+            return usuario;
+        }
+
+        return new
+        {
+            usuario.NombreUsuario,
+            Rol = "admin",
+            usuario.MaxScriptsSimultaneos,
+            TokenMaestroActivo = true
+        };
+    }
+
+    private void AsegurarTokenAdmin(UsuarioCliente usuario)
+    {
+        // Genera el token local si el usuario actual es administrador.
+        if (string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            _servicioTokensAdmin.ObtenerOCrear(WindowsIdentity.GetCurrent().Name);
+        }
+    }
+
+    private bool UsuarioEsAdministrador(HttpListenerRequest? peticion = null)
+    {
+        if (_tokenMaestroSesionActiva)
+        {
+            return true;
+        }
+
+        var usuario = ObtenerUsuarioActual();
+        if (!string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        AsegurarTokenAdmin(usuario);
+        var token = LeerTokenAutorizacion(peticion);
+        return string.IsNullOrWhiteSpace(token)
+            || _servicioTokensAdmin.Validar(WindowsIdentity.GetCurrent().Name, token);
+    }
+
+    private static string? LeerTokenAutorizacion(HttpListenerRequest? peticion)
+    {
+        // Lee el token Bearer enviado por el cliente web.
+        var cabecera = peticion?.Headers["Authorization"];
+        if (string.IsNullOrWhiteSpace(cabecera))
+        {
+            return null;
+        }
+
+        return cabecera.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? cabecera["Bearer ".Length..].Trim()
+            : cabecera.Trim();
     }
 
     private JsonObject ObtenerPermisos()
@@ -370,7 +464,13 @@ public sealed class ServidorLocalWeb : IDisposable
 
         try
         {
-            return JsonNode.Parse(File.ReadAllText(ruta, Encoding.UTF8)) as JsonObject ?? CrearPermisosPorDefecto();
+            var texto = File.ReadAllText(ruta, Encoding.UTF8);
+            if (_servicioCifradoAplicacion.IntentarDescifrarTexto("permisos", texto, out var permisosDescifrados))
+            {
+                texto = permisosDescifrados;
+            }
+
+            return JsonNode.Parse(texto) as JsonObject ?? CrearPermisosPorDefecto();
         }
         catch
         {
@@ -387,7 +487,10 @@ public sealed class ServidorLocalWeb : IDisposable
             Directory.CreateDirectory(carpeta);
         }
 
-        File.WriteAllText(ruta, permisos.ToJsonString(OpcionesJson), Encoding.UTF8);
+        var json = permisos.ToJsonString(OpcionesJson);
+        var cifrado = _servicioCifradoAplicacion.CifrarTexto("permisos", json);
+        File.WriteAllText(ruta, cifrado, Encoding.UTF8);
+        ServicioInicioAutomatico.Aplicar(LeerBooleano(permisos, "inicioAutomaticoWindows", false));
     }
 
     private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente()
@@ -560,6 +663,11 @@ public sealed class ServidorLocalWeb : IDisposable
         return nodo?[propiedad]?.GetValue<int>() ?? valorDefecto;
     }
 
+    private static bool LeerBooleano(JsonNode? nodo, string propiedad, bool valorDefecto)
+    {
+        return nodo?[propiedad]?.GetValue<bool>() ?? valorDefecto;
+    }
+
     private static string ObtenerTipoContenido(string recurso)
     {
         return Path.GetExtension(recurso).ToLowerInvariant() switch
@@ -639,7 +747,6 @@ public sealed class ServidorLocalWeb : IDisposable
             {
                 await ejecucion.Proceso.StandardInput.WriteLineAsync(texto);
                 await ejecucion.Proceso.StandardInput.FlushAsync();
-                ejecucion.AgregarEvento("info", $"> {texto}");
             }
             catch (Exception ex)
             {
@@ -795,8 +902,8 @@ public sealed class ServidorLocalWeb : IDisposable
                 inicio.ArgumentList.Add("-NoProfile");
                 inicio.ArgumentList.Add("-ExecutionPolicy");
                 inicio.ArgumentList.Add("Bypass");
-                inicio.ArgumentList.Add("-File");
-                inicio.ArgumentList.Add(script.RutaCompleta);
+                inicio.ArgumentList.Add("-Command");
+                inicio.ArgumentList.Add($"$ErrorActionPreference='Continue'; & '{script.RutaCompleta.Replace("'", "''")}' *>&1");
             }
             else
             {

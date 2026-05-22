@@ -1,7 +1,7 @@
 // (Autor: Alex Roman)
 // Descripcion: Configuracion persistente de la aplicacion.
 
-using System.IO;
+using LanzadorScripts.Servicios;
 
 namespace LanzadorScripts.Modelos;
 
@@ -11,31 +11,27 @@ public sealed class ConfiguracionLanzador
 
     public string RutaPermisos { get; set; } = @"PERMISOS\permissions.json";
 
-    public string RutaLogs { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "LanzadorScripts",
-        "Logs");
+    public string RutaLogs { get; set; } = RutasAplicacion.RutaLogsUsuario;
 
     public int MaximoEjecucionesParalelas { get; set; } = 5;
 
-    public void Normalizar()
+    public void Normalizar(ConfiguracionLanzador? valoresDefecto = null)
     {
+        valoresDefecto ??= new ConfiguracionLanzador();
+
         if (string.IsNullOrWhiteSpace(RutaScripts))
         {
-            RutaScripts = @"\\MAD002MICROPRU\REPO";
+            RutaScripts = valoresDefecto.RutaScripts;
         }
 
         if (string.IsNullOrWhiteSpace(RutaPermisos))
         {
-            RutaPermisos = @"PERMISOS\permissions.json";
+            RutaPermisos = valoresDefecto.RutaPermisos;
         }
 
         if (string.IsNullOrWhiteSpace(RutaLogs))
         {
-            RutaLogs = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "LanzadorScripts",
-                "Logs");
+            RutaLogs = RutasAplicacion.RutaLogsUsuario;
         }
 
         MaximoEjecucionesParalelas = Math.Clamp(MaximoEjecucionesParalelas, 1, 50);

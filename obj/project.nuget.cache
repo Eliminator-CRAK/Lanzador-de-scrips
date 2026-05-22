@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "eAOqo3gOPCw=",
+  "dgSpecHash": "+VUGZHIC6RQ=",
   "success": true,
-  "projectFilePath": "C:\\Users\\alero\\Documents\\APLICACION\\ScriptLauncher\\LanzadorScripts.csproj",
+  "projectFilePath": "C:\\Users\\alero\\Documents\\APLICACION\\Lanzador de scrips\\LanzadorScripts.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\alero\\.nuget\\packages\\microsoft.net.illink.tasks\\10.0.8\\microsoft.net.illink.tasks.10.0.8.nupkg.sha512",
     "C:\\Users\\alero\\.nuget\\packages\\microsoft.web.webview2\\1.0.3967.48\\microsoft.web.webview2.1.0.3967.48.nupkg.sha512",

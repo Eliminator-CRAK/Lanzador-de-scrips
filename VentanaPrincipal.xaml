@@ -11,8 +11,86 @@
         MinHeight="640"
         WindowStyle="None"
         ResizeMode="CanResize"
-        Background="#0F1115">
-    <Grid Background="#0F1115">
-        <wv2:WebView2 x:Name="VistaCliente" />
-    </Grid>
+        Background="#0F1115"
+        BorderThickness="0"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0"
+                      CornerRadius="12"
+                      GlassFrameThickness="0"
+                      ResizeBorderThickness="6"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <Style x:Key="BotonVentanaMac" TargetType="Button">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="7"
+                                Opacity="0.92">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#0F1115"
+            BorderThickness="0"
+            CornerRadius="12">
+        <Grid Background="#0F1115">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="BarraTitulo"
+              Grid.Row="0"
+              Background="#111827"
+              MouseLeftButtonDown="BarraTitulo_MouseLeftButtonDown">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Margin="16,0,0,0">
+                <Button x:Name="BotonCerrar"
+                        Style="{StaticResource BotonVentanaMac}"
+                        Background="#FF5F57"
+                        Click="BotonCerrar_Click"
+                        ToolTip="Cerrar" />
+                <Button x:Name="BotonMinimizar"
+                        Style="{StaticResource BotonVentanaMac}"
+                        Background="#FFBD2E"
+                        Margin="9,0,0,0"
+                        Click="BotonMinimizar_Click"
+                        ToolTip="Minimizar" />
+                <Button x:Name="BotonMaximizar"
+                        Style="{StaticResource BotonVentanaMac}"
+                        Background="#28C840"
+                        Margin="9,0,0,0"
+                        Click="BotonMaximizar_Click"
+                        ToolTip="Maximizar" />
+            </StackPanel>
+
+            <TextBlock Text="Lanzador de Scripts"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="#6B7280"
+                       FontSize="11"
+                       FontWeight="SemiBold" />
+        </Grid>
+
+        <wv2:WebView2 x:Name="VistaCliente"
+                      Grid.Row="1" />
+        </Grid>
+    </Border>
 </Window>

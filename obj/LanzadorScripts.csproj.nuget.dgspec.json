@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\alero\\Documents\\APLICACION\\ScriptLauncher\\LanzadorScripts.csproj": {}
+    "C:\\Users\\alero\\Documents\\APLICACION\\Lanzador de scrips\\LanzadorScripts.csproj": {}
   },
   "projects": {
-    "C:\\Users\\alero\\Documents\\APLICACION\\ScriptLauncher\\LanzadorScripts.csproj": {
+    "C:\\Users\\alero\\Documents\\APLICACION\\Lanzador de scrips\\LanzadorScripts.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\alero\\Documents\\APLICACION\\ScriptLauncher\\LanzadorScripts.csproj",
+        "projectUniqueName": "C:\\Users\\alero\\Documents\\APLICACION\\Lanzador de scrips\\LanzadorScripts.csproj",
         "projectName": "LanzadorScripts",
-        "projectPath": "C:\\Users\\alero\\Documents\\APLICACION\\ScriptLauncher\\LanzadorScripts.csproj",
+        "projectPath": "C:\\Users\\alero\\Documents\\APLICACION\\Lanzador de scrips\\LanzadorScripts.csproj",
         "packagesPath": "C:\\Users\\alero\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\alero\\Documents\\APLICACION\\ScriptLauncher\\obj\\",
+        "outputPath": "C:\\Users\\alero\\Documents\\APLICACION\\Lanzador de scrips\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\alero\\AppData\\Roaming\\NuGet\\NuGet.Config"

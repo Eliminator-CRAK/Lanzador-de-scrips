@@ -1,0 +1,4 @@
+C:\Users\alero\Documents\APLICACION\Lanzador de scrips\publicacion-config-export\Microsoft.Web.WebView2.Core.xml
+C:\Users\alero\Documents\APLICACION\Lanzador de scrips\publicacion-config-export\Microsoft.Web.WebView2.WinForms.xml
+C:\Users\alero\Documents\APLICACION\Lanzador de scrips\publicacion-config-export\Microsoft.Web.WebView2.Wpf.xml
+C:\Users\alero\Documents\APLICACION\Lanzador de scrips\publicacion-config-export\LanzadorScripts.exe

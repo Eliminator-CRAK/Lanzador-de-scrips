@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LanzadorScripts")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+332af57ac25fd28ed71c26bd9a413a610028c547")]
 [assembly: System.Reflection.AssemblyProductAttribute("LanzadorScripts")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LanzadorScripts")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
