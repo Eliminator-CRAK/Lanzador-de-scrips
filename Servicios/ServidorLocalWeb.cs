@@ -7,6 +7,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +23,12 @@ public sealed class ServidorLocalWeb : IDisposable
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
         WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private static readonly JsonSerializerOptions OpcionesJsonEventos = new()
+    {
+        WriteIndented = false,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
@@ -146,6 +153,12 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/token-maestro/desbloquear", StringComparison.OrdinalIgnoreCase))
         {
+            if (ArchivoPermisosExiste())
+            {
+                await EscribirJsonAsync(contexto, 403, new { error = "El token maestro solo esta disponible si no se encuentra el archivo de permisos." });
+                return;
+            }
+
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var token = LeerTexto(cuerpo, "token", string.Empty);
             if (!_servicioTokenMaestro.Validar(token, out var payload))
@@ -282,7 +295,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            await _gestorEjecuciones.EnviarEventosAsync(ejecucionId, contexto.Response, _cancelacion.Token);
+            await _gestorEjecuciones.EnviarEventosAsync(ejecucionId, contexto.Request, contexto.Response, _cancelacion.Token);
             return;
         }
 
@@ -396,18 +409,30 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private object CrearUsuarioClienteSesion(UsuarioCliente usuario)
     {
+        var archivoPermisosExiste = ArchivoPermisosExiste();
+
         // Aplica el desbloqueo maestro solo a la sesion actual.
-        if (!_tokenMaestroSesionActiva)
+        if (_tokenMaestroSesionActiva)
         {
-            return usuario;
+            return new
+            {
+                usuario.NombreUsuario,
+                Rol = "admin",
+                usuario.MaxScriptsSimultaneos,
+                PermisosEncontrados = archivoPermisosExiste,
+                PermiteDesbloqueoEmergencia = false,
+                TokenMaestroActivo = true
+            };
         }
 
         return new
         {
             usuario.NombreUsuario,
-            Rol = "admin",
+            usuario.Rol,
             usuario.MaxScriptsSimultaneos,
-            TokenMaestroActivo = true
+            PermisosEncontrados = archivoPermisosExiste,
+            PermiteDesbloqueoEmergencia = !archivoPermisosExiste,
+            TokenMaestroActivo = false
         };
     }
 
@@ -476,6 +501,11 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             return CrearPermisosPorDefecto();
         }
+    }
+
+    private bool ArchivoPermisosExiste()
+    {
+        return File.Exists(ObtenerRutaPermisosCompleta(_servicioConfiguracion.Cargar()));
     }
 
     private void GuardarPermisos(JsonNode permisos)
@@ -754,7 +784,7 @@ public sealed class ServidorLocalWeb : IDisposable
             }
         }
 
-        public async Task EnviarEventosAsync(Guid id, HttpListenerResponse respuesta, CancellationToken cancelacion)
+        public async Task EnviarEventosAsync(Guid id, HttpListenerRequest peticion, HttpListenerResponse respuesta, CancellationToken cancelacion)
         {
             if (!_ejecuciones.TryGetValue(id, out var ejecucion))
             {
@@ -765,26 +795,49 @@ public sealed class ServidorLocalWeb : IDisposable
             respuesta.StatusCode = 200;
             respuesta.ContentType = "text/event-stream; charset=utf-8";
             respuesta.Headers["Cache-Control"] = "no-cache";
+            respuesta.SendChunked = true;
+            respuesta.KeepAlive = true;
 
-            var indice = 0;
-            while (!cancelacion.IsCancellationRequested)
+            var indice = LeerUltimoIndiceEvento(peticion);
+            try
             {
-                var eventos = ejecucion.ObtenerEventosDesde(indice);
-                foreach (var evento in eventos)
+                while (!cancelacion.IsCancellationRequested)
                 {
-                    indice++;
-                    var json = JsonSerializer.Serialize(evento, OpcionesJson);
-                    var bytes = Encoding.UTF8.GetBytes($"data: {json}\n\n");
-                    await respuesta.OutputStream.WriteAsync(bytes, cancelacion);
-                    await respuesta.OutputStream.FlushAsync(cancelacion);
-                }
+                    var eventos = ejecucion.ObtenerEventosDesde(indice);
+                    foreach (var evento in eventos)
+                    {
+                        var idEvento = indice + 1;
+                        var json = JsonSerializer.Serialize(evento, OpcionesJsonEventos);
+                        var bytes = Encoding.UTF8.GetBytes($"id: {idEvento}\ndata: {json}\n\n");
+                        await respuesta.OutputStream.WriteAsync(bytes, cancelacion);
+                        await respuesta.OutputStream.FlushAsync(cancelacion);
+                        indice++;
+                    }
 
-                if (ejecucion.Finalizada && indice >= ejecucion.TotalEventos)
-                {
-                    break;
-                }
+                    if (ejecucion.Finalizada && indice >= ejecucion.TotalEventos)
+                    {
+                        break;
+                    }
 
-                await ejecucion.EsperarEventoAsync(cancelacion);
+                    if (!await ejecucion.EsperarEventoAsync(TimeSpan.FromSeconds(10), cancelacion))
+                    {
+                        var pulso = Encoding.UTF8.GetBytes(": keepalive\n\n");
+                        await respuesta.OutputStream.WriteAsync(pulso, cancelacion);
+                        await respuesta.OutputStream.FlushAsync(cancelacion);
+                    }
+                }
+            }
+            catch when (cancelacion.IsCancellationRequested)
+            {
+            }
+            catch (IOException)
+            {
+            }
+            catch (HttpListenerException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
             }
         }
 
@@ -826,8 +879,8 @@ public sealed class ServidorLocalWeb : IDisposable
                 ejecucion.Proceso = proceso;
                 proceso.Start();
 
-                var salida = LeerSalidaAsync(proceso.StandardOutput, ejecucion, log);
-                var error = LeerErrorAsync(proceso.StandardError, ejecucion, log);
+                var salida = LeerFlujoAsync(proceso.StandardOutput, ejecucion, log, "info", null);
+                var error = LeerFlujoAsync(proceso.StandardError, ejecucion, log, "error", "#F44747");
                 await proceso.WaitForExitAsync();
                 await Task.WhenAll(salida, error);
 
@@ -861,23 +914,15 @@ public sealed class ServidorLocalWeb : IDisposable
             }
         }
 
-        private static async Task LeerSalidaAsync(StreamReader lector, EjecucionWeb ejecucion, StreamWriter log)
+        private static async Task LeerFlujoAsync(StreamReader lector, EjecucionWeb ejecucion, StreamWriter log, string tipo, string? color)
         {
-            while (await lector.ReadLineAsync() is { } linea)
+            var buffer = new char[512];
+            int leidos;
+            while ((leidos = await lector.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
             {
-                var texto = OcultarRutas(ejecucion.Script, linea);
-                ejecucion.AgregarEvento("info", texto);
-                await log.WriteLineAsync(texto);
-            }
-        }
-
-        private static async Task LeerErrorAsync(StreamReader lector, EjecucionWeb ejecucion, StreamWriter log)
-        {
-            while (await lector.ReadLineAsync() is { } linea)
-            {
-                var texto = OcultarRutas(ejecucion.Script, linea);
-                ejecucion.AgregarEvento("error", texto, "#F44747");
-                await log.WriteLineAsync(texto);
+                var texto = OcultarRutas(ejecucion.Script, new string(buffer, 0, leidos));
+                ejecucion.AgregarEvento(tipo, texto, color);
+                await log.WriteAsync(texto);
             }
         }
 
@@ -903,7 +948,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 inicio.ArgumentList.Add("-ExecutionPolicy");
                 inicio.ArgumentList.Add("Bypass");
                 inicio.ArgumentList.Add("-Command");
-                inicio.ArgumentList.Add($"$ErrorActionPreference='Continue'; & '{script.RutaCompleta.Replace("'", "''")}' *>&1");
+                inicio.ArgumentList.Add(CrearComandoPowerShell(script.RutaCompleta));
             }
             else
             {
@@ -914,6 +959,46 @@ public sealed class ServidorLocalWeb : IDisposable
             }
 
             return new Process { StartInfo = inicio, EnableRaisingEvents = true };
+        }
+
+        private static string CrearComandoPowerShell(string rutaScript)
+        {
+            var rutaEscapada = rutaScript.Replace("'", "''");
+            var parametros = ObtenerParametrosObligatorios(rutaScript);
+            if (parametros.Count == 0)
+            {
+                return $"$ErrorActionPreference='Continue'; & '{rutaEscapada}' *>&1; exit $LASTEXITCODE";
+            }
+
+            var constructor = new StringBuilder("$ErrorActionPreference='Continue'; $__args=@{};");
+            foreach (var parametro in parametros)
+            {
+                var nombre = parametro.Replace("'", "''");
+                constructor.Append($"[Console]::Write('{nombre}: '); $__args['{nombre}'] = [Console]::ReadLine();");
+            }
+
+            constructor.Append($"& '{rutaEscapada}' @__args *>&1; exit $LASTEXITCODE");
+            return constructor.ToString();
+        }
+
+        private static IReadOnlyList<string> ObtenerParametrosObligatorios(string rutaScript)
+        {
+            try
+            {
+                var texto = File.ReadAllText(rutaScript, Encoding.UTF8);
+                var coincidencias = Regex.Matches(
+                    texto,
+                    @"(?is)\[Parameter\s*\([^\]]*Mandatory\s*=\s*\$true[^\]]*\)\]\s*(?:\[[^\]]+\]\s*)?\$(?<nombre>[A-Za-z_][A-Za-z0-9_]*)");
+
+                return coincidencias
+                    .Select(coincidencia => coincidencia.Groups["nombre"].Value)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch
+            {
+                return [];
+            }
         }
 
         private static string ConstruirRutaLog(EjecucionWeb ejecucion)
@@ -933,6 +1018,13 @@ public sealed class ServidorLocalWeb : IDisposable
             }
 
             return texto.Replace(script.RutaCompleta, "[script protegido]", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int LeerUltimoIndiceEvento(HttpListenerRequest peticion)
+        {
+            return int.TryParse(peticion.Headers["Last-Event-ID"], out var ultimoId)
+                ? Math.Max(0, ultimoId)
+                : 0;
         }
     }
 
@@ -983,9 +1075,9 @@ public sealed class ServidorLocalWeb : IDisposable
             }
         }
 
-        public async Task EsperarEventoAsync(CancellationToken cancelacion)
+        public async Task<bool> EsperarEventoAsync(TimeSpan espera, CancellationToken cancelacion)
         {
-            await _senal.WaitAsync(cancelacion);
+            return await _senal.WaitAsync(espera, cancelacion);
         }
 
         public void MarcarFinalizada()
