@@ -31,9 +31,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="ConfiguracionPredeterminada.json" />
     <EmbeddedResource Include="ClienteWeb\**\*">
       <LogicalName>ClienteWeb.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <None Include="WebView2Runtime\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
   <Target Name="EliminarDocumentacionWebView2Publicada" AfterTargets="Publish">
