@@ -1,0 +1,44 @@
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.exe
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.deps.json
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.runtimeconfig.json
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.dll
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.pdb
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\Aplicacion.baml
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\VentanaPrincipal.g.cs
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\Aplicacion.g.cs
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\GeneratedInternalTypeHelper.g.cs
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts_MarkupCompile.cache
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts_MarkupCompile.lref
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\VentanaPrincipal.baml
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.g.resources
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.AssemblyInfoInputs.cache
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.AssemblyInfo.cs
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.csproj.CoreCompileInputs.cache
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.dll
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\refint\LanzadorScripts.dll
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.pdb
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.genruntimeconfig.cache
+C:\Users\alero\OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ScriptLauncher\obj\Debug\net10.0-windows\ref\LanzadorScripts.dll
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.exe
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.deps.json
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.runtimeconfig.json
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.dll
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\bin\Debug\net10.0-windows\LanzadorScripts.pdb
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\Aplicacion.baml
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\VentanaPrincipal.g.cs
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\Aplicacion.g.cs
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\GeneratedInternalTypeHelper.g.cs
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts_MarkupCompile.cache
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts_MarkupCompile.lref
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\VentanaPrincipal.baml
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.g.resources
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.AssemblyInfoInputs.cache
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.AssemblyInfo.cs
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.csproj.CoreCompileInputs.cache
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.dll
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\refint\LanzadorScripts.dll
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.pdb
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\LanzadorScripts.genruntimeconfig.cache
+C:\Users\alero\Documents\APLICACION\ScriptLauncher\obj\Debug\net10.0-windows\ref\LanzadorScripts.dll

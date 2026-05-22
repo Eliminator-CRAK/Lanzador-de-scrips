@@ -1,0 +1,46 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Proyecto WPF del lanzador de scripts PowerShell. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>manifiesto.manifest</ApplicationManifest>
+    <AssemblyName>LanzadorScripts</AssemblyName>
+    <RootNamespace>LanzadorScripts</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <AllowedReferenceRelatedFileExtensions></AllowedReferenceRelatedFileExtensions>
+    <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Page Remove="Aplicacion.xaml" />
+    <ApplicationDefinition Include="Aplicacion.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ClienteWeb\**\*">
+      <LogicalName>ClienteWeb.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <Target Name="EliminarDocumentacionWebView2Publicada" AfterTargets="Publish">
+    <ItemGroup>
+      <DocumentacionWebView2 Include="$(PublishDir)Microsoft.Web.WebView2*.xml" />
+    </ItemGroup>
+    <Delete Files="@(DocumentacionWebView2)" />
+  </Target>
+
+</Project>
