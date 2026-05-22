@@ -965,12 +965,14 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             var rutaEscapada = rutaScript.Replace("'", "''");
             var parametros = ObtenerParametrosObligatorios(rutaScript);
+            var adaptadorInteractivo = CrearAdaptadorInteractivoPowerShell();
             if (parametros.Count == 0)
             {
-                return $"$ErrorActionPreference='Continue'; & '{rutaEscapada}' *>&1; exit $LASTEXITCODE";
+                return $"{adaptadorInteractivo}$ErrorActionPreference='Continue'; & '{rutaEscapada}' *>&1; exit $LASTEXITCODE";
             }
 
-            var constructor = new StringBuilder("$ErrorActionPreference='Continue'; $__args=@{};");
+            var constructor = new StringBuilder(adaptadorInteractivo);
+            constructor.Append("$ErrorActionPreference='Continue'; $__args=@{};");
             foreach (var parametro in parametros)
             {
                 var nombre = parametro.Replace("'", "''");
@@ -981,14 +983,64 @@ public sealed class ServidorLocalWeb : IDisposable
             return constructor.ToString();
         }
 
+        private static string CrearAdaptadorInteractivoPowerShell()
+        {
+            // Muestra preguntas interactivas en la consola web.
+            return """
+function global:Read-Host {
+    param(
+        [Parameter(Position=0)]
+        [string]$Prompt,
+        [switch]$AsSecureString,
+        [switch]$MaskInput
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Prompt)) {
+        [Console]::Write($Prompt + ': ')
+    }
+    $valor = [Console]::ReadLine()
+    if ($AsSecureString -or $MaskInput) {
+        return ConvertTo-SecureString ([string]$valor) -AsPlainText -Force
+    }
+    return $valor
+}
+function global:Pause {
+    [Console]::Write('Presione Enter para continuar...')
+    [Console]::ReadLine() | Out-Null
+}
+function global:Get-Credential {
+    param(
+        [string]$Message,
+        [string]$UserName
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Message)) {
+        [Console]::WriteLine($Message)
+    }
+    if ([string]::IsNullOrWhiteSpace($UserName)) {
+        [Console]::Write('Usuario: ')
+        $UserName = [Console]::ReadLine()
+    }
+    [Console]::Write('Password: ')
+    $clave = [Console]::ReadLine()
+    $segura = ConvertTo-SecureString ([string]$clave) -AsPlainText -Force
+    return New-Object System.Management.Automation.PSCredential($UserName, $segura)
+}
+""";
+        }
+
         private static IReadOnlyList<string> ObtenerParametrosObligatorios(string rutaScript)
         {
             try
             {
                 var texto = File.ReadAllText(rutaScript, Encoding.UTF8);
+                var bloqueParametros = ObtenerBloqueParametrosPrincipal(texto);
+                if (string.IsNullOrWhiteSpace(bloqueParametros))
+                {
+                    return [];
+                }
+
                 var coincidencias = Regex.Matches(
-                    texto,
-                    @"(?is)\[Parameter\s*\([^\]]*Mandatory\s*=\s*\$true[^\]]*\)\]\s*(?:\[[^\]]+\]\s*)?\$(?<nombre>[A-Za-z_][A-Za-z0-9_]*)");
+                    bloqueParametros,
+                    @"(?is)\[Parameter\s*\([^\]]*\bMandatory\b(?:\s*=\s*\$?true)?[^\]]*\)\](?:(?:\s*\[[^\]]+\])*)\s*\$(?<nombre>[A-Za-z_][A-Za-z0-9_]*)");
 
                 return coincidencias
                     .Select(coincidencia => coincidencia.Groups["nombre"].Value)
@@ -999,6 +1051,145 @@ public sealed class ServidorLocalWeb : IDisposable
             {
                 return [];
             }
+        }
+
+        private static string? ObtenerBloqueParametrosPrincipal(string texto)
+        {
+            foreach (Match coincidencia in Regex.Matches(texto, @"(?im)\bparam\s*\("))
+            {
+                if (!PrefijoValidoParaParamPrincipal(texto[..coincidencia.Index]))
+                {
+                    continue;
+                }
+
+                var apertura = texto.IndexOf('(', coincidencia.Index);
+                var cierre = EncontrarCierreParentesis(texto, apertura);
+                if (apertura >= 0 && cierre > apertura)
+                {
+                    return texto.Substring(apertura + 1, cierre - apertura - 1);
+                }
+            }
+
+            return null;
+        }
+
+        private static bool PrefijoValidoParaParamPrincipal(string prefijo)
+        {
+            // Permite comentarios, regiones y atributos antes del param principal.
+            var sinComentariosBloque = Regex.Replace(prefijo, @"(?s)<#.*?#>", string.Empty);
+            var sinComentariosLinea = Regex.Replace(sinComentariosBloque, @"(?m)#.*$", string.Empty);
+            var sinAtributos = Regex.Replace(sinComentariosLinea, @"(?m)^\s*\[[^\r\n]+\]\s*$", string.Empty);
+            var sinUsings = Regex.Replace(sinAtributos, @"(?im)^\s*using\s+(assembly|module|namespace)\s+.*$", string.Empty);
+            return string.IsNullOrWhiteSpace(sinUsings);
+        }
+
+        private static int EncontrarCierreParentesis(string texto, int apertura)
+        {
+            if (apertura < 0 || apertura >= texto.Length || texto[apertura] != '(')
+            {
+                return -1;
+            }
+
+            var profundidad = 0;
+            var comentarioLinea = false;
+            var comentarioBloque = false;
+            var cadenaSimple = false;
+            var cadenaDoble = false;
+
+            for (var indice = apertura; indice < texto.Length; indice++)
+            {
+                var actual = texto[indice];
+                var siguiente = indice + 1 < texto.Length ? texto[indice + 1] : '\0';
+
+                if (comentarioLinea)
+                {
+                    if (actual is '\r' or '\n')
+                    {
+                        comentarioLinea = false;
+                    }
+
+                    continue;
+                }
+
+                if (comentarioBloque)
+                {
+                    if (actual == '#' && siguiente == '>')
+                    {
+                        comentarioBloque = false;
+                        indice++;
+                    }
+
+                    continue;
+                }
+
+                if (cadenaSimple)
+                {
+                    if (actual == '\'' && siguiente == '\'')
+                    {
+                        indice++;
+                    }
+                    else if (actual == '\'')
+                    {
+                        cadenaSimple = false;
+                    }
+
+                    continue;
+                }
+
+                if (cadenaDoble)
+                {
+                    if (actual == '`')
+                    {
+                        indice++;
+                    }
+                    else if (actual == '"')
+                    {
+                        cadenaDoble = false;
+                    }
+
+                    continue;
+                }
+
+                if (actual == '#')
+                {
+                    comentarioLinea = true;
+                    continue;
+                }
+
+                if (actual == '<' && siguiente == '#')
+                {
+                    comentarioBloque = true;
+                    indice++;
+                    continue;
+                }
+
+                if (actual == '\'')
+                {
+                    cadenaSimple = true;
+                    continue;
+                }
+
+                if (actual == '"')
+                {
+                    cadenaDoble = true;
+                    continue;
+                }
+
+                if (actual == '(')
+                {
+                    profundidad++;
+                }
+                else if (actual == ')')
+                {
+                    profundidad--;
+                    if (profundidad == 0)
+                    {
+                        return indice;
+                    }
+                }
+            }
+
+            return -1;
         }
 
         private static string ConstruirRutaLog(EjecucionWeb ejecucion)
