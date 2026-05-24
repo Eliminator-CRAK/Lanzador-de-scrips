@@ -31,6 +31,8 @@ public static class RutasAplicacion
 
     public static string RutaLogsUsuario => Path.Combine(RaizLocalAppData, "Logs");
 
+    public static string RutaAuditoria => Path.Combine(RaizLocalAppData, "Auditoria");
+
     public static string RutaTokensUsuario => Path.Combine(RaizAppData, "Tokens");
 
     public static string RutaPerfilWebView2 => Path.Combine(RaizLocalAppData, "WebView2");

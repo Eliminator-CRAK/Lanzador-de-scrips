@@ -31,6 +31,7 @@ flowchart TD
 | Config equipo | `C:\ProgramData\LanzadorScripts\configuracion.json` |
 | Tokens admin | `%AppData%\LanzadorScripts\Tokens` |
 | Logs | `%LocalAppData%\LanzadorScripts\Logs` |
+| Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
 | Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2` |
 
 ## Configuracion
@@ -47,7 +48,15 @@ flowchart TD
 ## Publicacion
 
 ```powershell
-dotnet publish .\LanzadorScripts.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o .\publicacion
+.\Herramientas\PublicarPortable.ps1
+```
+
+El script descarga el instalador oficial Evergreen Standalone x64 de WebView2 y lo embebe en el ejecutable publicado.
+
+## Pruebas
+
+```powershell
+dotnet run --project .\Pruebas\LanzadorScripts.Pruebas.csproj
 ```
 
 ## Requisitos

@@ -35,10 +35,17 @@
     <EmbeddedResource Include="ClienteWeb\**\*">
       <LogicalName>ClienteWeb.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Recursos\WebView2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" Condition="Exists('Recursos\WebView2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe')">
+      <LogicalName>WebView2.MicrosoftEdgeWebView2RuntimeInstallerX64.exe</LogicalName>
+    </EmbeddedResource>
     <None Include="WebView2Runtime\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Pruebas\**\*.cs" />
   </ItemGroup>
 
   <Target Name="EliminarDocumentacionWebView2Publicada" AfterTargets="Publish">

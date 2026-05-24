@@ -1,0 +1,9 @@
+# (Autor: Alex Roman)
+# Descripcion: Archivos generados que no deben versionarse.
+
+.vs/
+bin/
+obj/
+Pruebas/bin/
+Pruebas/obj/
+Recursos/WebView2/*.exe
