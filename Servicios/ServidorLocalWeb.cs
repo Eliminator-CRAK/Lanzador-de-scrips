@@ -1,13 +1,11 @@
 // (Autor: Alex Roman)
 // Descripcion: Servidor local que entrega el cliente web y la API de ejecucion.
 
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
@@ -18,17 +16,13 @@ namespace LanzadorScripts.Servicios;
 
 public sealed class ServidorLocalWeb : IDisposable
 {
+    private const string NombreCookieSesion = "LanzadorScriptsSesion";
+
     private static readonly Lazy<IReadOnlyDictionary<string, string>> IndiceRecursosCliente = new(CrearIndiceRecursosCliente);
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
-    private static readonly JsonSerializerOptions OpcionesJsonEventos = new()
-    {
-        WriteIndented = false,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
@@ -39,13 +33,17 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioTokenMaestro _servicioTokenMaestro = new();
     private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion = new();
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
-    private readonly GestorEjecucionesWeb _gestorEjecuciones = new();
+    private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
+    private readonly ServicioAuditoria _servicioAuditoria = new();
+    private readonly GestorEjecucionesWeb _gestorEjecuciones;
+    private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private volatile bool _tokenMaestroSesionActiva;
 
     private ServidorLocalWeb(int puerto)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
+        _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria);
     }
 
     public Uri UrlBase { get; }
@@ -99,6 +97,12 @@ public sealed class ServidorLocalWeb : IDisposable
 
             if (ruta.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
             {
+                if (!SesionApiValida(contexto.Request, ruta))
+                {
+                    await EscribirJsonAsync(contexto, 403, new { error = "Sesion local no valida." });
+                    return;
+                }
+
                 await ProcesarApiAsync(contexto, ruta);
                 return;
             }
@@ -109,7 +113,8 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (contexto.Response.OutputStream.CanWrite)
             {
-                await EscribirJsonAsync(contexto, 500, new { error = ex.Message });
+                await _servicioAuditoria.RegistrarErrorInternoAsync("api.error", ex.GetType().Name);
+                await EscribirJsonAsync(contexto, 500, new { error = "Error interno de la aplicacion." });
             }
         }
         finally
@@ -236,8 +241,17 @@ public sealed class ServidorLocalWeb : IDisposable
 
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var configuracion = _servicioConfiguracion.Cargar();
-            configuracion.RutaPermisos = LeerTexto(cuerpo, "rutaPermisos", configuracion.RutaPermisos);
-            configuracion.RutaScripts = LeerTexto(cuerpo, "carpetaScripts", configuracion.RutaScripts);
+            var nuevaRutaPermisos = LeerTexto(cuerpo, "rutaPermisos", configuracion.RutaPermisos).Trim();
+            var nuevaRutaScripts = LeerTexto(cuerpo, "carpetaScripts", configuracion.RutaScripts).Trim();
+            var validacion = _servicioValidacionScripts.ValidarConfiguracionBasica(nuevaRutaScripts, nuevaRutaPermisos);
+            if (!validacion.EsValida)
+            {
+                await EscribirJsonAsync(contexto, 400, new { error = validacion.Mensaje });
+                return;
+            }
+
+            configuracion.RutaPermisos = nuevaRutaPermisos;
+            configuracion.RutaScripts = nuevaRutaScripts;
             _servicioConfiguracion.Guardar(configuracion);
             await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion de la aplicacion guardada exitosamente." });
             return;
@@ -258,32 +272,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/ejecuciones", StringComparison.OrdinalIgnoreCase))
         {
-            var cuerpo = await LeerJsonAsync(contexto.Request);
-            var scriptId = LeerTexto(cuerpo, "scriptId", string.Empty);
-            var script = ObtenerScriptPorId(scriptId);
-
-            if (script is null)
-            {
-                await EscribirJsonAsync(contexto, 404, new { error = "Script no encontrado." });
-                return;
-            }
-
-            if (ScriptBloqueado(script.Id))
-            {
-                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado para este script." });
-                return;
-            }
-
-            var usuario = ObtenerUsuarioActual();
-            if (_gestorEjecuciones.RecuentoActivas >= usuario.MaxScriptsSimultaneos)
-            {
-                await EscribirJsonAsync(contexto, 429, new { error = $"Has alcanzado el limite maximo de {usuario.MaxScriptsSimultaneos} scripts simultaneos permitido por tu usuario." });
-                return;
-            }
-
-            var configuracion = _servicioConfiguracion.Cargar();
-            var ejecucionId = _gestorEjecuciones.Iniciar(script, configuracion.RutaLogs);
-            await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
+            await ProcesarInicioEjecucionAsync(contexto);
             return;
         }
 
@@ -325,6 +314,42 @@ public sealed class ServidorLocalWeb : IDisposable
         await EscribirJsonAsync(contexto, 404, new { error = "Ruta no encontrada." });
     }
 
+    private async Task ProcesarInicioEjecucionAsync(HttpListenerContext contexto)
+    {
+        var cuerpo = await LeerJsonAsync(contexto.Request);
+        var scriptId = LeerTexto(cuerpo, "scriptId", string.Empty);
+        var configuracion = _servicioConfiguracion.Cargar();
+        var validacion = _servicioValidacionScripts.ValidarScriptParaEjecucion(configuracion.RutaScripts, scriptId);
+
+        if (!validacion.EsValido)
+        {
+            var usuarioDenegado = WindowsIdentity.GetCurrent().Name;
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.validacion", usuarioDenegado, scriptId, validacion.Mensaje);
+            await EscribirJsonAsync(contexto, ServicioValidacionScripts.ObtenerCodigoHttp(validacion.Codigo), new { error = validacion.Mensaje });
+            return;
+        }
+
+        var script = validacion.Script!;
+        if (ScriptBloqueado(script.Id))
+        {
+            var usuarioDenegado = WindowsIdentity.GetCurrent().Name;
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos", usuarioDenegado, script.Id, "Acceso denegado para este script.");
+            await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado para este script." });
+            return;
+        }
+
+        var usuario = ObtenerUsuarioActual();
+        if (_gestorEjecuciones.RecuentoActivas >= usuario.MaxScriptsSimultaneos)
+        {
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.limite", usuario.NombreUsuario, script.Id, "Limite de ejecuciones simultaneas alcanzado.");
+            await EscribirJsonAsync(contexto, 429, new { error = $"Has alcanzado el limite maximo de {usuario.MaxScriptsSimultaneos} scripts simultaneos permitido por tu usuario." });
+            return;
+        }
+
+        var ejecucionId = _gestorEjecuciones.Iniciar(script, configuracion.RutaLogs, usuario);
+        await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
+    }
+
     private async Task EntregarClienteAsync(HttpListenerContext contexto, string ruta)
     {
         var recurso = ruta == "/" ? "index.html" : Uri.UnescapeDataString(ruta.TrimStart('/'));
@@ -345,6 +370,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         contexto.Response.ContentType = ObtenerTipoContenido(recurso);
         contexto.Response.StatusCode = 200;
+        EstablecerCookieSesion(contexto.Response);
         await flujo.CopyToAsync(contexto.Response.OutputStream);
     }
 
@@ -403,7 +429,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         return new UsuarioCliente(
             usuario is null ? identidad : LeerTexto(usuario, "nombreUsuario", identidad),
-            rol,
+            NormalizarRol(rol),
             Math.Clamp(maximo, 1, 50));
     }
 
@@ -510,6 +536,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private void GuardarPermisos(JsonNode permisos)
     {
+        var permisosNormalizados = NormalizarPermisos(permisos);
         var ruta = ObtenerRutaPermisosCompleta(_servicioConfiguracion.Cargar());
         var carpeta = Path.GetDirectoryName(ruta);
         if (!string.IsNullOrWhiteSpace(carpeta))
@@ -517,10 +544,73 @@ public sealed class ServidorLocalWeb : IDisposable
             Directory.CreateDirectory(carpeta);
         }
 
-        var json = permisos.ToJsonString(OpcionesJson);
+        var json = permisosNormalizados.ToJsonString(OpcionesJson);
         var cifrado = _servicioCifradoAplicacion.CifrarTexto("permisos", json);
         File.WriteAllText(ruta, cifrado, Encoding.UTF8);
-        ServicioInicioAutomatico.Aplicar(LeerBooleano(permisos, "inicioAutomaticoWindows", false));
+        ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
+    }
+
+    private JsonObject NormalizarPermisos(JsonNode permisos)
+    {
+        // Limpia valores antes de guardar permisos.
+        var objeto = permisos as JsonObject ?? new JsonObject();
+
+        return new JsonObject
+        {
+            ["inicioAutomaticoWindows"] = LeerBooleano(objeto, "inicioAutomaticoWindows", false),
+            ["scriptsAdmin"] = NormalizarScriptsAdmin(objeto["scriptsAdmin"] as JsonArray),
+            ["usuarios"] = NormalizarUsuarios(objeto["usuarios"] as JsonArray),
+            ["rolUsuarioActual"] = NormalizarRol(LeerTexto(objeto, "rolUsuarioActual", "nominal")),
+            ["maxScriptsSimultaneos"] = Math.Clamp(LeerEntero(objeto, "maxScriptsSimultaneos", 5), 1, 50)
+        };
+    }
+
+    private static JsonArray NormalizarScriptsAdmin(JsonArray? scriptsAdmin)
+    {
+        var resultado = new JsonArray();
+        if (scriptsAdmin is null)
+        {
+            return resultado;
+        }
+
+        foreach (var item in scriptsAdmin)
+        {
+            var valor = item?.GetValue<string>()?.Trim();
+            if (!string.IsNullOrWhiteSpace(valor) && EsIdentificadorScriptSeguro(valor))
+            {
+                resultado.Add(valor.Replace('\\', '/'));
+            }
+        }
+
+        return resultado;
+    }
+
+    private static JsonArray NormalizarUsuarios(JsonArray? usuarios)
+    {
+        var resultado = new JsonArray();
+        if (usuarios is null)
+        {
+            return resultado;
+        }
+
+        foreach (var item in usuarios.OfType<JsonObject>())
+        {
+            var nombre = LeerTexto(item, "nombreUsuario", string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(nombre) || nombre.Length > 256)
+            {
+                continue;
+            }
+
+            resultado.Add(new JsonObject
+            {
+                ["id"] = LeerTexto(item, "id", Guid.NewGuid().ToString("N")),
+                ["nombreUsuario"] = nombre,
+                ["rol"] = NormalizarRol(LeerTexto(item, "rol", "nominal")),
+                ["maxScriptsSimultaneos"] = Math.Clamp(LeerEntero(item, "maxScriptsSimultaneos", 5), 1, 50)
+            });
+        }
+
+        return resultado;
     }
 
     private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente()
@@ -534,34 +624,10 @@ public sealed class ServidorLocalWeb : IDisposable
             .ToList();
     }
 
-    private ScriptInterno? ObtenerScriptPorId(string scriptId)
-    {
-        return ObtenerScriptsInternos().FirstOrDefault(script =>
-            string.Equals(script.Id, scriptId, StringComparison.OrdinalIgnoreCase));
-    }
-
     private IReadOnlyList<ScriptInterno> ObtenerScriptsInternos()
     {
         var configuracion = _servicioConfiguracion.Cargar();
-        var raiz = configuracion.RutaScripts;
-
-        if (string.IsNullOrWhiteSpace(raiz) || !Directory.Exists(raiz))
-        {
-            return [];
-        }
-
-        var resultado = new List<ScriptInterno>();
-        foreach (var ruta in EnumerarScripts(raiz))
-        {
-            var relativo = Path.GetRelativePath(raiz, ruta).Replace('\\', '/');
-            var extension = Path.GetExtension(ruta).ToLowerInvariant();
-            var tipo = extension == ".ps1" ? "powershell" : "batch";
-            resultado.Add(new ScriptInterno(relativo, Path.GetFileName(ruta), tipo, ruta));
-        }
-
-        return resultado
-            .OrderBy(script => script.Id, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts);
     }
 
     private bool ScriptBloqueado(string scriptId)
@@ -591,62 +657,6 @@ public sealed class ServidorLocalWeb : IDisposable
             || permisoNormalizado.EndsWith("/" + scriptNormalizado, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IEnumerable<string> EnumerarScripts(string raiz)
-    {
-        var carpetas = new Stack<string>();
-        carpetas.Push(raiz);
-
-        while (carpetas.Count > 0)
-        {
-            var actual = carpetas.Pop();
-
-            IEnumerable<string> archivos;
-            try
-            {
-                archivos = Directory.EnumerateFiles(actual)
-                    .Where(EsScriptPermitido);
-            }
-            catch
-            {
-                continue;
-            }
-
-            foreach (var archivo in archivos)
-            {
-                yield return archivo;
-            }
-
-            IEnumerable<string> hijas;
-            try
-            {
-                hijas = Directory.EnumerateDirectories(actual);
-            }
-            catch
-            {
-                continue;
-            }
-
-            foreach (var carpeta in hijas)
-            {
-                var nombre = Path.GetFileName(carpeta);
-                if (!nombre.Equals(".git", StringComparison.OrdinalIgnoreCase)
-                    && !nombre.Equals("PERMISOS", StringComparison.OrdinalIgnoreCase)
-                    && !nombre.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
-                {
-                    carpetas.Push(carpeta);
-                }
-            }
-        }
-    }
-
-    private static bool EsScriptPermitido(string ruta)
-    {
-        var extension = Path.GetExtension(ruta);
-        return extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static JsonObject CrearPermisosPorDefecto()
     {
         return new JsonObject
@@ -661,9 +671,62 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private string ObtenerRutaPermisosCompleta(ConfiguracionLanzador configuracion)
     {
-        return Path.IsPathRooted(configuracion.RutaPermisos)
-            ? configuracion.RutaPermisos
-            : Path.Combine(configuracion.RutaScripts, configuracion.RutaPermisos);
+        return _servicioValidacionScripts.ResolverRutaPermisos(configuracion.RutaScripts, configuracion.RutaPermisos);
+    }
+
+    private bool SesionApiValida(HttpListenerRequest peticion, string ruta)
+    {
+        if (ruta.Equals("/api/salud", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var cookie = peticion.Cookies[NombreCookieSesion]?.Value;
+        return CompararTextoSeguro(cookie, _tokenSesion);
+    }
+
+    private void EstablecerCookieSesion(HttpListenerResponse respuesta)
+    {
+        respuesta.Headers["Set-Cookie"] = $"{NombreCookieSesion}={_tokenSesion}; Path=/; HttpOnly; SameSite=Strict";
+    }
+
+    private static bool CompararTextoSeguro(string? valor, string esperado)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return false;
+        }
+
+        var valorBytes = Encoding.UTF8.GetBytes(valor);
+        var esperadoBytes = Encoding.UTF8.GetBytes(esperado);
+        return valorBytes.Length == esperadoBytes.Length
+            && CryptographicOperations.FixedTimeEquals(valorBytes, esperadoBytes);
+    }
+
+    private static bool EsIdentificadorScriptSeguro(string scriptId)
+    {
+        if (Path.IsPathRooted(scriptId) || Path.IsPathFullyQualified(scriptId))
+        {
+            return false;
+        }
+
+        var segmentos = scriptId.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        if (segmentos.Length == 0 || segmentos.Any(segmento => segmento == "." || segmento == ".."))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(scriptId);
+        return extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizarRol(string rol)
+    {
+        return string.Equals(rol, "admin", StringComparison.OrdinalIgnoreCase)
+            ? "admin"
+            : "nominal";
     }
 
     private static async Task<JsonNode?> LeerJsonAsync(HttpListenerRequest peticion)
@@ -722,567 +785,5 @@ public sealed class ServidorLocalWeb : IDisposable
         return puerto;
     }
 
-    private sealed record UsuarioCliente(string NombreUsuario, string Rol, int MaxScriptsSimultaneos);
-
     private sealed record ScriptCliente(string Id, string Nombre, string Tipo, bool EstaBloqueado);
-
-    private sealed record ScriptInterno(string Id, string Nombre, string Tipo, string RutaCompleta);
-
-    private sealed class GestorEjecucionesWeb : IDisposable
-    {
-        private readonly ConcurrentDictionary<Guid, EjecucionWeb> _ejecuciones = new();
-
-        public int RecuentoActivas => _ejecuciones.Values.Count(ejecucion => !ejecucion.Finalizada);
-
-        public Guid Iniciar(ScriptInterno script, string rutaLogs)
-        {
-            var ejecucion = new EjecucionWeb(script, rutaLogs);
-            _ejecuciones[ejecucion.Id] = ejecucion;
-            ejecucion.AgregarEvento("info", $"### Script-{script.Nombre}");
-            ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}... (#B5CEA8)", "#B5CEA8");
-            ejecucion.AgregarEvento("info", "> Conectando a servidor...");
-            _ = Task.Run(() => EjecutarAsync(ejecucion));
-            return ejecucion.Id;
-        }
-
-        public void Cancelar(Guid id)
-        {
-            if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada)
-            {
-                return;
-            }
-
-            ejecucion.Cancelada = true;
-            try
-            {
-                if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
-                {
-                    ejecucion.Proceso.Kill(entireProcessTree: true);
-                }
-            }
-            catch (Exception ex)
-            {
-                ejecucion.AgregarEvento("error", $"> Error al cancelar: {ex.Message}", "#F44747");
-            }
-        }
-
-        public async Task EnviarEntradaAsync(Guid id, string texto)
-        {
-            if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Proceso is null)
-            {
-                return;
-            }
-
-            try
-            {
-                await ejecucion.Proceso.StandardInput.WriteLineAsync(texto);
-                await ejecucion.Proceso.StandardInput.FlushAsync();
-            }
-            catch (Exception ex)
-            {
-                ejecucion.AgregarEvento("error", $"> Error al enviar entrada: {ex.Message}", "#F44747");
-            }
-        }
-
-        public async Task EnviarEventosAsync(Guid id, HttpListenerRequest peticion, HttpListenerResponse respuesta, CancellationToken cancelacion)
-        {
-            if (!_ejecuciones.TryGetValue(id, out var ejecucion))
-            {
-                respuesta.StatusCode = 404;
-                return;
-            }
-
-            respuesta.StatusCode = 200;
-            respuesta.ContentType = "text/event-stream; charset=utf-8";
-            respuesta.Headers["Cache-Control"] = "no-cache";
-            respuesta.SendChunked = true;
-            respuesta.KeepAlive = true;
-
-            var indice = LeerUltimoIndiceEvento(peticion);
-            try
-            {
-                while (!cancelacion.IsCancellationRequested)
-                {
-                    var eventos = ejecucion.ObtenerEventosDesde(indice);
-                    foreach (var evento in eventos)
-                    {
-                        var idEvento = indice + 1;
-                        var json = JsonSerializer.Serialize(evento, OpcionesJsonEventos);
-                        var bytes = Encoding.UTF8.GetBytes($"id: {idEvento}\ndata: {json}\n\n");
-                        await respuesta.OutputStream.WriteAsync(bytes, cancelacion);
-                        await respuesta.OutputStream.FlushAsync(cancelacion);
-                        indice++;
-                    }
-
-                    if (ejecucion.Finalizada && indice >= ejecucion.TotalEventos)
-                    {
-                        break;
-                    }
-
-                    if (!await ejecucion.EsperarEventoAsync(TimeSpan.FromSeconds(10), cancelacion))
-                    {
-                        var pulso = Encoding.UTF8.GetBytes(": keepalive\n\n");
-                        await respuesta.OutputStream.WriteAsync(pulso, cancelacion);
-                        await respuesta.OutputStream.FlushAsync(cancelacion);
-                    }
-                }
-            }
-            catch when (cancelacion.IsCancellationRequested)
-            {
-            }
-            catch (IOException)
-            {
-            }
-            catch (HttpListenerException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-        }
-
-        public void Dispose()
-        {
-            foreach (var ejecucion in _ejecuciones.Values)
-            {
-                try
-                {
-                    if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
-                    {
-                        ejecucion.Proceso.Kill(entireProcessTree: true);
-                    }
-                }
-                catch
-                {
-                }
-
-                ejecucion.Dispose();
-            }
-        }
-
-        private static async Task EjecutarAsync(EjecucionWeb ejecucion)
-        {
-            try
-            {
-                Directory.CreateDirectory(ejecucion.RutaLogs);
-                var rutaLog = ConstruirRutaLog(ejecucion);
-                await using var log = new StreamWriter(rutaLog, append: false, Encoding.UTF8)
-                {
-                    AutoFlush = true
-                };
-
-                await log.WriteLineAsync($"Script: {ejecucion.Script.Nombre}");
-                await log.WriteLineAsync($"Inicio: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                await log.WriteLineAsync();
-
-                using var proceso = CrearProceso(ejecucion.Script);
-                ejecucion.Proceso = proceso;
-                proceso.Start();
-
-                var salida = LeerFlujoAsync(proceso.StandardOutput, ejecucion, log, "info", null);
-                var error = LeerFlujoAsync(proceso.StandardError, ejecucion, log, "error", "#F44747");
-                await proceso.WaitForExitAsync();
-                await Task.WhenAll(salida, error);
-
-                if (ejecucion.Cancelada)
-                {
-                    ejecucion.AgregarEvento("error", "> Ejecucion cancelada por el usuario.", "#F44747", finalizado: true);
-                    await log.WriteLineAsync("Cancelada por el usuario.");
-                    return;
-                }
-
-                if (proceso.ExitCode == 0)
-                {
-                    ejecucion.AgregarEvento("exito", $"> Finalizada correctamente. Codigo de salida: {proceso.ExitCode}", "#B5CEA8", finalizado: true);
-                }
-                else
-                {
-                    ejecucion.AgregarEvento("error", $"> Error. Codigo de salida: {proceso.ExitCode}", "#F44747", finalizado: true);
-                }
-
-                await log.WriteLineAsync();
-                await log.WriteLineAsync($"Fin: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                await log.WriteLineAsync($"Codigo de salida: {proceso.ExitCode}");
-            }
-            catch (Exception ex)
-            {
-                ejecucion.AgregarEvento("error", $"> Error: {ex.Message}", "#F44747", finalizado: true);
-            }
-            finally
-            {
-                ejecucion.MarcarFinalizada();
-            }
-        }
-
-        private static async Task LeerFlujoAsync(StreamReader lector, EjecucionWeb ejecucion, StreamWriter log, string tipo, string? color)
-        {
-            var buffer = new char[512];
-            int leidos;
-            while ((leidos = await lector.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
-            {
-                var texto = OcultarRutas(ejecucion.Script, new string(buffer, 0, leidos));
-                ejecucion.AgregarEvento(tipo, texto, color);
-                await log.WriteAsync(texto);
-            }
-        }
-
-        private static Process CrearProceso(ScriptInterno script)
-        {
-            var inicio = new ProcessStartInfo
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                StandardOutputEncoding = Encoding.Default,
-                StandardErrorEncoding = Encoding.Default,
-                WorkingDirectory = Path.GetDirectoryName(script.RutaCompleta) ?? Environment.CurrentDirectory
-            };
-
-            if (script.Tipo == "powershell")
-            {
-                inicio.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
-                inicio.ArgumentList.Add("-NoLogo");
-                inicio.ArgumentList.Add("-NoProfile");
-                inicio.ArgumentList.Add("-ExecutionPolicy");
-                inicio.ArgumentList.Add("Bypass");
-                inicio.ArgumentList.Add("-Command");
-                inicio.ArgumentList.Add(CrearComandoPowerShell(script.RutaCompleta));
-            }
-            else
-            {
-                inicio.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-                inicio.ArgumentList.Add("/d");
-                inicio.ArgumentList.Add("/c");
-                inicio.ArgumentList.Add(script.RutaCompleta);
-            }
-
-            return new Process { StartInfo = inicio, EnableRaisingEvents = true };
-        }
-
-        private static string CrearComandoPowerShell(string rutaScript)
-        {
-            var rutaEscapada = rutaScript.Replace("'", "''");
-            var parametros = ObtenerParametrosObligatorios(rutaScript);
-            var adaptadorInteractivo = CrearAdaptadorInteractivoPowerShell();
-            if (parametros.Count == 0)
-            {
-                return $"{adaptadorInteractivo}$ErrorActionPreference='Continue'; & '{rutaEscapada}' *>&1; exit $LASTEXITCODE";
-            }
-
-            var constructor = new StringBuilder(adaptadorInteractivo);
-            constructor.Append("$ErrorActionPreference='Continue'; $__args=@{};");
-            foreach (var parametro in parametros)
-            {
-                var nombre = parametro.Replace("'", "''");
-                constructor.Append($"[Console]::Write('{nombre}: '); $__args['{nombre}'] = [Console]::ReadLine();");
-            }
-
-            constructor.Append($"& '{rutaEscapada}' @__args *>&1; exit $LASTEXITCODE");
-            return constructor.ToString();
-        }
-
-        private static string CrearAdaptadorInteractivoPowerShell()
-        {
-            // Muestra preguntas interactivas en la consola web.
-            return """
-function global:Read-Host {
-    param(
-        [Parameter(Position=0)]
-        [string]$Prompt,
-        [switch]$AsSecureString,
-        [switch]$MaskInput
-    )
-    if (-not [string]::IsNullOrWhiteSpace($Prompt)) {
-        [Console]::Write($Prompt + ': ')
-    }
-    $valor = [Console]::ReadLine()
-    if ($AsSecureString -or $MaskInput) {
-        return ConvertTo-SecureString ([string]$valor) -AsPlainText -Force
-    }
-    return $valor
-}
-function global:Pause {
-    [Console]::Write('Presione Enter para continuar...')
-    [Console]::ReadLine() | Out-Null
-}
-function global:Get-Credential {
-    param(
-        [string]$Message,
-        [string]$UserName
-    )
-    if (-not [string]::IsNullOrWhiteSpace($Message)) {
-        [Console]::WriteLine($Message)
-    }
-    if ([string]::IsNullOrWhiteSpace($UserName)) {
-        [Console]::Write('Usuario: ')
-        $UserName = [Console]::ReadLine()
-    }
-    [Console]::Write('Password: ')
-    $clave = [Console]::ReadLine()
-    $segura = ConvertTo-SecureString ([string]$clave) -AsPlainText -Force
-    return New-Object System.Management.Automation.PSCredential($UserName, $segura)
-}
-""";
-        }
-
-        private static IReadOnlyList<string> ObtenerParametrosObligatorios(string rutaScript)
-        {
-            try
-            {
-                var texto = File.ReadAllText(rutaScript, Encoding.UTF8);
-                var bloqueParametros = ObtenerBloqueParametrosPrincipal(texto);
-                if (string.IsNullOrWhiteSpace(bloqueParametros))
-                {
-                    return [];
-                }
-
-                var coincidencias = Regex.Matches(
-                    bloqueParametros,
-                    @"(?is)\[Parameter\s*\([^\]]*\bMandatory\b(?:\s*=\s*\$?true)?[^\]]*\)\](?:(?:\s*\[[^\]]+\])*)\s*\$(?<nombre>[A-Za-z_][A-Za-z0-9_]*)");
-
-                return coincidencias
-                    .Select(coincidencia => coincidencia.Groups["nombre"].Value)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
-        private static string? ObtenerBloqueParametrosPrincipal(string texto)
-        {
-            foreach (Match coincidencia in Regex.Matches(texto, @"(?im)\bparam\s*\("))
-            {
-                if (!PrefijoValidoParaParamPrincipal(texto[..coincidencia.Index]))
-                {
-                    continue;
-                }
-
-                var apertura = texto.IndexOf('(', coincidencia.Index);
-                var cierre = EncontrarCierreParentesis(texto, apertura);
-                if (apertura >= 0 && cierre > apertura)
-                {
-                    return texto.Substring(apertura + 1, cierre - apertura - 1);
-                }
-            }
-
-            return null;
-        }
-
-        private static bool PrefijoValidoParaParamPrincipal(string prefijo)
-        {
-            // Permite comentarios, regiones y atributos antes del param principal.
-            var sinComentariosBloque = Regex.Replace(prefijo, @"(?s)<#.*?#>", string.Empty);
-            var sinComentariosLinea = Regex.Replace(sinComentariosBloque, @"(?m)#.*$", string.Empty);
-            var sinAtributos = Regex.Replace(sinComentariosLinea, @"(?m)^\s*\[[^\r\n]+\]\s*$", string.Empty);
-            var sinUsings = Regex.Replace(sinAtributos, @"(?im)^\s*using\s+(assembly|module|namespace)\s+.*$", string.Empty);
-            return string.IsNullOrWhiteSpace(sinUsings);
-        }
-
-        private static int EncontrarCierreParentesis(string texto, int apertura)
-        {
-            if (apertura < 0 || apertura >= texto.Length || texto[apertura] != '(')
-            {
-                return -1;
-            }
-
-            var profundidad = 0;
-            var comentarioLinea = false;
-            var comentarioBloque = false;
-            var cadenaSimple = false;
-            var cadenaDoble = false;
-
-            for (var indice = apertura; indice < texto.Length; indice++)
-            {
-                var actual = texto[indice];
-                var siguiente = indice + 1 < texto.Length ? texto[indice + 1] : '\0';
-
-                if (comentarioLinea)
-                {
-                    if (actual is '\r' or '\n')
-                    {
-                        comentarioLinea = false;
-                    }
-
-                    continue;
-                }
-
-                if (comentarioBloque)
-                {
-                    if (actual == '#' && siguiente == '>')
-                    {
-                        comentarioBloque = false;
-                        indice++;
-                    }
-
-                    continue;
-                }
-
-                if (cadenaSimple)
-                {
-                    if (actual == '\'' && siguiente == '\'')
-                    {
-                        indice++;
-                    }
-                    else if (actual == '\'')
-                    {
-                        cadenaSimple = false;
-                    }
-
-                    continue;
-                }
-
-                if (cadenaDoble)
-                {
-                    if (actual == '`')
-                    {
-                        indice++;
-                    }
-                    else if (actual == '"')
-                    {
-                        cadenaDoble = false;
-                    }
-
-                    continue;
-                }
-
-                if (actual == '#')
-                {
-                    comentarioLinea = true;
-                    continue;
-                }
-
-                if (actual == '<' && siguiente == '#')
-                {
-                    comentarioBloque = true;
-                    indice++;
-                    continue;
-                }
-
-                if (actual == '\'')
-                {
-                    cadenaSimple = true;
-                    continue;
-                }
-
-                if (actual == '"')
-                {
-                    cadenaDoble = true;
-                    continue;
-                }
-
-                if (actual == '(')
-                {
-                    profundidad++;
-                }
-                else if (actual == ')')
-                {
-                    profundidad--;
-                    if (profundidad == 0)
-                    {
-                        return indice;
-                    }
-                }
-            }
-
-            return -1;
-        }
-
-        private static string ConstruirRutaLog(EjecucionWeb ejecucion)
-        {
-            var carpetaDia = Path.Combine(ejecucion.RutaLogs, DateTime.Now.ToString("yyyyMMdd"));
-            Directory.CreateDirectory(carpetaDia);
-            var nombreSeguro = string.Concat(ejecucion.Script.Nombre.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-            return Path.Combine(carpetaDia, $"{DateTime.Now:HHmmss}_{nombreSeguro}_{ejecucion.Id:N}.log");
-        }
-
-        private static string OcultarRutas(ScriptInterno script, string texto)
-        {
-            var carpeta = Path.GetDirectoryName(script.RutaCompleta);
-            if (!string.IsNullOrWhiteSpace(carpeta))
-            {
-                texto = texto.Replace(carpeta, "[origen protegido]", StringComparison.OrdinalIgnoreCase);
-            }
-
-            return texto.Replace(script.RutaCompleta, "[script protegido]", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static int LeerUltimoIndiceEvento(HttpListenerRequest peticion)
-        {
-            return int.TryParse(peticion.Headers["Last-Event-ID"], out var ultimoId)
-                ? Math.Max(0, ultimoId)
-                : 0;
-        }
-    }
-
-    private sealed class EjecucionWeb(ScriptInterno script, string rutaLogs) : IDisposable
-    {
-        private readonly List<EventoCliente> _eventos = [];
-        private readonly SemaphoreSlim _senal = new(0);
-        private readonly object _bloqueo = new();
-
-        public Guid Id { get; } = Guid.NewGuid();
-
-        public ScriptInterno Script { get; } = script;
-
-        public string RutaLogs { get; } = rutaLogs;
-
-        public Process? Proceso { get; set; }
-
-        public bool Cancelada { get; set; }
-
-        public bool Finalizada { get; private set; }
-
-        public int TotalEventos
-        {
-            get
-            {
-                lock (_bloqueo)
-                {
-                    return _eventos.Count;
-                }
-            }
-        }
-
-        public void AgregarEvento(string tipo, string mensaje, string? color = null, bool finalizado = false)
-        {
-            lock (_bloqueo)
-            {
-                _eventos.Add(new EventoCliente(tipo, mensaje, color, finalizado));
-            }
-
-            _senal.Release();
-        }
-
-        public IReadOnlyList<EventoCliente> ObtenerEventosDesde(int indice)
-        {
-            lock (_bloqueo)
-            {
-                return _eventos.Skip(indice).ToList();
-            }
-        }
-
-        public async Task<bool> EsperarEventoAsync(TimeSpan espera, CancellationToken cancelacion)
-        {
-            return await _senal.WaitAsync(espera, cancelacion);
-        }
-
-        public void MarcarFinalizada()
-        {
-            Finalizada = true;
-            _senal.Release();
-        }
-
-        public void Dispose()
-        {
-            Proceso?.Dispose();
-            _senal.Dispose();
-        }
-    }
-
-    private sealed record EventoCliente(string Tipo, string Mensaje, string? Color = null, bool Finalizado = false);
 }

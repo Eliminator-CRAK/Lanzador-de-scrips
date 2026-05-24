@@ -17,6 +17,7 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioTokenMaestro _servicioTokenMaestro = new();
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
+    private readonly ServicioInstalacionWebView2 _servicioInstalacionWebView2 = new();
 
     public VentanaPrincipal()
     {
@@ -39,20 +40,44 @@ public partial class VentanaPrincipal : Window
 
     private async void CargarClienteAsync()
     {
-        Directory.CreateDirectory(RutasAplicacion.RutaPerfilWebView2);
+        try
+        {
+            Directory.CreateDirectory(RutasAplicacion.RutaPerfilWebView2);
 
-        var runtimeFijo = Directory.Exists(RutasAplicacion.RutaRuntimeWebView2Fijo)
-            ? RutasAplicacion.RutaRuntimeWebView2Fijo
-            : null;
-        var entorno = await CoreWebView2Environment.CreateAsync(runtimeFijo, RutasAplicacion.RutaPerfilWebView2);
+            var runtimeFijo = Directory.Exists(RutasAplicacion.RutaRuntimeWebView2Fijo)
+                ? RutasAplicacion.RutaRuntimeWebView2Fijo
+                : null;
+            var instalacion = await _servicioInstalacionWebView2.AsegurarInstaladoAsync(runtimeFijo);
+            if (!instalacion.Exito)
+            {
+                MessageBox.Show(
+                    instalacion.Mensaje,
+                    "No se pudo preparar WebView2",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                Close();
+                return;
+            }
 
-        await VistaCliente.EnsureCoreWebView2Async(entorno);
-        VistaCliente.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        VistaCliente.CoreWebView2.Settings.AreDevToolsEnabled = false;
-        await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
-        await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
-        VistaCliente.CoreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
-        VistaCliente.Source = _servidor.UrlBase;
+            var entorno = await CoreWebView2Environment.CreateAsync(runtimeFijo, RutasAplicacion.RutaPerfilWebView2);
+
+            await VistaCliente.EnsureCoreWebView2Async(entorno);
+            VistaCliente.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            VistaCliente.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
+            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
+            VistaCliente.CoreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
+            VistaCliente.Source = _servidor.UrlBase;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo iniciar WebView2: {ex.Message}",
+                "Error de inicio",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Close();
+        }
     }
 
     private void BarraTitulo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

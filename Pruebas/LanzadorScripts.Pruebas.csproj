@@ -1,0 +1,18 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Proyecto de pruebas basicas de seguridad y validacion. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LanzadorScripts.csproj" />
+  </ItemGroup>
+
+</Project>
