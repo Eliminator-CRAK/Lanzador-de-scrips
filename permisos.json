@@ -1,0 +1,40 @@
+{
+  "inicioAutomaticoWindows": false,
+  "scriptsAdmin": [
+    "scripts/Backup.ps1",
+    "scripts/Update.bat"
+  ],
+  "usuarios": [
+    {
+      "id": "1",
+      "nombreUsuario": "admin_user",
+      "rol": "admin",
+      "maxScriptsSimultaneos": 10
+    },
+    {
+      "id": "2",
+      "nombreUsuario": "nominal_user",
+      "rol": "nominal",
+      "maxScriptsSimultaneos": 3
+    },
+    {
+      "id": "3",
+      "nombreUsuario": "root",
+      "rol": "admin",
+      "maxScriptsSimultaneos": 15
+    },
+    {
+      "id": "4",
+      "nombreUsuario": "node",
+      "rol": "admin",
+      "maxScriptsSimultaneos": 15
+    },
+    {
+      "id": "5",
+      "nombreUsuario": "aleroman2004",
+      "rol": "admin",
+      "maxScriptsSimultaneos": 15
+    }
+  ],
+  "rolUsuarioActual": "admin"
+}
