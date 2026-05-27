@@ -330,7 +330,15 @@ public sealed class ServidorLocalWeb : IDisposable
         }
 
         var script = validacion.Script!;
-        if (ScriptBloqueado(script.Id))
+        var usuario = ObtenerUsuarioActual();
+        if (!usuario.EstaAutorizado)
+        {
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.usuario", usuario.NombreUsuario, script.Id, "Usuario no incluido en el archivo de permisos.");
+            await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. El usuario no esta autorizado en el archivo de permisos." });
+            return;
+        }
+
+        if (ScriptBloqueado(script.Id, usuario))
         {
             var usuarioDenegado = WindowsIdentity.GetCurrent().Name;
             await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos", usuarioDenegado, script.Id, "Acceso denegado para este script.");
@@ -338,7 +346,6 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        var usuario = ObtenerUsuarioActual();
         if (_gestorEjecuciones.RecuentoActivas >= usuario.MaxScriptsSimultaneos)
         {
             await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.limite", usuario.NombreUsuario, script.Id, "Limite de ejecuciones simultaneas alcanzado.");
@@ -408,6 +415,7 @@ public sealed class ServidorLocalWeb : IDisposable
     private UsuarioCliente ObtenerUsuarioActual()
     {
         var permisos = ObtenerPermisos();
+        var archivoPermisosExiste = ArchivoPermisosExiste();
         var identidad = WindowsIdentity.GetCurrent().Name;
         var usuarioCorto = identidad.Contains('\\') ? identidad.Split('\\').Last() : identidad;
         var usuarios = permisos["usuarios"] as JsonArray;
@@ -420,6 +428,11 @@ public sealed class ServidorLocalWeb : IDisposable
                 || string.Equals(LeerTexto(item, "nombreUsuario", string.Empty), usuarioCorto, StringComparison.OrdinalIgnoreCase));
         }
 
+        if (archivoPermisosExiste && usuario is null)
+        {
+            return new UsuarioCliente(identidad, "nominal", 1, false);
+        }
+
         var rol = usuario is null
             ? LeerTexto(permisos, "rolUsuarioActual", "nominal")
             : LeerTexto(usuario, "rol", "nominal");
@@ -430,7 +443,8 @@ public sealed class ServidorLocalWeb : IDisposable
         return new UsuarioCliente(
             usuario is null ? identidad : LeerTexto(usuario, "nombreUsuario", identidad),
             NormalizarRol(rol),
-            Math.Clamp(maximo, 1, 50));
+            Math.Clamp(maximo, 1, 50),
+            true);
     }
 
     private object CrearUsuarioClienteSesion(UsuarioCliente usuario)
@@ -445,6 +459,9 @@ public sealed class ServidorLocalWeb : IDisposable
                 usuario.NombreUsuario,
                 Rol = "admin",
                 usuario.MaxScriptsSimultaneos,
+                UsuarioAutorizado = true,
+                Bloqueado = false,
+                MotivoBloqueo = string.Empty,
                 PermisosEncontrados = archivoPermisosExiste,
                 PermiteDesbloqueoEmergencia = false,
                 TokenMaestroActivo = true
@@ -456,6 +473,9 @@ public sealed class ServidorLocalWeb : IDisposable
             usuario.NombreUsuario,
             usuario.Rol,
             usuario.MaxScriptsSimultaneos,
+            UsuarioAutorizado = usuario.EstaAutorizado,
+            Bloqueado = !usuario.EstaAutorizado,
+            MotivoBloqueo = usuario.EstaAutorizado ? string.Empty : "Usuario no incluido en el archivo de permisos.",
             PermisosEncontrados = archivoPermisosExiste,
             PermiteDesbloqueoEmergencia = !archivoPermisosExiste,
             TokenMaestroActivo = false
@@ -479,6 +499,11 @@ public sealed class ServidorLocalWeb : IDisposable
         }
 
         var usuario = ObtenerUsuarioActual();
+        if (!usuario.EstaAutorizado)
+        {
+            return false;
+        }
+
         if (!string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -615,12 +640,13 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente()
     {
+        var usuario = ObtenerUsuarioActual();
         return ObtenerScriptsInternos()
             .Select(script => new ScriptCliente(
                 script.Id,
                 script.Nombre,
                 script.Tipo,
-                ScriptBloqueado(script.Id)))
+                ScriptBloqueado(script.Id, usuario)))
             .ToList();
     }
 
@@ -630,9 +656,14 @@ public sealed class ServidorLocalWeb : IDisposable
         return _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts);
     }
 
-    private bool ScriptBloqueado(string scriptId)
+    private bool ScriptBloqueado(string scriptId, UsuarioCliente usuario)
     {
-        if (UsuarioEsAdministrador())
+        if (!usuario.EstaAutorizado)
+        {
+            return true;
+        }
+
+        if (_tokenMaestroSesionActiva || string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

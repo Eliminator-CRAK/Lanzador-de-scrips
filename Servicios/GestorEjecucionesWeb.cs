@@ -35,9 +35,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
     {
         var ejecucion = new EjecucionWeb(script, rutaLogs, usuario);
         _ejecuciones[ejecucion.Id] = ejecucion;
-        ejecucion.AgregarEvento("info", $"### Script-{script.Nombre}");
-        ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}... (#B5CEA8)", "#B5CEA8");
-        ejecucion.AgregarEvento("info", "> Conectando a servidor...");
+        ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}...", "#B5CEA8");
         _ = _servicioAuditoria.RegistrarInicioEjecucionAsync(ejecucion.Id, script, usuario);
         _ = Task.Run(() => EjecutarAsync(ejecucion));
         return ejecucion.Id;
