@@ -46,21 +46,36 @@ public sealed class ServicioInstalacionWebView2
         }
     }
 
+    public string? ObtenerVersionDisponible(string? rutaRuntimeFijo)
+    {
+        return ObtenerVersion(rutaRuntimeFijo) ?? ObtenerVersion(null);
+    }
+
+    public string? ObtenerVersionRuta(string? rutaRuntime)
+    {
+        return ObtenerVersion(rutaRuntime);
+    }
+
     private static bool RuntimeDisponible(string? rutaRuntimeFijo)
+    {
+        return !string.IsNullOrWhiteSpace(ObtenerVersion(rutaRuntimeFijo));
+    }
+
+    private static string? ObtenerVersion(string? rutaRuntimeFijo)
     {
         try
         {
             if (!string.IsNullOrWhiteSpace(rutaRuntimeFijo) && !Directory.Exists(rutaRuntimeFijo))
             {
-                return false;
+                return null;
             }
 
             var version = CoreWebView2Environment.GetAvailableBrowserVersionString(rutaRuntimeFijo);
-            return !string.IsNullOrWhiteSpace(version);
+            return string.IsNullOrWhiteSpace(version) ? null : version;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 

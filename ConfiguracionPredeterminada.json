@@ -2,6 +2,6 @@
   "_autor": "Alex Roman",
   "_descripcion": "Configuracion predeterminada embebida en el ejecutable publicado.",
   "RutaScripts": "\\\\MAD002MICROPRU\\REPO",
-  "RutaPermisos": "PERMISOS\\permissions.json",
+  "RutaPermisos": "\\\\MAD002MICROPRU\\PERMISOS\\permissions.json",
   "MaximoEjecucionesParalelas": 5
 }

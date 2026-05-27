@@ -89,8 +89,9 @@
                        FontWeight="SemiBold" />
         </Grid>
 
-        <wv2:WebView2 x:Name="VistaCliente"
-                      Grid.Row="1" />
+        <Grid Grid.Row="1">
+            <wv2:WebView2 x:Name="VistaCliente" />
+        </Grid>
         </Grid>
     </Border>
 </Window>

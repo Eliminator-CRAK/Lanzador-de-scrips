@@ -9,7 +9,7 @@
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
 | Backend | Servidor HTTP local interno |
-| Configuracion | `%AppData%\LanzadorScripts\configuracion.json` |
+| Configuracion | `%AppData%\LanzadorScripts\configuracion.dat` |
 
 ```mermaid
 flowchart TD
@@ -27,8 +27,8 @@ flowchart TD
 
 | Recurso | Ruta |
 |---|---|
-| Config usuario | `%AppData%\LanzadorScripts\configuracion.json` |
-| Config equipo | `C:\ProgramData\LanzadorScripts\configuracion.json` |
+| Config usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
+| Config equipo | `C:\ProgramData\LanzadorScripts\configuracion.dat` |
 | Tokens admin | `%AppData%\LanzadorScripts\Tokens` |
 | Logs | `%LocalAppData%\LanzadorScripts\Logs` |
 | Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
@@ -53,6 +53,22 @@ flowchart TD
 
 El script descarga el instalador oficial Evergreen Standalone x64 de WebView2 y lo embebe en el ejecutable publicado.
 
+El unico archivo distribuible para usuarios finales es `publicacion\LanzadorScripts.exe`. No se deben copiar los ejecutables generados en `bin\Debug` ni `bin\Release`, porque no representan el artefacto portable validado.
+
+La publicacion final debe ser self-contained, single-file y x64. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
+
+## Recuperacion WebView2
+
+La aplicacion usa `%LocalAppData%\LanzadorScripts\WebView2` como perfil local de WebView2. Si el perfil falla durante el arranque, la aplicacion intenta recuperarlo automaticamente.
+
+| Caso | Accion |
+|---|---|
+| Perfil recuperable | Renombra a `WebView2_Danado_yyyyMMdd_HHmmss` y crea un perfil limpio |
+| Perfil bloqueado | Usa `WebView2_Recuperacion_yyyyMMdd_HHmmss` |
+| Fallo de proceso Edge/WebView2 | Registra detalle en `%LocalAppData%\LanzadorScripts\Logs\arranque-yyyyMMdd.jsonl` |
+
+Solo se conservan las ultimas 3 copias de diagnostico de perfiles dañados o de recuperacion.
+
 ## Pruebas
 
 ```powershell
@@ -65,6 +81,6 @@ dotnet run --project .\Pruebas\LanzadorScripts.Pruebas.csproj
 |---|---|
 | SO | Windows 10/11 Pro o Enterprise |
 | PowerShell | 5.1 |
-| WebView2 | Runtime instalado o `publicacion\WebView2Runtime` |
+| WebView2 | Runtime instalado o instalador embebido en el EXE portable |
 | Permisos | Administrador local |
 | Politicas | GPO/AppLocker/WDAC permitiendo app y `powershell.exe` |

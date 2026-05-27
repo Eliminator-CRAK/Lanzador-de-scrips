@@ -1,12 +1,13 @@
 // (Autor: Alex Roman)
 // Descripcion: Inicializa el cliente web y su backend local.
 
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using LanzadorScripts.Servicios;
 
 namespace LanzadorScripts;
@@ -17,7 +18,7 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioTokenMaestro _servicioTokenMaestro = new();
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
-    private readonly ServicioInstalacionWebView2 _servicioInstalacionWebView2 = new();
+    private readonly ServicioArranqueWebView2 _servicioArranqueWebView2 = new();
 
     public VentanaPrincipal()
     {
@@ -42,16 +43,11 @@ public partial class VentanaPrincipal : Window
     {
         try
         {
-            Directory.CreateDirectory(RutasAplicacion.RutaPerfilWebView2);
-
-            var runtimeFijo = Directory.Exists(RutasAplicacion.RutaRuntimeWebView2Fijo)
-                ? RutasAplicacion.RutaRuntimeWebView2Fijo
-                : null;
-            var instalacion = await _servicioInstalacionWebView2.AsegurarInstaladoAsync(runtimeFijo);
-            if (!instalacion.Exito)
+            var arranque = await _servicioArranqueWebView2.PrepararAsync(() => VistaCliente, RecrearVistaCliente);
+            if (!arranque.Exito)
             {
                 MessageBox.Show(
-                    instalacion.Mensaje,
+                    arranque.Mensaje,
                     "No se pudo preparar WebView2",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -59,9 +55,6 @@ public partial class VentanaPrincipal : Window
                 return;
             }
 
-            var entorno = await CoreWebView2Environment.CreateAsync(runtimeFijo, RutasAplicacion.RutaPerfilWebView2);
-
-            await VistaCliente.EnsureCoreWebView2Async(entorno);
             VistaCliente.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             VistaCliente.CoreWebView2.Settings.AreDevToolsEnabled = false;
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
@@ -78,6 +71,30 @@ public partial class VentanaPrincipal : Window
                 MessageBoxImage.Error);
             Close();
         }
+    }
+
+    private WebView2 RecrearVistaCliente()
+    {
+        // Reemplaza el control cuando WebView2 queda en estado fallido.
+        var vistaAnterior = VistaCliente;
+        var vistaNueva = new WebView2();
+        var contenedor = vistaAnterior.Parent as Panel
+            ?? throw new InvalidOperationException("No se encontro el contenedor de WebView2.");
+
+        var indice = contenedor.Children.IndexOf(vistaAnterior);
+        contenedor.Children.Remove(vistaAnterior);
+        contenedor.Children.Insert(indice < 0 ? 0 : indice, vistaNueva);
+        VistaCliente = vistaNueva;
+
+        try
+        {
+            vistaAnterior.Dispose();
+        }
+        catch
+        {
+        }
+
+        return vistaNueva;
     }
 
     private void BarraTitulo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
