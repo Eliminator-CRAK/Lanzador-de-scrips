@@ -167,7 +167,7 @@ public partial class VentanaPrincipal : Window
         if (!_servicioTokenMaestro.PuedeGenerar())
         {
             MessageBox.Show(
-                "Este usuario no tiene el certificado privado de Alex Roman para generar tokens maestros.",
+                "Sin mi certificado es imposible generar el token :)",
                 "Token maestro",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);

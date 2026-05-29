@@ -150,17 +150,18 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/usuario", StringComparison.OrdinalIgnoreCase))
         {
-            var usuario = ObtenerUsuarioActual();
+            var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+            var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
             AsegurarTokenAdmin(usuario);
-            await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario));
+            await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario, diagnosticoPermisos));
             return;
         }
 
         if (metodo == "POST" && ruta.Equals("/api/token-maestro/desbloquear", StringComparison.OrdinalIgnoreCase))
         {
-            if (ArchivoPermisosExiste())
+            if (ObtenerDiagnosticoPermisos().EstaDisponible)
             {
-                await EscribirJsonAsync(contexto, 403, new { error = "El token maestro solo esta disponible si no se encuentra el archivo de permisos." });
+                await EscribirJsonAsync(contexto, 403, new { error = "El token maestro solo esta disponible si no se puede leer el archivo de permisos." });
                 return;
             }
 
@@ -333,8 +334,11 @@ public sealed class ServidorLocalWeb : IDisposable
         var usuario = ObtenerUsuarioActual();
         if (!usuario.EstaAutorizado)
         {
-            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.usuario", usuario.NombreUsuario, script.Id, "Usuario no incluido en el archivo de permisos.");
-            await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. El usuario no esta autorizado en el archivo de permisos." });
+            var motivo = string.IsNullOrWhiteSpace(usuario.MotivoBloqueo)
+                ? "Acceso denegado. El usuario no esta autorizado."
+                : usuario.MotivoBloqueo;
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.usuario", usuario.NombreUsuario, script.Id, motivo);
+            await EscribirJsonAsync(contexto, 403, new { error = motivo });
             return;
         }
 
@@ -414,9 +418,18 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private UsuarioCliente ObtenerUsuarioActual()
     {
-        var permisos = ObtenerPermisos();
-        var archivoPermisosExiste = ArchivoPermisosExiste();
+        return ObtenerUsuarioActual(ObtenerDiagnosticoPermisos());
+    }
+
+    private UsuarioCliente ObtenerUsuarioActual(DiagnosticoPermisos diagnosticoPermisos)
+    {
         var identidad = WindowsIdentity.GetCurrent().Name;
+        if (_tokenMaestroSesionActiva)
+        {
+            return new UsuarioCliente(identidad, "admin", 50, true);
+        }
+
+        var permisos = diagnosticoPermisos.Permisos;
         var usuarioCorto = identidad.Contains('\\') ? identidad.Split('\\').Last() : identidad;
         var usuarios = permisos["usuarios"] as JsonArray;
         JsonObject? usuario = null;
@@ -428,9 +441,14 @@ public sealed class ServidorLocalWeb : IDisposable
                 || string.Equals(LeerTexto(item, "nombreUsuario", string.Empty), usuarioCorto, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (archivoPermisosExiste && usuario is null)
+        if (diagnosticoPermisos.Estado == EstadoPermisos.Inaccesible)
         {
-            return new UsuarioCliente(identidad, "nominal", 1, false);
+            return new UsuarioCliente(identidad, "nominal", 1, false, diagnosticoPermisos.Mensaje);
+        }
+
+        if (diagnosticoPermisos.Estado == EstadoPermisos.Disponible && usuario is null)
+        {
+            return new UsuarioCliente(identidad, "nominal", 1, false, "Usuario no incluido en el archivo de permisos.");
         }
 
         var rol = usuario is null
@@ -447,10 +465,8 @@ public sealed class ServidorLocalWeb : IDisposable
             true);
     }
 
-    private object CrearUsuarioClienteSesion(UsuarioCliente usuario)
+    private object CrearUsuarioClienteSesion(UsuarioCliente usuario, DiagnosticoPermisos diagnosticoPermisos)
     {
-        var archivoPermisosExiste = ArchivoPermisosExiste();
-
         // Aplica el desbloqueo maestro solo a la sesion actual.
         if (_tokenMaestroSesionActiva)
         {
@@ -462,9 +478,12 @@ public sealed class ServidorLocalWeb : IDisposable
                 UsuarioAutorizado = true,
                 Bloqueado = false,
                 MotivoBloqueo = string.Empty,
-                PermisosEncontrados = archivoPermisosExiste,
+                PermisosEncontrados = diagnosticoPermisos.EstaDisponible,
+                PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
                 PermiteDesbloqueoEmergencia = false,
-                TokenMaestroActivo = true
+                TokenMaestroActivo = true,
+                ModoOffline = diagnosticoPermisos.ModoOffline,
+                AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
             };
         }
 
@@ -475,10 +494,13 @@ public sealed class ServidorLocalWeb : IDisposable
             usuario.MaxScriptsSimultaneos,
             UsuarioAutorizado = usuario.EstaAutorizado,
             Bloqueado = !usuario.EstaAutorizado,
-            MotivoBloqueo = usuario.EstaAutorizado ? string.Empty : "Usuario no incluido en el archivo de permisos.",
-            PermisosEncontrados = archivoPermisosExiste,
-            PermiteDesbloqueoEmergencia = !archivoPermisosExiste,
-            TokenMaestroActivo = false
+            MotivoBloqueo = usuario.EstaAutorizado ? string.Empty : usuario.MotivoBloqueo,
+            PermisosEncontrados = diagnosticoPermisos.EstaDisponible,
+            PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
+            PermiteDesbloqueoEmergencia = diagnosticoPermisos.PermiteDesbloqueoEmergencia,
+            TokenMaestroActivo = false,
+            ModoOffline = diagnosticoPermisos.ModoOffline,
+            AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
         };
     }
 
@@ -531,11 +553,29 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private JsonObject ObtenerPermisos()
     {
+        return ObtenerDiagnosticoPermisos().Permisos;
+    }
+
+    private DiagnosticoPermisos ObtenerDiagnosticoPermisos()
+    {
         var ruta = ObtenerRutaPermisosCompleta(_servicioConfiguracion.Cargar());
 
         if (!File.Exists(ruta))
         {
-            return CrearPermisosPorDefecto();
+            if (RutaPermisosInaccesible(ruta))
+            {
+                return new DiagnosticoPermisos(
+                    EstadoPermisos.Inaccesible,
+                    ruta,
+                    CrearPermisosPorDefecto(),
+                    "No se puede establecer conexion con el servidor de permisos.");
+            }
+
+            return new DiagnosticoPermisos(
+                EstadoPermisos.NoEncontrado,
+                ruta,
+                CrearPermisosPorDefecto(),
+                "No se encontro el archivo de permisos.");
         }
 
         try
@@ -546,17 +586,38 @@ public sealed class ServidorLocalWeb : IDisposable
                 texto = permisosDescifrados;
             }
 
-            return JsonNode.Parse(texto) as JsonObject ?? CrearPermisosPorDefecto();
+            var permisos = JsonNode.Parse(texto) as JsonObject;
+            if (permisos is null)
+            {
+                return new DiagnosticoPermisos(
+                    EstadoPermisos.Inaccesible,
+                    ruta,
+                    CrearPermisosPorDefecto(),
+                    "No se pudo interpretar el archivo de permisos.");
+            }
+
+            return new DiagnosticoPermisos(EstadoPermisos.Disponible, ruta, permisos, string.Empty);
         }
         catch
         {
-            return CrearPermisosPorDefecto();
+            return new DiagnosticoPermisos(
+                EstadoPermisos.Inaccesible,
+                ruta,
+                CrearPermisosPorDefecto(),
+                "No se pudo leer el archivo de permisos.");
         }
     }
 
-    private bool ArchivoPermisosExiste()
+    private static bool RutaPermisosInaccesible(string ruta)
     {
-        return File.Exists(ObtenerRutaPermisosCompleta(_servicioConfiguracion.Cargar()));
+        // Solo marca offline rutas UNC cuyo recurso compartido no responde.
+        if (!ruta.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var raiz = Path.GetPathRoot(ruta);
+        return string.IsNullOrWhiteSpace(raiz) || !Directory.Exists(raiz);
     }
 
     private void GuardarPermisos(JsonNode permisos)
@@ -640,13 +701,14 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente()
     {
-        var usuario = ObtenerUsuarioActual();
+        var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+        var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
         return ObtenerScriptsInternos()
             .Select(script => new ScriptCliente(
                 script.Id,
                 script.Nombre,
                 script.Tipo,
-                ScriptBloqueado(script.Id, usuario)))
+                ScriptBloqueado(script.Id, usuario, diagnosticoPermisos)))
             .ToList();
     }
 
@@ -656,7 +718,7 @@ public sealed class ServidorLocalWeb : IDisposable
         return _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts);
     }
 
-    private bool ScriptBloqueado(string scriptId, UsuarioCliente usuario)
+    private bool ScriptBloqueado(string scriptId, UsuarioCliente usuario, DiagnosticoPermisos? diagnosticoPermisos = null)
     {
         if (!usuario.EstaAutorizado)
         {
@@ -668,7 +730,7 @@ public sealed class ServidorLocalWeb : IDisposable
             return false;
         }
 
-        var permisos = ObtenerPermisos();
+        var permisos = (diagnosticoPermisos ?? ObtenerDiagnosticoPermisos()).Permisos;
         var scriptsAdmin = permisos["scriptsAdmin"] as JsonArray;
         if (scriptsAdmin is null)
         {
@@ -814,6 +876,22 @@ public sealed class ServidorLocalWeb : IDisposable
         var puerto = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return puerto;
+    }
+
+    private enum EstadoPermisos
+    {
+        Disponible,
+        NoEncontrado,
+        Inaccesible
+    }
+
+    private sealed record DiagnosticoPermisos(EstadoPermisos Estado, string Ruta, JsonObject Permisos, string Mensaje)
+    {
+        public bool EstaDisponible => Estado == EstadoPermisos.Disponible;
+
+        public bool PermiteDesbloqueoEmergencia => Estado != EstadoPermisos.Disponible;
+
+        public bool ModoOffline => Estado == EstadoPermisos.Inaccesible;
     }
 
     private sealed record ScriptCliente(string Id, string Nombre, string Tipo, bool EstaBloqueado);
