@@ -13,6 +13,8 @@ public sealed class ServicioInstalacionWebView2
     private const string NombreInstalador = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe";
     private const string NombreRecursoInstalador = "WebView2.MicrosoftEdgeWebView2RuntimeInstallerX64.exe";
     private static readonly TimeSpan TiempoMaximoInstalacion = TimeSpan.FromMinutes(15);
+    private readonly ServicioFirmaAuthenticode _servicioFirma = new();
+    private readonly ServicioLogInicio _logInicio = new();
 
     public async Task<ResultadoInstalacionWebView2> AsegurarInstaladoAsync(string? rutaRuntimeFijo)
     {
@@ -30,7 +32,19 @@ public sealed class ServicioInstalacionWebView2
         var rutaTemporal = await ExtraerInstaladorAsync(recurso);
         try
         {
+            var validacion = await ValidarInstaladorAsync(rutaTemporal);
+            if (!validacion.Exito)
+            {
+                return validacion;
+            }
+
             var resultado = await EjecutarInstaladorAsync(rutaTemporal);
+            await _logInicio.RegistrarAsync("webview2.instalador.resultado", resultado.Exito ? "Instalador WebView2 completado." : resultado.Mensaje, new Dictionary<string, string?>
+            {
+                ["rutaTemporal"] = rutaTemporal,
+                ["resultado"] = resultado.Exito ? "correcto" : "error"
+            });
+
             if (!resultado.Exito)
             {
                 return resultado;
@@ -91,13 +105,46 @@ public sealed class ServicioInstalacionWebView2
 
     private static async Task<string> ExtraerInstaladorAsync(Stream recurso)
     {
-        var carpetaTemporal = Path.Combine(Path.GetTempPath(), "LanzadorScripts", "WebView2");
+        var carpetaTemporal = Path.Combine(Path.GetTempPath(), "LanzadorScripts", "WebView2", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(carpetaTemporal);
 
         var rutaTemporal = Path.Combine(carpetaTemporal, NombreInstalador);
         await using var destino = new FileStream(rutaTemporal, FileMode.Create, FileAccess.Write, FileShare.None);
         await recurso.CopyToAsync(destino);
         return rutaTemporal;
+    }
+
+    private async Task<ResultadoInstalacionWebView2> ValidarInstaladorAsync(string rutaInstalador)
+    {
+        var hash = ServicioSeguridadScripts.CalcularSha256(rutaInstalador);
+        var firma = _servicioFirma.ObtenerFirma(rutaInstalador);
+        await _logInicio.RegistrarAsync("webview2.instalador.validacion", "Validando instalador WebView2.", new Dictionary<string, string?>
+        {
+            ["rutaTemporal"] = rutaInstalador,
+            ["sha256"] = hash,
+            ["sha256Esperado"] = IntegridadWebView2.Sha256Instalador,
+            ["firmaEstado"] = firma.Estado,
+            ["firmaThumbprint"] = firma.Thumbprint,
+            ["firmaSubject"] = firma.Subject,
+            ["firmaIssuer"] = firma.Issuer
+        });
+
+        if (!string.Equals(hash, IntegridadWebView2.Sha256Instalador, StringComparison.OrdinalIgnoreCase))
+        {
+            return ResultadoInstalacionWebView2.Error("El hash SHA-256 del instalador WebView2 no coincide con el esperado.");
+        }
+
+        if (!firma.FirmaValida)
+        {
+            return ResultadoInstalacionWebView2.Error("La firma Authenticode del instalador WebView2 no es valida.");
+        }
+
+        if (!firma.Subject.Contains("Microsoft Corporation", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResultadoInstalacionWebView2.Error("El instalador WebView2 no esta firmado por Microsoft.");
+        }
+
+        return ResultadoInstalacionWebView2.Correcto();
     }
 
     private static async Task<ResultadoInstalacionWebView2> EjecutarInstaladorAsync(string rutaInstalador)
@@ -152,6 +199,13 @@ public sealed class ServicioInstalacionWebView2
     {
         try
         {
+            var carpeta = Path.GetDirectoryName(rutaTemporal);
+            if (!string.IsNullOrWhiteSpace(carpeta) && Directory.Exists(carpeta))
+            {
+                Directory.Delete(carpeta, recursive: true);
+                return;
+            }
+
             File.Delete(rutaTemporal);
         }
         catch

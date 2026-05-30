@@ -2,6 +2,7 @@
 // Descripcion: Inicializa el cliente web y su backend local.
 
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -57,7 +58,9 @@ public partial class VentanaPrincipal : Window
 
             VistaCliente.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             VistaCliente.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(_servidor.TokenApiInterno));
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
+            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelDiagnosticoEjecucion());
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
             VistaCliente.CoreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
             VistaCliente.Source = _servidor.UrlBase;
@@ -235,6 +238,147 @@ public partial class VentanaPrincipal : Window
                 Storage.prototype.removeItem = function(clave) {
                     return removeItemOriginal.call(this, clave);
                 };
+            })();
+            """;
+    }
+
+    private static string ObtenerProteccionApiLocal(string tokenApi)
+    {
+        // Inyecta el token local de arranque en fetch y EventSource.
+        var tokenJson = JsonSerializer.Serialize(tokenApi);
+        return $$"""
+            (() => {
+                const tokenApi = {{tokenJson}};
+                let tokenAdmin = null;
+                const fetchOriginal = window.fetch.bind(window);
+                const eventSourceOriginal = window.EventSource;
+
+                function esApiLocal(url) {
+                    try {
+                        const final = new URL(url, window.location.href);
+                        return final.origin === window.location.origin && final.pathname.startsWith('/api/');
+                    } catch {
+                        return false;
+                    }
+                }
+
+                async function capturarTokenAdmin(respuesta, url) {
+                    if (!esApiLocal(url)) {
+                        return;
+                    }
+
+                    const tipo = respuesta.headers.get('content-type') || '';
+                    if (!tipo.includes('application/json')) {
+                        return;
+                    }
+
+                    await respuesta.clone().json().then((datos) => {
+                        const nuevoToken = datos && (datos.tokenAdmin || datos.TokenAdmin);
+                        if (typeof nuevoToken === 'string' && nuevoToken.length > 0) {
+                            tokenAdmin = nuevoToken;
+                        }
+                    }).catch(() => {});
+                }
+
+                window.__lanzadorScripts = {
+                    obtenerTokenApi: () => tokenApi,
+                    obtenerTokenAdmin: () => tokenAdmin
+                };
+
+                window.fetch = async (entrada, opciones = {}) => {
+                    const url = typeof entrada === 'string' ? entrada : entrada.url;
+                    const cabeceras = new Headers(opciones.headers || (entrada && entrada.headers) || {});
+                    if (esApiLocal(url)) {
+                        cabeceras.set('X-LanzadorScripts-ApiToken', tokenApi);
+                        if (tokenAdmin && !cabeceras.has('Authorization')) {
+                            cabeceras.set('Authorization', 'Bearer ' + tokenAdmin);
+                        }
+                    }
+
+                    const respuesta = await fetchOriginal(entrada, { ...opciones, headers: cabeceras });
+                    await capturarTokenAdmin(respuesta, url);
+                    return respuesta;
+                };
+
+                if (typeof eventSourceOriginal === 'function') {
+                    window.EventSource = function(url, configuracion) {
+                        if (esApiLocal(url)) {
+                            const final = new URL(url, window.location.href);
+                            final.searchParams.set('apiToken', tokenApi);
+                            return new eventSourceOriginal(final.toString(), configuracion);
+                        }
+
+                        return new eventSourceOriginal(url, configuracion);
+                    };
+                }
+            })();
+            """;
+    }
+
+    private static string ObtenerPanelDiagnosticoEjecucion()
+    {
+        // Añade un panel flotante para consultar diagnostico de ejecucion.
+        return """
+            (() => {
+                window.addEventListener('DOMContentLoaded', () => {
+                    if (document.getElementById('ls-diagnostico-boton')) {
+                        return;
+                    }
+
+                    const boton = document.createElement('button');
+                    boton.id = 'ls-diagnostico-boton';
+                    boton.textContent = 'Diagnóstico';
+                    boton.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:8px 12px;font:12px Segoe UI,Arial,sans-serif;box-shadow:0 10px 25px rgba(0,0,0,.35);';
+                    document.body.appendChild(boton);
+
+                    const panel = document.createElement('div');
+                    panel.id = 'ls-diagnostico-panel';
+                    panel.style.cssText = 'display:none;position:fixed;right:18px;bottom:58px;width:min(560px,calc(100vw - 36px));max-height:70vh;overflow:auto;z-index:2147483647;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:14px;font:12px Segoe UI,Arial,sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.45);';
+                    document.body.appendChild(panel);
+
+                    async function cargar() {
+                        panel.innerHTML = '<div style="margin-bottom:10px;font-weight:600">Diagnóstico de ejecución</div><div>Cargando scripts...</div>';
+                        const scripts = await fetch('/api/scripts').then(r => r.json());
+                        const opciones = (Array.isArray(scripts) ? scripts : []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+                        panel.innerHTML = `
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+                                <strong style="flex:1">Diagnóstico de ejecución</strong>
+                                <button id="ls-diagnostico-cerrar" style="background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:4px 8px">Cerrar</button>
+                            </div>
+                            <select id="ls-diagnostico-script" style="width:100%;background:#030712;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:7px;margin-bottom:10px">${opciones}</select>
+                            <pre id="ls-diagnostico-salida" style="white-space:pre-wrap;background:#030712;border:1px solid #374151;border-radius:6px;padding:10px;min-height:120px"></pre>`;
+
+                        const selector = panel.querySelector('#ls-diagnostico-script');
+                        const salida = panel.querySelector('#ls-diagnostico-salida');
+                        const cerrar = panel.querySelector('#ls-diagnostico-cerrar');
+                        cerrar.addEventListener('click', () => panel.style.display = 'none');
+
+                        async function consultar() {
+                            if (!selector.value) {
+                                salida.textContent = 'No hay scripts disponibles.';
+                                return;
+                            }
+
+                            salida.textContent = 'Consultando...';
+                            const datos = await fetch('/api/diagnostico-ejecucion?scriptId=' + encodeURIComponent(selector.value)).then(r => r.json());
+                            salida.textContent = JSON.stringify(datos, null, 2);
+                        }
+
+                        selector.addEventListener('change', consultar);
+                        await consultar();
+                    }
+
+                    boton.addEventListener('click', async () => {
+                        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+                        if (panel.style.display === 'block') {
+                            try {
+                                await cargar();
+                            } catch (error) {
+                                panel.innerHTML = '<strong>Diagnóstico de ejecución</strong><pre style="white-space:pre-wrap">No se pudo cargar el diagnóstico.</pre>';
+                            }
+                        }
+                    });
+                });
             })();
             """;
     }

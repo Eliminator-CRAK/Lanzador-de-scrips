@@ -130,6 +130,7 @@ public sealed class ServicioValidacionScripts
             CodigoValidacionScript.CarpetaExcluida => 403,
             CodigoValidacionScript.ScriptFueraDeRaiz => 403,
             CodigoValidacionScript.EnlaceNoPermitido => 403,
+            CodigoValidacionScript.MetacaracterPeligroso => 403,
             _ => 400
         };
     }
@@ -195,6 +196,12 @@ public sealed class ServicioValidacionScripts
         }
 
         var relativo = Path.GetRelativePath(raiz, rutaCompleta).Replace('\\', '/');
+        if (ServicioSeguridadScripts.ContieneMetacaracteresPeligrosos(relativo)
+            || ServicioSeguridadScripts.ContieneMetacaracteresPeligrosos(Path.GetFileName(rutaCompleta)))
+        {
+            return null;
+        }
+
         var tipo = Path.GetExtension(rutaCompleta).Equals(".ps1", StringComparison.OrdinalIgnoreCase)
             ? "powershell"
             : "batch";
@@ -239,6 +246,11 @@ public sealed class ServicioValidacionScripts
         if (ContieneCaracteresInvalidos(identificador) || identificador.Contains('\0'))
         {
             return ResultadoIdentificador.Error(CodigoValidacionScript.IdentificadorNoPermitido, "El identificador del script contiene caracteres no validos.");
+        }
+
+        if (ServicioSeguridadScripts.ContieneMetacaracteresPeligrosos(identificador))
+        {
+            return ResultadoIdentificador.Error(CodigoValidacionScript.MetacaracterPeligroso, "El identificador del script contiene metacaracteres peligrosos.");
         }
 
         if (Path.IsPathRooted(identificador) || Path.IsPathFullyQualified(identificador))

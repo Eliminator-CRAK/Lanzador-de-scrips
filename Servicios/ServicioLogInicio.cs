@@ -50,7 +50,10 @@ public sealed class ServicioLogInicio
         {
             Directory.CreateDirectory(RutasAplicacion.RutaLogsUsuario);
             var ruta = Path.Combine(RutasAplicacion.RutaLogsUsuario, $"arranque-{DateTime.UtcNow:yyyyMMdd}.jsonl");
-            var entrada = new EntradaLogInicio(evento, mensaje, datos);
+            var entrada = new EntradaLogInicio(
+                ServicioRedaccionSecretos.Sanitizar(evento),
+                ServicioRedaccionSecretos.Sanitizar(mensaje),
+                ServicioRedaccionSecretos.Sanitizar(datos));
             var json = JsonSerializer.Serialize(entrada, OpcionesJson);
 
             await Bloqueo.WaitAsync();

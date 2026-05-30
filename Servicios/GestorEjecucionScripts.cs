@@ -278,8 +278,6 @@ public sealed class GestorEjecucionScripts
 
         informacionInicio.ArgumentList.Add("-NoLogo");
         informacionInicio.ArgumentList.Add("-NoProfile");
-        informacionInicio.ArgumentList.Add("-ExecutionPolicy");
-        informacionInicio.ArgumentList.Add("Bypass");
         informacionInicio.ArgumentList.Add("-File");
         informacionInicio.ArgumentList.Add(rutaScript);
 
@@ -352,7 +350,8 @@ public sealed class GestorEjecucionScripts
             texto = texto.Replace(carpetaScript, "[origen protegido]", StringComparison.OrdinalIgnoreCase);
         }
 
-        return texto.Replace(rutaScript, "[script protegido]", StringComparison.OrdinalIgnoreCase);
+        return ServicioRedaccionSecretos.Sanitizar(
+            texto.Replace(rutaScript, "[script protegido]", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void IntentarAgregarAlLog(ModeloEjecucionScript ejecucion, string texto)
