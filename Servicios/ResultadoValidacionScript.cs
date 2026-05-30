@@ -15,7 +15,8 @@ public enum CodigoValidacionScript
     ExtensionNoPermitida,
     ScriptFueraDeRaiz,
     ScriptNoEncontrado,
-    EnlaceNoPermitido
+    EnlaceNoPermitido,
+    MetacaracterPeligroso
 }
 
 public sealed record ResultadoValidacionScript(

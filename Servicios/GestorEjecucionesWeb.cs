@@ -31,9 +31,9 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     public int RecuentoActivas => _ejecuciones.Values.Count(ejecucion => !ejecucion.Finalizada);
 
-    public Guid Iniciar(ScriptInterno script, string rutaLogs, UsuarioCliente usuario)
+    public Guid Iniciar(ScriptInterno script, string rutaLogs, UsuarioCliente usuario, bool permitirExecutionPolicyBypass)
     {
-        var ejecucion = new EjecucionWeb(script, rutaLogs, usuario);
+        var ejecucion = new EjecucionWeb(script, rutaLogs, usuario, permitirExecutionPolicyBypass);
         _ejecuciones[ejecucion.Id] = ejecucion;
         ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}...", "#B5CEA8");
         _ = _servicioAuditoria.RegistrarInicioEjecucionAsync(ejecucion.Id, script, usuario);
@@ -181,7 +181,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
             await EscribirCabeceraLogAsync(log, ejecucion);
 
-            using var proceso = CrearProceso(ejecucion.Script);
+            using var proceso = CrearProceso(ejecucion.Script, ejecucion.PermitirExecutionPolicyBypass);
             ejecucion.Proceso = proceso;
             proceso.Start();
 
@@ -244,6 +244,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         await log.WriteLineAsync($"ScriptId: {ejecucion.Script.Id}");
         await log.WriteLineAsync($"Inicio local: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         await log.WriteLineAsync($"Inicio UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
+        await log.WriteLineAsync($"ExecutionPolicyBypass: {ejecucion.PermitirExecutionPolicyBypass}");
         await log.WriteLineAsync();
     }
 
@@ -259,7 +260,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    private static Process CrearProceso(ScriptInterno script)
+    private static Process CrearProceso(ScriptInterno script, bool permitirExecutionPolicyBypass)
     {
         var inicio = new ProcessStartInfo
         {
@@ -278,8 +279,12 @@ public sealed class GestorEjecucionesWeb : IDisposable
             inicio.FileName = ObtenerRutaPowerShell();
             inicio.ArgumentList.Add("-NoLogo");
             inicio.ArgumentList.Add("-NoProfile");
-            inicio.ArgumentList.Add("-ExecutionPolicy");
-            inicio.ArgumentList.Add("Bypass");
+            if (permitirExecutionPolicyBypass)
+            {
+                inicio.ArgumentList.Add("-ExecutionPolicy");
+                inicio.ArgumentList.Add("Bypass");
+            }
+
             inicio.ArgumentList.Add("-Command");
             inicio.ArgumentList.Add(CrearComandoPowerShell(script.RutaCompleta));
         }
@@ -553,10 +558,10 @@ function global:Get-Credential {
     private static string SanitizarMensaje(ScriptInterno script, string texto)
     {
         texto = OcultarRutas(script, texto);
-        return Regex.Replace(
+        return ServicioRedaccionSecretos.Sanitizar(Regex.Replace(
             texto,
             @"(?i)\b(token|password|contrasena|contraseña|clave)\b\s*[:=]\s*[^\s]+",
-            "$1=[oculto]");
+            "$1=[oculto]"));
     }
 
     private static string OcultarRutas(ScriptInterno script, string texto)
@@ -577,7 +582,7 @@ function global:Get-Credential {
             : 0;
     }
 
-    private sealed class EjecucionWeb(ScriptInterno script, string rutaLogs, UsuarioCliente usuario) : IDisposable
+    private sealed class EjecucionWeb(ScriptInterno script, string rutaLogs, UsuarioCliente usuario, bool permitirExecutionPolicyBypass) : IDisposable
     {
         private readonly List<EventoCliente> _eventos = [];
         private readonly SemaphoreSlim _senal = new(0);
@@ -590,6 +595,8 @@ function global:Get-Credential {
         public string RutaLogs { get; } = rutaLogs;
 
         public UsuarioCliente Usuario { get; } = usuario;
+
+        public bool PermitirExecutionPolicyBypass { get; } = permitirExecutionPolicyBypass;
 
         public Process? Proceso { get; set; }
 

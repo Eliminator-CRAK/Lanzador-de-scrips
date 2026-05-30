@@ -34,9 +34,11 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion = new();
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
     private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
+    private readonly ServicioSeguridadScripts _servicioSeguridadScripts = new();
     private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
     private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    private readonly string _tokenApiInterno = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private volatile bool _tokenMaestroSesionActiva;
 
     private ServidorLocalWeb(int puerto)
@@ -47,6 +49,8 @@ public sealed class ServidorLocalWeb : IDisposable
     }
 
     public Uri UrlBase { get; }
+
+    public string TokenApiInterno => _tokenApiInterno;
 
     public static ServidorLocalWeb Iniciar()
     {
@@ -152,8 +156,8 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
             var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
-            AsegurarTokenAdmin(usuario);
-            await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario, diagnosticoPermisos));
+            var tokenAdmin = AsegurarTokenAdmin(usuario);
+            await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario, diagnosticoPermisos, tokenAdmin));
             return;
         }
 
@@ -174,10 +178,12 @@ public sealed class ServidorLocalWeb : IDisposable
             }
 
             _tokenMaestroSesionActiva = true;
+            var tokenAdmin = _servicioTokensAdmin.ObtenerOCrear(WindowsIdentity.GetCurrent().Name);
             await EscribirJsonAsync(contexto, 200, new
             {
                 exito = true,
                 mensaje = "Acceso maestro desbloqueado para esta sesion.",
+                tokenAdmin = tokenAdmin.Valor,
                 emisor = payload
             });
             return;
@@ -189,11 +195,16 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
+        if (metodo == "GET" && ruta.Equals("/api/diagnostico-ejecucion", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProcesarDiagnosticoEjecucionAsync(contexto);
+            return;
+        }
+
         if (metodo == "GET" && ruta.Equals("/api/ajustes", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador(contexto.Request))
+            if (!await RequerirAdministradorAsync(contexto))
             {
-                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
             }
 
@@ -203,9 +214,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/ajustes", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador(contexto.Request))
+            if (!await RequerirAdministradorAsync(contexto))
             {
-                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
             }
 
@@ -217,9 +227,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/configuracion-app", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador(contexto.Request))
+            if (!await RequerirAdministradorAsync(contexto))
             {
-                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
             }
 
@@ -234,9 +243,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/configuracion-app", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador(contexto.Request))
+            if (!await RequerirAdministradorAsync(contexto))
             {
-                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
             }
 
@@ -260,9 +268,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/configuracion-paquete/exportar", StringComparison.OrdinalIgnoreCase))
         {
-            if (!UsuarioEsAdministrador(contexto.Request))
+            if (!await RequerirAdministradorAsync(contexto))
             {
-                await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado. Solo administradores." });
                 return;
             }
 
@@ -350,6 +357,17 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
+        var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, ObtenerPermisos());
+        if (!diagnosticoSeguridad.Permitido)
+        {
+            var motivo = string.IsNullOrWhiteSpace(diagnosticoSeguridad.MotivoBloqueo)
+                ? "El script no cumple la politica de seguridad."
+                : diagnosticoSeguridad.MotivoBloqueo;
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.seguridad", usuario.NombreUsuario, script.Id, motivo);
+            await EscribirJsonAsync(contexto, 403, new { error = motivo });
+            return;
+        }
+
         if (_gestorEjecuciones.RecuentoActivas >= usuario.MaxScriptsSimultaneos)
         {
             await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.limite", usuario.NombreUsuario, script.Id, "Limite de ejecuciones simultaneas alcanzado.");
@@ -357,8 +375,43 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        var ejecucionId = _gestorEjecuciones.Iniciar(script, configuracion.RutaLogs, usuario);
+        if (diagnosticoSeguridad.ExecutionPolicyBypassPermitido)
+        {
+            await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                "ejecucion.execution_policy_bypass",
+                usuario.NombreUsuario,
+                script.Id,
+                "permitido",
+                "ExecutionPolicy Bypass habilitado por politica admin.");
+        }
+
+        var ejecucionId = _gestorEjecuciones.Iniciar(
+            script,
+            configuracion.RutaLogs,
+            usuario,
+            diagnosticoSeguridad.ExecutionPolicyBypassPermitido);
         await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
+    }
+
+    private async Task ProcesarDiagnosticoEjecucionAsync(HttpListenerContext contexto)
+    {
+        var scriptId = contexto.Request.QueryString["scriptId"] ?? string.Empty;
+        var configuracion = _servicioConfiguracion.Cargar();
+        var validacion = _servicioValidacionScripts.ValidarScriptParaEjecucion(configuracion.RutaScripts, scriptId);
+        if (!validacion.EsValido)
+        {
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                scriptId,
+                permitido = false,
+                motivoBloqueo = validacion.Mensaje,
+                powerShellDisponible = new ServicioFirmaAuthenticode().PowerShellDisponible(),
+                executionPolicy = new ServicioFirmaAuthenticode().ObtenerExecutionPolicy()
+            });
+            return;
+        }
+
+        await EscribirJsonAsync(contexto, 200, _servicioSeguridadScripts.Diagnosticar(validacion.Script!, ObtenerPermisos()));
     }
 
     private async Task EntregarClienteAsync(HttpListenerContext contexto, string ruta)
@@ -465,7 +518,7 @@ public sealed class ServidorLocalWeb : IDisposable
             true);
     }
 
-    private object CrearUsuarioClienteSesion(UsuarioCliente usuario, DiagnosticoPermisos diagnosticoPermisos)
+    private object CrearUsuarioClienteSesion(UsuarioCliente usuario, DiagnosticoPermisos diagnosticoPermisos, TokenAdmin? tokenAdmin)
     {
         // Aplica el desbloqueo maestro solo a la sesion actual.
         if (_tokenMaestroSesionActiva)
@@ -482,6 +535,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
                 PermiteDesbloqueoEmergencia = false,
                 TokenMaestroActivo = true,
+                TokenAdmin = tokenAdmin?.Valor,
                 ModoOffline = diagnosticoPermisos.ModoOffline,
                 AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
             };
@@ -499,42 +553,59 @@ public sealed class ServidorLocalWeb : IDisposable
             PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
             PermiteDesbloqueoEmergencia = diagnosticoPermisos.PermiteDesbloqueoEmergencia,
             TokenMaestroActivo = false,
+            TokenAdmin = tokenAdmin?.Valor,
             ModoOffline = diagnosticoPermisos.ModoOffline,
             AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
         };
     }
 
-    private void AsegurarTokenAdmin(UsuarioCliente usuario)
+    private TokenAdmin? AsegurarTokenAdmin(UsuarioCliente usuario)
     {
         // Genera el token local si el usuario actual es administrador.
-        if (string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
+        if (usuario.EstaAutorizado && string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
         {
-            _servicioTokensAdmin.ObtenerOCrear(WindowsIdentity.GetCurrent().Name);
+            return _servicioTokensAdmin.ObtenerOCrear(WindowsIdentity.GetCurrent().Name);
         }
+
+        return null;
     }
 
-    private bool UsuarioEsAdministrador(HttpListenerRequest? peticion = null)
+    private async Task<bool> RequerirAdministradorAsync(HttpListenerContext contexto)
     {
-        if (_tokenMaestroSesionActiva)
+        var autorizacion = ValidarAdministrador(contexto.Request);
+        if (autorizacion.Autorizado)
         {
             return true;
+        }
+
+        var codigo = autorizacion.Codigo == CodigoAutorizacionAdmin.FaltaBearer ? 401 : 403;
+        await EscribirJsonAsync(contexto, codigo, new { error = autorizacion.Mensaje });
+        return false;
+    }
+
+    private ResultadoAutorizacionAdmin ValidarAdministrador(HttpListenerRequest peticion)
+    {
+        var token = LeerTokenAutorizacion(peticion);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return ResultadoAutorizacionAdmin.FaltaBearer();
         }
 
         var usuario = ObtenerUsuarioActual();
         if (!usuario.EstaAutorizado)
         {
-            return false;
+            return ResultadoAutorizacionAdmin.Denegado("Acceso denegado. El usuario no esta autorizado.");
         }
 
         if (!string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return ResultadoAutorizacionAdmin.Denegado("Acceso denegado. Solo administradores.");
         }
 
         AsegurarTokenAdmin(usuario);
-        var token = LeerTokenAutorizacion(peticion);
-        return string.IsNullOrWhiteSpace(token)
-            || _servicioTokensAdmin.Validar(WindowsIdentity.GetCurrent().Name, token);
+        return _servicioTokensAdmin.Validar(WindowsIdentity.GetCurrent().Name, token)
+            ? ResultadoAutorizacionAdmin.Permitido()
+            : ResultadoAutorizacionAdmin.Denegado("Token de administrador no valido.");
     }
 
     private static string? LeerTokenAutorizacion(HttpListenerRequest? peticion)
@@ -546,9 +617,12 @@ public sealed class ServidorLocalWeb : IDisposable
             return null;
         }
 
-        return cabecera.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? cabecera["Bearer ".Length..].Trim()
-            : cabecera.Trim();
+        if (!cabecera.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return cabecera["Bearer ".Length..].Trim();
     }
 
     private JsonObject ObtenerPermisos()
@@ -646,6 +720,7 @@ public sealed class ServidorLocalWeb : IDisposable
             ["inicioAutomaticoWindows"] = LeerBooleano(objeto, "inicioAutomaticoWindows", false),
             ["scriptsAdmin"] = NormalizarScriptsAdmin(objeto["scriptsAdmin"] as JsonArray),
             ["usuarios"] = NormalizarUsuarios(objeto["usuarios"] as JsonArray),
+            ["seguridadScripts"] = ServicioSeguridadScripts.NormalizarPolitica(objeto["seguridadScripts"] as JsonObject),
             ["rolUsuarioActual"] = NormalizarRol(LeerTexto(objeto, "rolUsuarioActual", "nominal")),
             ["maxScriptsSimultaneos"] = Math.Clamp(LeerEntero(objeto, "maxScriptsSimultaneos", 5), 1, 50)
         };
@@ -703,12 +778,24 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
         var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
+        var permisos = diagnosticoPermisos.Permisos;
         return ObtenerScriptsInternos()
-            .Select(script => new ScriptCliente(
-                script.Id,
-                script.Nombre,
-                script.Tipo,
-                ScriptBloqueado(script.Id, usuario, diagnosticoPermisos)))
+            .Select(script =>
+            {
+                var bloqueadoPorPermisos = ScriptBloqueado(script.Id, usuario, diagnosticoPermisos);
+                var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, permisos);
+                var bloqueado = bloqueadoPorPermisos || !diagnosticoSeguridad.Permitido;
+                var motivo = bloqueadoPorPermisos
+                    ? (usuario.EstaAutorizado ? "Acceso denegado para este script." : usuario.MotivoBloqueo)
+                    : diagnosticoSeguridad.MotivoBloqueo;
+
+                return new ScriptCliente(
+                    script.Id,
+                    script.Nombre,
+                    script.Tipo,
+                    bloqueado,
+                    motivo);
+            })
             .ToList();
     }
 
@@ -757,6 +844,7 @@ public sealed class ServidorLocalWeb : IDisposable
             ["inicioAutomaticoWindows"] = false,
             ["scriptsAdmin"] = new JsonArray(),
             ["usuarios"] = new JsonArray(),
+            ["seguridadScripts"] = ServicioSeguridadScripts.NormalizarPolitica(null),
             ["rolUsuarioActual"] = "nominal",
             ["maxScriptsSimultaneos"] = 5
         };
@@ -775,7 +863,14 @@ public sealed class ServidorLocalWeb : IDisposable
         }
 
         var cookie = peticion.Cookies[NombreCookieSesion]?.Value;
-        return CompararTextoSeguro(cookie, _tokenSesion);
+        var tokenApi = peticion.Headers["X-LanzadorScripts-ApiToken"];
+        if (string.IsNullOrWhiteSpace(tokenApi) && ruta.Contains("/ejecuciones/", StringComparison.OrdinalIgnoreCase) && ruta.EndsWith("/eventos", StringComparison.OrdinalIgnoreCase))
+        {
+            tokenApi = peticion.QueryString["apiToken"];
+        }
+
+        return CompararTextoSeguro(cookie, _tokenSesion)
+            && CompararTextoSeguro(tokenApi, _tokenApiInterno);
     }
 
     private void EstablecerCookieSesion(HttpListenerResponse respuesta)
@@ -885,6 +980,13 @@ public sealed class ServidorLocalWeb : IDisposable
         Inaccesible
     }
 
+    private enum CodigoAutorizacionAdmin
+    {
+        Permitido,
+        FaltaBearer,
+        Denegado
+    }
+
     private sealed record DiagnosticoPermisos(EstadoPermisos Estado, string Ruta, JsonObject Permisos, string Mensaje)
     {
         public bool EstaDisponible => Estado == EstadoPermisos.Disponible;
@@ -894,5 +996,25 @@ public sealed class ServidorLocalWeb : IDisposable
         public bool ModoOffline => Estado == EstadoPermisos.Inaccesible;
     }
 
-    private sealed record ScriptCliente(string Id, string Nombre, string Tipo, bool EstaBloqueado);
+    private sealed record ResultadoAutorizacionAdmin(CodigoAutorizacionAdmin Codigo, string Mensaje)
+    {
+        public bool Autorizado => Codigo == CodigoAutorizacionAdmin.Permitido;
+
+        public static ResultadoAutorizacionAdmin Permitido()
+        {
+            return new ResultadoAutorizacionAdmin(CodigoAutorizacionAdmin.Permitido, string.Empty);
+        }
+
+        public static ResultadoAutorizacionAdmin FaltaBearer()
+        {
+            return new ResultadoAutorizacionAdmin(CodigoAutorizacionAdmin.FaltaBearer, "Falta Authorization: Bearer.");
+        }
+
+        public static ResultadoAutorizacionAdmin Denegado(string mensaje)
+        {
+            return new ResultadoAutorizacionAdmin(CodigoAutorizacionAdmin.Denegado, mensaje);
+        }
+    }
+
+    private sealed record ScriptCliente(string Id, string Nombre, string Tipo, bool EstaBloqueado, string MotivoBloqueo);
 }

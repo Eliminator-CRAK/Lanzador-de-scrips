@@ -3,5 +3,10 @@
   "_descripcion": "Configuracion predeterminada embebida en el ejecutable publicado.",
   "RutaScripts": "\\\\MAD002MICROPRU\\REPO",
   "RutaPermisos": "\\\\MAD002MICROPRU\\PERMISOS\\permissions.json",
-  "MaximoEjecucionesParalelas": 5
+  "MaximoEjecucionesParalelas": 5,
+  "seguridadScripts": {
+    "certificadosPowerShellPermitidos": [],
+    "hashesBatchPermitidos": [],
+    "permitirExecutionPolicyBypass": false
+  }
 }
