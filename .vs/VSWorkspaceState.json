@@ -1,13 +1,9 @@
 {
   "ExpandedNodes": [
     "",
-    "\\obj\\Debug\\net10.0-windows\\ref",
-    "\\obj\\Debug\\net10.0-windows\\refint",
-    "\\obj\\Release\\net10.0-windows",
-    "\\obj\\Release\\net10.0-windows\\win-x64",
-    "\\obj\\Release\\net10.0-windows\\win-x64\\ref",
-    "\\obj\\Release\\net10.0-windows\\win-x64\\refint"
+    "\\ClienteWeb\\assets",
+    "\\ModelosVista"
   ],
-  "SelectedNode": "\\VentanaPrincipal.xaml.cs",
+  "SelectedNode": "\\ClienteWeb",
   "PreviewInSolutionExplorer": false
 }

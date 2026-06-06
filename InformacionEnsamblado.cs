@@ -2,6 +2,9 @@
 // Descripcion: Configuracion general de ensamblado WPF.
 
 using System.Windows;
+using System.Runtime.CompilerServices;
+
+[assembly:InternalsVisibleTo("LanzadorScripts.Pruebas")]
 
 [assembly:ThemeInfo(
     ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located

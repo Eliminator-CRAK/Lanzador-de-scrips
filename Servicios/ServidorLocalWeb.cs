@@ -17,6 +17,8 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServidorLocalWeb : IDisposable
 {
     private const string NombreCookieSesion = "LanzadorScriptsSesion";
+    private const string CertificadoPowerShellPredeterminado = "6C654649369000DDE0AA70F62645058D9A3437F5";
+    private const string MensajeServidorNoDisponible = "No se puede conectar al servidor.";
 
     private static readonly Lazy<IReadOnlyDictionary<string, string>> IndiceRecursosCliente = new(CrearIndiceRecursosCliente);
 
@@ -36,16 +38,24 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts = new();
     private readonly ServicioAuditoria _servicioAuditoria = new();
+    private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
     private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly string _tokenApiInterno = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private volatile bool _tokenMaestroSesionActiva;
+    private volatile bool _modoDesarrolloFirmas;
 
     private ServidorLocalWeb(int puerto)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
         _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria);
+    }
+
+    private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion)
+        : this(puerto)
+    {
+        _configuracionFija = configuracion;
     }
 
     public Uri UrlBase { get; }
@@ -55,6 +65,15 @@ public sealed class ServidorLocalWeb : IDisposable
     public static ServidorLocalWeb Iniciar()
     {
         var servidor = new ServidorLocalWeb(ReservarPuertoLibre());
+        servidor._escuchador.Start();
+        _ = servidor.EscucharAsync();
+        return servidor;
+    }
+
+    internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion)
+    {
+        // Inicia el servidor con configuracion aislada de pruebas.
+        var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion);
         servidor._escuchador.Start();
         _ = servidor.EscucharAsync();
         return servidor;
@@ -118,7 +137,11 @@ public sealed class ServidorLocalWeb : IDisposable
             if (contexto.Response.OutputStream.CanWrite)
             {
                 await _servicioAuditoria.RegistrarErrorInternoAsync("api.error", ex.GetType().Name);
-                await EscribirJsonAsync(contexto, 500, new { error = "Error interno de la aplicacion." });
+                await EscribirJsonAsync(contexto, 503, new
+                {
+                    error = MensajeServidorNoDisponible,
+                    avisoConexion = MensajeServidorNoDisponible
+                });
             }
         }
         finally
@@ -201,6 +224,12 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
+        if (ruta.Equals("/api/desarrollo-firmas", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProcesarModoDesarrolloFirmasAsync(contexto, metodo);
+            return;
+        }
+
         if (metodo == "GET" && ruta.Equals("/api/ajustes", StringComparison.OrdinalIgnoreCase))
         {
             if (!await RequerirAdministradorAsync(contexto))
@@ -220,8 +249,15 @@ public sealed class ServidorLocalWeb : IDisposable
             }
 
             var cuerpo = await LeerJsonAsync(contexto.Request);
-            GuardarPermisos(cuerpo ?? new JsonObject());
-            await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Ajustes guardados exitosamente." });
+            var resultado = GuardarPermisos(cuerpo ?? new JsonObject());
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                exito = true,
+                mensaje = resultado.PermisosGuardados
+                    ? "Ajustes guardados exitosamente."
+                    : "La configuracion se guardo, pero no se pudo conectar al servidor de permisos.",
+                avisoConexion = resultado.AvisoConexion
+            });
             return;
         }
 
@@ -232,7 +268,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            var configuracion = _servicioConfiguracion.Cargar();
+            var configuracion = CargarConfiguracion();
             await EscribirJsonAsync(contexto, 200, new
             {
                 rutaPermisos = configuracion.RutaPermisos,
@@ -249,7 +285,7 @@ public sealed class ServidorLocalWeb : IDisposable
             }
 
             var cuerpo = await LeerJsonAsync(contexto.Request);
-            var configuracion = _servicioConfiguracion.Cargar();
+            var configuracion = CargarConfiguracion();
             var nuevaRutaPermisos = LeerTexto(cuerpo, "rutaPermisos", configuracion.RutaPermisos).Trim();
             var nuevaRutaScripts = LeerTexto(cuerpo, "carpetaScripts", configuracion.RutaScripts).Trim();
             var validacion = _servicioValidacionScripts.ValidarConfiguracionBasica(nuevaRutaScripts, nuevaRutaPermisos);
@@ -273,8 +309,30 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            var paquete = _servicioPaquetesConfiguracion.Exportar(_servicioConfiguracion.Cargar());
+            var paquete = _servicioPaquetesConfiguracion.Exportar(CargarConfiguracion(), ObtenerPermisos());
             await EscribirJsonAsync(contexto, 200, paquete);
+            return;
+        }
+
+        if (metodo == "GET" && ruta.Equals("/api/subcarpetas-scripts", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!await RequerirAdministradorAsync(contexto))
+            {
+                return;
+            }
+
+            await EscribirJsonAsync(contexto, 200, ObtenerSubcarpetasScripts());
+            return;
+        }
+
+        if (metodo == "GET" && ruta.Equals("/api/hashes-batch-detectados", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!await RequerirAdministradorAsync(contexto))
+            {
+                return;
+            }
+
+            await EscribirJsonAsync(contexto, 200, ObtenerHashesBatchDetectados());
             return;
         }
 
@@ -326,7 +384,7 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         var cuerpo = await LeerJsonAsync(contexto.Request);
         var scriptId = LeerTexto(cuerpo, "scriptId", string.Empty);
-        var configuracion = _servicioConfiguracion.Cargar();
+        var configuracion = CargarConfiguracion();
         var validacion = _servicioValidacionScripts.ValidarScriptParaEjecucion(configuracion.RutaScripts, scriptId);
 
         if (!validacion.EsValido)
@@ -338,7 +396,15 @@ public sealed class ServidorLocalWeb : IDisposable
         }
 
         var script = validacion.Script!;
-        var usuario = ObtenerUsuarioActual();
+        var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+        if (PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
+        {
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos_offline", WindowsIdentity.GetCurrent().Name, script.Id, MensajeServidorNoDisponible);
+            await EscribirJsonAsync(contexto, 403, new { error = MensajeServidorNoDisponible, avisoConexion = MensajeServidorNoDisponible });
+            return;
+        }
+
+        var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
         if (!usuario.EstaAutorizado)
         {
             var motivo = string.IsNullOrWhiteSpace(usuario.MotivoBloqueo)
@@ -349,7 +415,7 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        if (ScriptBloqueado(script.Id, usuario))
+        if (ScriptBloqueado(script.Id, usuario, diagnosticoPermisos))
         {
             var usuarioDenegado = WindowsIdentity.GetCurrent().Name;
             await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos", usuarioDenegado, script.Id, "Acceso denegado para este script.");
@@ -357,7 +423,7 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, ObtenerPermisos());
+        var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, diagnosticoPermisos.Permisos, _modoDesarrolloFirmas);
         if (!diagnosticoSeguridad.Permitido)
         {
             var motivo = string.IsNullOrWhiteSpace(diagnosticoSeguridad.MotivoBloqueo)
@@ -385,6 +451,16 @@ public sealed class ServidorLocalWeb : IDisposable
                 "ExecutionPolicy Bypass habilitado por politica admin.");
         }
 
+        if (_modoDesarrolloFirmas)
+        {
+            await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                "ejecucion.modo_desarrollo_firmas",
+                usuario.NombreUsuario,
+                script.Id,
+                "permitido",
+                "Validacion de firma/hash omitida por modo desarrollo temporal.");
+        }
+
         var ejecucionId = _gestorEjecuciones.Iniciar(
             script,
             configuracion.RutaLogs,
@@ -393,10 +469,43 @@ public sealed class ServidorLocalWeb : IDisposable
         await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
     }
 
+    private async Task ProcesarModoDesarrolloFirmasAsync(HttpListenerContext contexto, string metodo)
+    {
+        if (!await RequerirAdministradorAsync(contexto))
+        {
+            return;
+        }
+
+        if (metodo == "GET")
+        {
+            await EscribirJsonAsync(contexto, 200, new { activo = _modoDesarrolloFirmas });
+            return;
+        }
+
+        if (metodo == "POST")
+        {
+            var cuerpo = await LeerJsonAsync(contexto.Request);
+            var activo = LeerBooleano(cuerpo, "activo", false);
+            _modoDesarrolloFirmas = activo;
+
+            await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                "seguridad.modo_desarrollo_firmas",
+                WindowsIdentity.GetCurrent().Name,
+                null,
+                activo ? "activado" : "desactivado",
+                "Modo desarrollo de firmas cambiado para la sesion local.");
+
+            await EscribirJsonAsync(contexto, 200, new { activo = _modoDesarrolloFirmas });
+            return;
+        }
+
+        await EscribirJsonAsync(contexto, 405, new { error = "Metodo no permitido." });
+    }
+
     private async Task ProcesarDiagnosticoEjecucionAsync(HttpListenerContext contexto)
     {
         var scriptId = contexto.Request.QueryString["scriptId"] ?? string.Empty;
-        var configuracion = _servicioConfiguracion.Cargar();
+            var configuracion = CargarConfiguracion();
         var validacion = _servicioValidacionScripts.ValidarScriptParaEjecucion(configuracion.RutaScripts, scriptId);
         if (!validacion.EsValido)
         {
@@ -406,12 +515,13 @@ public sealed class ServidorLocalWeb : IDisposable
                 permitido = false,
                 motivoBloqueo = validacion.Mensaje,
                 powerShellDisponible = new ServicioFirmaAuthenticode().PowerShellDisponible(),
-                executionPolicy = new ServicioFirmaAuthenticode().ObtenerExecutionPolicy()
+                executionPolicy = new ServicioFirmaAuthenticode().ObtenerExecutionPolicy(),
+                modoDesarrolloFirmas = _modoDesarrolloFirmas
             });
             return;
         }
 
-        await EscribirJsonAsync(contexto, 200, _servicioSeguridadScripts.Diagnosticar(validacion.Script!, ObtenerPermisos()));
+        await EscribirJsonAsync(contexto, 200, _servicioSeguridadScripts.Diagnosticar(validacion.Script!, ObtenerPermisos(), _modoDesarrolloFirmas));
     }
 
     private async Task EntregarClienteAsync(HttpListenerContext contexto, string ruta)
@@ -479,7 +589,7 @@ public sealed class ServidorLocalWeb : IDisposable
         var identidad = WindowsIdentity.GetCurrent().Name;
         if (_tokenMaestroSesionActiva)
         {
-            return new UsuarioCliente(identidad, "admin", 50, true);
+            return new UsuarioCliente(identidad, "admin", 50, true, string.Empty, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var permisos = diagnosticoPermisos.Permisos;
@@ -496,12 +606,12 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (diagnosticoPermisos.Estado == EstadoPermisos.Inaccesible)
         {
-            return new UsuarioCliente(identidad, "nominal", 1, false, diagnosticoPermisos.Mensaje);
+            return new UsuarioCliente(identidad, "nominal", 1, false, diagnosticoPermisos.Mensaje, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         if (diagnosticoPermisos.Estado == EstadoPermisos.Disponible && usuario is null)
         {
-            return new UsuarioCliente(identidad, "nominal", 1, false, "Usuario no incluido en el archivo de permisos.");
+            return new UsuarioCliente(identidad, "nominal", 1, false, "Usuario no incluido en el archivo de permisos.", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var rol = usuario is null
@@ -510,12 +620,17 @@ public sealed class ServidorLocalWeb : IDisposable
         var maximo = usuario is null
             ? LeerEntero(permisos, "maxScriptsSimultaneos", 5)
             : LeerEntero(usuario, "maxScriptsSimultaneos", 5);
+        var carpetasPermitidas = usuario is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : LeerCarpetasPermitidas(usuario["carpetasPermitidas"] as JsonArray);
 
         return new UsuarioCliente(
             usuario is null ? identidad : LeerTexto(usuario, "nombreUsuario", identidad),
             NormalizarRol(rol),
             Math.Clamp(maximo, 1, 50),
-            true);
+            true,
+            string.Empty,
+            carpetasPermitidas);
     }
 
     private object CrearUsuarioClienteSesion(UsuarioCliente usuario, DiagnosticoPermisos diagnosticoPermisos, TokenAdmin? tokenAdmin)
@@ -536,6 +651,8 @@ public sealed class ServidorLocalWeb : IDisposable
                 PermiteDesbloqueoEmergencia = false,
                 TokenMaestroActivo = true,
                 TokenAdmin = tokenAdmin?.Valor,
+                CarpetasPermitidas = Array.Empty<string>(),
+                ModoDesarrolloFirmas = _modoDesarrolloFirmas,
                 ModoOffline = diagnosticoPermisos.ModoOffline,
                 AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
             };
@@ -554,6 +671,8 @@ public sealed class ServidorLocalWeb : IDisposable
             PermiteDesbloqueoEmergencia = diagnosticoPermisos.PermiteDesbloqueoEmergencia,
             TokenMaestroActivo = false,
             TokenAdmin = tokenAdmin?.Valor,
+            CarpetasPermitidas = usuario.CarpetasPermitidas ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            ModoDesarrolloFirmas = _modoDesarrolloFirmas,
             ModoOffline = diagnosticoPermisos.ModoOffline,
             AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
         };
@@ -632,7 +751,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private DiagnosticoPermisos ObtenerDiagnosticoPermisos()
     {
-        var ruta = ObtenerRutaPermisosCompleta(_servicioConfiguracion.Cargar());
+        var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
 
         if (!File.Exists(ruta))
         {
@@ -642,7 +761,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     EstadoPermisos.Inaccesible,
                     ruta,
                     CrearPermisosPorDefecto(),
-                    "No se puede establecer conexion con el servidor de permisos.");
+                    MensajeServidorNoDisponible);
             }
 
             return new DiagnosticoPermisos(
@@ -667,7 +786,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     EstadoPermisos.Inaccesible,
                     ruta,
                     CrearPermisosPorDefecto(),
-                    "No se pudo interpretar el archivo de permisos.");
+                    MensajeServidorNoDisponible);
             }
 
             return new DiagnosticoPermisos(EstadoPermisos.Disponible, ruta, permisos, string.Empty);
@@ -678,26 +797,33 @@ public sealed class ServidorLocalWeb : IDisposable
                 EstadoPermisos.Inaccesible,
                 ruta,
                 CrearPermisosPorDefecto(),
-                "No se pudo leer el archivo de permisos.");
+                MensajeServidorNoDisponible);
         }
     }
 
-    private static bool RutaPermisosInaccesible(string ruta)
+    internal static bool RutaPermisosInaccesible(string ruta)
     {
-        // Solo marca offline rutas UNC cuyo recurso compartido no responde.
-        if (!ruta.StartsWith(@"\\", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var raiz = Path.GetPathRoot(ruta);
-        return string.IsNullOrWhiteSpace(raiz) || !Directory.Exists(raiz);
+        // Marca offline rutas cuya carpeta de permisos no responde.
+        var carpeta = Path.GetDirectoryName(ruta);
+        return string.IsNullOrWhiteSpace(carpeta) || !Directory.Exists(carpeta);
     }
 
-    private void GuardarPermisos(JsonNode permisos)
+    private bool PermisosInaccesiblesSinDesbloqueo(DiagnosticoPermisos diagnosticoPermisos)
+    {
+        // Bloquea ejecucion si no se puede validar permisos.
+        return diagnosticoPermisos.Estado == EstadoPermisos.Inaccesible && !_tokenMaestroSesionActiva;
+    }
+
+    private ResultadoGuardarPermisos GuardarPermisos(JsonNode permisos)
     {
         var permisosNormalizados = NormalizarPermisos(permisos);
-        var ruta = ObtenerRutaPermisosCompleta(_servicioConfiguracion.Cargar());
+        var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
+        if (RutaPermisosInaccesible(ruta))
+        {
+            ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
+            return new ResultadoGuardarPermisos(false, MensajeServidorNoDisponible);
+        }
+
         var carpeta = Path.GetDirectoryName(ruta);
         if (!string.IsNullOrWhiteSpace(carpeta))
         {
@@ -708,6 +834,7 @@ public sealed class ServidorLocalWeb : IDisposable
         var cifrado = _servicioCifradoAplicacion.CifrarTexto("permisos", json);
         File.WriteAllText(ruta, cifrado, Encoding.UTF8);
         ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
+        return new ResultadoGuardarPermisos(true, string.Empty);
     }
 
     private JsonObject NormalizarPermisos(JsonNode permisos)
@@ -767,8 +894,30 @@ public sealed class ServidorLocalWeb : IDisposable
                 ["id"] = LeerTexto(item, "id", Guid.NewGuid().ToString("N")),
                 ["nombreUsuario"] = nombre,
                 ["rol"] = NormalizarRol(LeerTexto(item, "rol", "nominal")),
-                ["maxScriptsSimultaneos"] = Math.Clamp(LeerEntero(item, "maxScriptsSimultaneos", 5), 1, 50)
+                ["maxScriptsSimultaneos"] = Math.Clamp(LeerEntero(item, "maxScriptsSimultaneos", 5), 1, 50),
+                ["carpetasPermitidas"] = NormalizarCarpetasPermitidas(item["carpetasPermitidas"] as JsonArray)
             });
+        }
+
+        return resultado;
+    }
+
+    private static JsonArray NormalizarCarpetasPermitidas(JsonArray? carpetas)
+    {
+        var resultado = new JsonArray();
+        if (carpetas is null)
+        {
+            return resultado;
+        }
+
+        foreach (var item in carpetas)
+        {
+            var carpeta = (item?.GetValue<string>() ?? string.Empty).Replace('\\', '/').Trim().Trim('/');
+            if (EsIdentificadorCarpetaSeguro(carpeta)
+                && !resultado.Any(valor => string.Equals(valor?.GetValue<string>(), carpeta, StringComparison.OrdinalIgnoreCase)))
+            {
+                resultado.Add(carpeta);
+            }
         }
 
         return resultado;
@@ -779,14 +928,27 @@ public sealed class ServidorLocalWeb : IDisposable
         var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
         var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
         var permisos = diagnosticoPermisos.Permisos;
-        return ObtenerScriptsInternos()
+        var scripts = ObtenerScriptsInternos();
+        if (PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
+        {
+            return scripts
+                .Select(script => new ScriptCliente(script.Id, script.Nombre, script.Tipo, true, MensajeServidorNoDisponible))
+                .ToList();
+        }
+
+        if (!_modoDesarrolloFirmas)
+        {
+            _servicioSeguridadScripts.PrecargarFirmas(scripts);
+        }
+
+        return scripts
             .Select(script =>
             {
                 var bloqueadoPorPermisos = ScriptBloqueado(script.Id, usuario, diagnosticoPermisos);
-                var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, permisos);
+                var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, permisos, _modoDesarrolloFirmas);
                 var bloqueado = bloqueadoPorPermisos || !diagnosticoSeguridad.Permitido;
                 var motivo = bloqueadoPorPermisos
-                    ? (usuario.EstaAutorizado ? "Acceso denegado para este script." : usuario.MotivoBloqueo)
+                    ? ObtenerMotivoBloqueoScript(script.Id, usuario)
                     : diagnosticoSeguridad.MotivoBloqueo;
 
                 return new ScriptCliente(
@@ -801,12 +963,37 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private IReadOnlyList<ScriptInterno> ObtenerScriptsInternos()
     {
-        var configuracion = _servicioConfiguracion.Cargar();
+        var configuracion = CargarConfiguracion();
         return _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts);
+    }
+
+    private IReadOnlyList<CarpetaScriptCliente> ObtenerSubcarpetasScripts()
+    {
+        return ObtenerScriptsInternos()
+            .Select(script => ObtenerCarpetaScript(script.Id))
+            .Where(carpeta => !string.IsNullOrWhiteSpace(carpeta))
+            .GroupBy(carpeta => carpeta, StringComparer.OrdinalIgnoreCase)
+            .Select(grupo => new CarpetaScriptCliente(grupo.Key, grupo.Key, grupo.Count()))
+            .OrderBy(carpeta => carpeta.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private IReadOnlyList<HashBatchCliente> ObtenerHashesBatchDetectados()
+    {
+        return ObtenerScriptsInternos()
+            .Where(script => script.Tipo == "batch")
+            .Select(script => new HashBatchCliente(script.Id, ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta)))
+            .OrderBy(script => script.ScriptId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private bool ScriptBloqueado(string scriptId, UsuarioCliente usuario, DiagnosticoPermisos? diagnosticoPermisos = null)
     {
+        if (diagnosticoPermisos is not null && PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
+        {
+            return true;
+        }
+
         if (!usuario.EstaAutorizado)
         {
             return true;
@@ -817,24 +1004,43 @@ public sealed class ServidorLocalWeb : IDisposable
             return false;
         }
 
-        var permisos = (diagnosticoPermisos ?? ObtenerDiagnosticoPermisos()).Permisos;
-        var scriptsAdmin = permisos["scriptsAdmin"] as JsonArray;
-        if (scriptsAdmin is null)
+        var carpeta = ObtenerCarpetaScript(scriptId);
+        if (string.IsNullOrWhiteSpace(carpeta))
         {
             return false;
         }
 
-        return scriptsAdmin
-            .Select(item => item?.GetValue<string>() ?? string.Empty)
-            .Any(item => CoincideScript(item, scriptId));
+        return !UsuarioTienePermisoCarpeta(usuario, carpeta);
     }
 
-    private static bool CoincideScript(string permiso, string scriptId)
+    private static string ObtenerMotivoBloqueoScript(string scriptId, UsuarioCliente usuario)
     {
-        var permisoNormalizado = permiso.Replace('\\', '/').TrimStart('.', '/');
-        var scriptNormalizado = scriptId.Replace('\\', '/').TrimStart('.', '/');
-        return string.Equals(permisoNormalizado, scriptNormalizado, StringComparison.OrdinalIgnoreCase)
-            || permisoNormalizado.EndsWith("/" + scriptNormalizado, StringComparison.OrdinalIgnoreCase);
+        if (!usuario.EstaAutorizado)
+        {
+            return usuario.MotivoBloqueo;
+        }
+
+        return string.IsNullOrWhiteSpace(ObtenerCarpetaScript(scriptId))
+            ? "Acceso denegado para este script."
+            : "El script esta en una subcarpeta y requiere permiso adicional.";
+    }
+
+    private static bool UsuarioTienePermisoCarpeta(UsuarioCliente usuario, string carpetaScript)
+    {
+        var permisos = usuario.CarpetasPermitidas ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return permisos.Any(permiso =>
+        {
+            var normalizado = permiso.Replace('\\', '/').Trim().Trim('/');
+            return string.Equals(carpetaScript, normalizado, StringComparison.OrdinalIgnoreCase)
+                || carpetaScript.StartsWith(normalizado + "/", StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    private static string ObtenerCarpetaScript(string scriptId)
+    {
+        var normalizado = scriptId.Replace('\\', '/').Trim('/');
+        var indice = normalizado.LastIndexOf('/');
+        return indice <= 0 ? string.Empty : normalizado[..indice];
     }
 
     private static JsonObject CrearPermisosPorDefecto()
@@ -844,7 +1050,12 @@ public sealed class ServidorLocalWeb : IDisposable
             ["inicioAutomaticoWindows"] = false,
             ["scriptsAdmin"] = new JsonArray(),
             ["usuarios"] = new JsonArray(),
-            ["seguridadScripts"] = ServicioSeguridadScripts.NormalizarPolitica(null),
+            ["seguridadScripts"] = new JsonObject
+            {
+                ["certificadosPowerShellPermitidos"] = new JsonArray { CertificadoPowerShellPredeterminado },
+                ["hashesBatchPermitidos"] = new JsonArray(),
+                ["permitirExecutionPolicyBypass"] = false
+            },
             ["rolUsuarioActual"] = "nominal",
             ["maxScriptsSimultaneos"] = 5
         };
@@ -853,6 +1064,12 @@ public sealed class ServidorLocalWeb : IDisposable
     private string ObtenerRutaPermisosCompleta(ConfiguracionLanzador configuracion)
     {
         return _servicioValidacionScripts.ResolverRutaPermisos(configuracion.RutaScripts, configuracion.RutaPermisos);
+    }
+
+    private ConfiguracionLanzador CargarConfiguracion()
+    {
+        // Devuelve configuracion fija solo en pruebas automatizadas.
+        return _configuracionFija ?? _servicioConfiguracion.Cargar();
     }
 
     private bool SesionApiValida(HttpListenerRequest peticion, string ruta)
@@ -908,6 +1125,30 @@ public sealed class ServidorLocalWeb : IDisposable
         return extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool EsIdentificadorCarpetaSeguro(string carpeta)
+    {
+        if (string.IsNullOrWhiteSpace(carpeta)
+            || Path.IsPathRooted(carpeta)
+            || Path.IsPathFullyQualified(carpeta)
+            || ServicioSeguridadScripts.ContieneMetacaracteresPeligrosos(carpeta))
+        {
+            return false;
+        }
+
+        var segmentos = carpeta.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        return segmentos.Length > 0
+            && segmentos.All(segmento => segmento != "." && segmento != "..")
+            && string.IsNullOrWhiteSpace(Path.GetExtension(carpeta));
+    }
+
+    private static HashSet<string> LeerCarpetasPermitidas(JsonArray? carpetas)
+    {
+        return NormalizarCarpetasPermitidas(carpetas)
+            .Select(item => item?.GetValue<string>() ?? string.Empty)
+            .Where(valor => !string.IsNullOrWhiteSpace(valor))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static string NormalizarRol(string rol)
@@ -1016,5 +1257,11 @@ public sealed class ServidorLocalWeb : IDisposable
         }
     }
 
+    private sealed record ResultadoGuardarPermisos(bool PermisosGuardados, string AvisoConexion);
+
     private sealed record ScriptCliente(string Id, string Nombre, string Tipo, bool EstaBloqueado, string MotivoBloqueo);
+
+    private sealed record CarpetaScriptCliente(string Id, string Nombre, int TotalScripts);
+
+    private sealed record HashBatchCliente(string ScriptId, string Sha256);
 }

@@ -3,7 +3,13 @@
 
 namespace LanzadorScripts.Servicios;
 
-public sealed record UsuarioCliente(string NombreUsuario, string Rol, int MaxScriptsSimultaneos, bool EstaAutorizado, string MotivoBloqueo = "");
+public sealed record UsuarioCliente(
+    string NombreUsuario,
+    string Rol,
+    int MaxScriptsSimultaneos,
+    bool EstaAutorizado,
+    string MotivoBloqueo = "",
+    IReadOnlySet<string>? CarpetasPermitidas = null);
 
 public sealed record ScriptInterno(string Id, string Nombre, string Tipo, string RutaCompleta);
 

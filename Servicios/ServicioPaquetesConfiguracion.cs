@@ -5,6 +5,7 @@ using System.IO;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LanzadorScripts.Modelos;
 
 namespace LanzadorScripts.Servicios;
@@ -22,14 +23,15 @@ public sealed class ServicioPaquetesConfiguracion
 
     private readonly ServicioCifradoAplicacion _servicioCifrado = new();
 
-    public PaqueteExportado Exportar(ConfiguracionLanzador configuracion)
+    public PaqueteExportado Exportar(ConfiguracionLanzador configuracion, JsonObject permisos)
     {
         var payload = new PayloadConfiguracionExportada(
             configuracion.RutaScripts,
             configuracion.RutaPermisos,
             DateTimeOffset.UtcNow,
             Environment.MachineName,
-            WindowsIdentity.GetCurrent().Name);
+            WindowsIdentity.GetCurrent().Name,
+            permisos);
         var json = JsonSerializer.Serialize(payload, OpcionesJson);
         var cifrado = _servicioCifrado.CifrarTexto(TipoCifrado, json);
         var nombre = $"LanzadorScripts_{DateTime.Now:yyyyMMdd_HHmmss}{ExtensionPaquete}";
@@ -37,7 +39,7 @@ public sealed class ServicioPaquetesConfiguracion
         return new PaqueteExportado(nombre, Convert.ToBase64String(Encoding.UTF8.GetBytes(cifrado)));
     }
 
-    public ConfiguracionLanzador Importar(string rutaArchivo, ConfiguracionLanzador configuracionActual)
+    public ResultadoImportacionConfiguracion Importar(string rutaArchivo, ConfiguracionLanzador configuracionActual)
     {
         if (!File.Exists(rutaArchivo))
         {
@@ -56,7 +58,21 @@ public sealed class ServicioPaquetesConfiguracion
         configuracionActual.RutaScripts = payload.RutaScripts;
         configuracionActual.RutaPermisos = payload.RutaPermisos;
         configuracionActual.Normalizar();
-        return configuracionActual;
+        return new ResultadoImportacionConfiguracion(configuracionActual, payload.Permisos);
+    }
+
+    public void GuardarPermisosImportados(ConfiguracionLanzador configuracion, JsonObject permisos)
+    {
+        var rutaPermisos = new ServicioValidacionScripts().ResolverRutaPermisos(configuracion.RutaScripts, configuracion.RutaPermisos);
+        var carpeta = Path.GetDirectoryName(rutaPermisos);
+        if (!string.IsNullOrWhiteSpace(carpeta))
+        {
+            Directory.CreateDirectory(carpeta);
+        }
+
+        var json = permisos.ToJsonString(OpcionesJson);
+        var cifrado = _servicioCifrado.CifrarTexto("permisos", json);
+        File.WriteAllText(rutaPermisos, cifrado, Encoding.UTF8);
     }
 
     private sealed record PayloadConfiguracionExportada(
@@ -64,7 +80,10 @@ public sealed class ServicioPaquetesConfiguracion
         string RutaPermisos,
         DateTimeOffset Creado,
         string EquipoEmisor,
-        string UsuarioEmisor);
+        string UsuarioEmisor,
+        JsonObject? Permisos = null);
 }
 
 public sealed record PaqueteExportado(string NombreArchivo, string ContenidoBase64);
+
+public sealed record ResultadoImportacionConfiguracion(ConfiguracionLanzador Configuracion, JsonObject? Permisos);
