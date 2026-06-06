@@ -11,9 +11,33 @@ public sealed class ServicioSeguridadScripts
 {
     private static readonly char[] MetacaracteresPeligrosos = ['&', '|', '<', '>', '^', '%', '!'];
 
+    private readonly object _bloqueoCache = new();
+    private readonly Dictionary<string, EntradaFirmaCache> _cacheFirmas = new(StringComparer.OrdinalIgnoreCase);
     private readonly ServicioFirmaAuthenticode _servicioFirma = new();
+    private bool? _powerShellDisponible;
+    private string? _executionPolicy;
 
-    public DiagnosticoEjecucionScript Diagnosticar(ScriptInterno script, JsonObject permisos)
+    public void PrecargarFirmas(IEnumerable<ScriptInterno> scripts)
+    {
+        var pendientes = scripts
+            .Where(script => script.Tipo == "powershell")
+            .Select(script => script.RutaCompleta)
+            .Where(ruta => !TryGetFirmaCacheada(ruta, out _))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (pendientes.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var firma in _servicioFirma.ObtenerFirmas(pendientes))
+        {
+            GuardarFirmaCacheada(firma.Key, firma.Value);
+        }
+    }
+
+    public DiagnosticoEjecucionScript Diagnosticar(ScriptInterno script, JsonObject permisos, bool modoDesarrolloFirmas = false)
     {
         var politica = LeerPolitica(permisos);
         var baseDiagnostico = new DiagnosticoEjecucionScript(
@@ -22,19 +46,25 @@ public sealed class ServicioSeguridadScripts
             script.Tipo,
             false,
             string.Empty,
-            _servicioFirma.PowerShellDisponible(),
-            _servicioFirma.ObtenerExecutionPolicy(),
+            PowerShellDisponibleCacheado(),
+            ObtenerExecutionPolicyCacheada(),
             string.Empty,
             string.Empty,
             string.Empty,
             string.Empty,
-            politica.PermitirExecutionPolicyBypass);
+            politica.PermitirExecutionPolicyBypass,
+            modoDesarrolloFirmas);
 
         if (ContieneMetacaracteresPeligrosos(script.Id)
             || ContieneMetacaracteresPeligrosos(script.Nombre)
             || ContieneMetacaracteresPeligrosos(Path.GetRelativePath(Path.GetPathRoot(script.RutaCompleta) ?? string.Empty, script.RutaCompleta)))
         {
             return baseDiagnostico with { MotivoBloqueo = "El nombre o la ruta del script contiene metacaracteres peligrosos." };
+        }
+
+        if (modoDesarrolloFirmas)
+        {
+            return DiagnosticarModoDesarrollo(script, baseDiagnostico);
         }
 
         if (script.Tipo == "powershell")
@@ -132,7 +162,7 @@ public sealed class ServicioSeguridadScripts
             return diagnostico with { MotivoBloqueo = "PowerShell 5.1 no esta disponible." };
         }
 
-        var firma = _servicioFirma.ObtenerFirma(script.RutaCompleta);
+        var firma = ObtenerFirmaCacheada(script.RutaCompleta);
         diagnostico = diagnostico with
         {
             FirmaEstado = firma.Estado,
@@ -161,6 +191,27 @@ public sealed class ServicioSeguridadScripts
         }
 
         return diagnostico with { Permitido = true };
+    }
+
+    private static DiagnosticoEjecucionScript DiagnosticarModoDesarrollo(
+        ScriptInterno script,
+        DiagnosticoEjecucionScript diagnostico)
+    {
+        if (script.Tipo == "powershell" && !diagnostico.PowerShellDisponible)
+        {
+            return diagnostico with { MotivoBloqueo = "PowerShell 5.1 no esta disponible." };
+        }
+
+        if (script.Tipo != "powershell")
+        {
+            diagnostico = diagnostico with { Sha256 = CalcularSha256(script.RutaCompleta) };
+        }
+
+        return diagnostico with
+        {
+            Permitido = true,
+            MotivoBloqueo = "Modo desarrollo activo: validacion de firma/hash omitida."
+        };
     }
 
     private static DiagnosticoEjecucionScript DiagnosticarBatch(
@@ -206,6 +257,79 @@ public sealed class ServicioSeguridadScripts
     {
         return string.Concat(hash.Where(char.IsLetterOrDigit)).ToUpperInvariant();
     }
+
+    private bool PowerShellDisponibleCacheado()
+    {
+        if (_powerShellDisponible.HasValue)
+        {
+            return _powerShellDisponible.Value;
+        }
+
+        _powerShellDisponible = _servicioFirma.PowerShellDisponible();
+        return _powerShellDisponible.Value;
+    }
+
+    private string ObtenerExecutionPolicyCacheada()
+    {
+        if (!string.IsNullOrWhiteSpace(_executionPolicy))
+        {
+            return _executionPolicy;
+        }
+
+        _executionPolicy = _servicioFirma.ObtenerExecutionPolicy();
+        return _executionPolicy;
+    }
+
+    private ResultadoFirmaAuthenticode ObtenerFirmaCacheada(string ruta)
+    {
+        if (TryGetFirmaCacheada(ruta, out var firma))
+        {
+            return firma;
+        }
+
+        firma = _servicioFirma.ObtenerFirma(ruta);
+        GuardarFirmaCacheada(ruta, firma);
+        return firma;
+    }
+
+    private bool TryGetFirmaCacheada(string ruta, out ResultadoFirmaAuthenticode firma)
+    {
+        firma = ResultadoFirmaAuthenticode.Fallo("Firma no cacheada.");
+        var info = new FileInfo(ruta);
+        if (!info.Exists)
+        {
+            return false;
+        }
+
+        lock (_bloqueoCache)
+        {
+            if (_cacheFirmas.TryGetValue(ruta, out var entrada)
+                && entrada.Longitud == info.Length
+                && entrada.UltimaEscrituraUtc == info.LastWriteTimeUtc)
+            {
+                firma = entrada.Firma;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void GuardarFirmaCacheada(string ruta, ResultadoFirmaAuthenticode firma)
+    {
+        var info = new FileInfo(ruta);
+        if (!info.Exists)
+        {
+            return;
+        }
+
+        lock (_bloqueoCache)
+        {
+            _cacheFirmas[ruta] = new EntradaFirmaCache(info.Length, info.LastWriteTimeUtc, firma);
+        }
+    }
+
+    private sealed record EntradaFirmaCache(long Longitud, DateTime UltimaEscrituraUtc, ResultadoFirmaAuthenticode Firma);
 }
 
 public sealed record PoliticaSeguridadScripts(
@@ -225,4 +349,5 @@ public sealed record DiagnosticoEjecucionScript(
     string FirmaThumbprint,
     string FirmaSubject,
     string Sha256,
-    bool ExecutionPolicyBypassPermitido);
+    bool ExecutionPolicyBypassPermitido,
+    bool ModoDesarrolloFirmas = false);

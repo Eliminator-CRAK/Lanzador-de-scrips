@@ -61,6 +61,8 @@ public partial class VentanaPrincipal : Window
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(_servidor.TokenApiInterno));
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelDiagnosticoEjecucion());
+            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerMejorasInterfazScripts());
+            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelPermisosSubcarpetas());
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
             VistaCliente.CoreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
             VistaCliente.Source = _servidor.UrlBase;
@@ -191,8 +193,13 @@ public partial class VentanaPrincipal : Window
         try
         {
             var configuracion = _servicioConfiguracion.Cargar();
-            var actualizada = _servicioPaquetesConfiguracion.Importar(rutaArchivo, configuracion);
-            _servicioConfiguracion.Guardar(actualizada);
+            var importacion = _servicioPaquetesConfiguracion.Importar(rutaArchivo, configuracion);
+            _servicioConfiguracion.Guardar(importacion.Configuracion);
+            if (importacion.Permisos is not null)
+            {
+                _servicioPaquetesConfiguracion.GuardarPermisosImportados(importacion.Configuracion, importacion.Permisos);
+            }
+
             VistaCliente.CoreWebView2?.Reload();
             MessageBox.Show(
                 "Configuracion importada correctamente para este usuario.",
@@ -317,23 +324,17 @@ public partial class VentanaPrincipal : Window
 
     private static string ObtenerPanelDiagnosticoEjecucion()
     {
-        // Añade un panel flotante para consultar diagnostico de ejecucion.
+        // Registra un panel oculto para consultar diagnostico de ejecucion.
         return """
             (() => {
                 window.addEventListener('DOMContentLoaded', () => {
-                    if (document.getElementById('ls-diagnostico-boton')) {
+                    if (document.getElementById('ls-diagnostico-panel')) {
                         return;
                     }
 
-                    const boton = document.createElement('button');
-                    boton.id = 'ls-diagnostico-boton';
-                    boton.textContent = 'Diagnóstico';
-                    boton.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:8px 12px;font:12px Segoe UI,Arial,sans-serif;box-shadow:0 10px 25px rgba(0,0,0,.35);';
-                    document.body.appendChild(boton);
-
                     const panel = document.createElement('div');
                     panel.id = 'ls-diagnostico-panel';
-                    panel.style.cssText = 'display:none;position:fixed;right:18px;bottom:58px;width:min(560px,calc(100vw - 36px));max-height:70vh;overflow:auto;z-index:2147483647;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:14px;font:12px Segoe UI,Arial,sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.45);';
+                    panel.style.cssText = 'display:none;position:fixed;right:18px;bottom:18px;width:min(560px,calc(100vw - 36px));max-height:70vh;overflow:auto;z-index:2147483647;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:14px;font:12px Segoe UI,Arial,sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.45);';
                     document.body.appendChild(panel);
 
                     async function cargar() {
@@ -368,7 +369,7 @@ public partial class VentanaPrincipal : Window
                         await consultar();
                     }
 
-                    boton.addEventListener('click', async () => {
+                    async function alternarDiagnostico() {
                         panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
                         if (panel.style.display === 'block') {
                             try {
@@ -377,8 +378,565 @@ public partial class VentanaPrincipal : Window
                                 panel.innerHTML = '<strong>Diagnóstico de ejecución</strong><pre style="white-space:pre-wrap">No se pudo cargar el diagnóstico.</pre>';
                             }
                         }
+                    }
+
+                    window.addEventListener('keydown', async (evento) => {
+                        if (evento.ctrlKey && evento.shiftKey && !evento.altKey && evento.key.toLowerCase() === 'm') {
+                            evento.preventDefault();
+                            await alternarDiagnostico();
+                        }
                     });
                 });
+            })();
+            """;
+    }
+
+    private static string ObtenerMejorasInterfazScripts()
+    {
+        // Anade refresco rapido y ajustes de firmas sin guardar estado de desarrollo.
+        return """
+            (() => {
+                const idPanelFirmas = 'ls-ajustes-firmas';
+                const idBordeDesarrollo = 'ls-borde-modo-desarrollo';
+                let wrapperAjustesActivo = false;
+
+                function esApiAjustes(url, opciones) {
+                    const metodo = (opciones && opciones.method ? opciones.method : 'GET').toUpperCase();
+                    if (metodo !== 'POST') {
+                        return false;
+                    }
+
+                    try {
+                        const final = new URL(typeof url === 'string' ? url : url.url, window.location.href);
+                        return final.origin === window.location.origin && final.pathname === '/api/ajustes';
+                    } catch {
+                        return false;
+                    }
+                }
+
+                function normalizarLista(texto) {
+                    return String(texto || '')
+                        .split(/[\n,;]+/)
+                        .map(valor => valor.replace(/\s+/g, '').toUpperCase())
+                        .filter(Boolean);
+                }
+
+                function normalizarSha256(texto) {
+                    return String(texto || '').replace(/[^a-fA-F0-9]/g, '').toUpperCase();
+                }
+
+                function leerHashes(texto) {
+                    return String(texto || '')
+                        .split(/\r?\n/)
+                        .map(linea => linea.trim())
+                        .filter(Boolean)
+                        .map(linea => {
+                            const separador = linea.includes('|') ? '|' : linea.includes('=') ? '=' : ';';
+                            const partes = linea.split(separador);
+                            return {
+                                scriptId: (partes[0] || '').trim().replace(/\\/g, '/'),
+                                sha256: normalizarSha256(partes.slice(1).join(separador))
+                            };
+                        })
+                        .filter(item => item.scriptId && item.sha256.length === 64);
+                }
+
+                function obtenerPoliticaDesdePanel() {
+                    const panel = document.getElementById(idPanelFirmas);
+                    if (!panel) {
+                        return null;
+                    }
+
+                    return {
+                        certificadosPowerShellPermitidos: normalizarLista(panel.querySelector('#ls-certificados-ps')?.value || ''),
+                        hashesBatchPermitidos: leerHashes(panel.querySelector('#ls-hashes-batch')?.value || ''),
+                        permitirExecutionPolicyBypass: !!panel.querySelector('#ls-permitir-bypass')?.checked
+                    };
+                }
+
+                function instalarWrapperAjustes() {
+                    if (wrapperAjustesActivo) {
+                        return;
+                    }
+
+                    wrapperAjustesActivo = true;
+                    const fetchAnterior = window.fetch.bind(window);
+                    window.fetch = async (entrada, opciones = {}) => {
+                        if (esApiAjustes(entrada, opciones)) {
+                            const politica = obtenerPoliticaDesdePanel();
+                            if (politica && typeof opciones.body === 'string') {
+                                try {
+                                    const cuerpo = JSON.parse(opciones.body);
+                                    cuerpo.seguridadScripts = politica;
+                                    opciones = { ...opciones, body: JSON.stringify(cuerpo) };
+                                } catch {
+                                }
+                            }
+                        }
+
+                        return fetchAnterior(entrada, opciones);
+                    };
+                }
+
+                function aplicarBordeDesarrollo(activo) {
+                    let borde = document.getElementById(idBordeDesarrollo);
+                    if (!activo) {
+                        borde?.remove();
+                        document.documentElement.classList.remove('ls-modo-desarrollo-activo');
+                        return;
+                    }
+
+                    document.documentElement.classList.add('ls-modo-desarrollo-activo');
+                    if (!borde) {
+                        borde = document.createElement('div');
+                        borde.id = idBordeDesarrollo;
+                        borde.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646;border:3px solid #ef4444;box-shadow:inset 0 0 0 2px rgba(239,68,68,.45),0 0 28px rgba(239,68,68,.65);';
+                        document.body.appendChild(borde);
+                    }
+                }
+
+                async function apiJson(url, opciones) {
+                    const respuesta = await fetch(url, opciones);
+                    const datos = await respuesta.json().catch(() => ({}));
+                    if (!respuesta.ok) {
+                        throw new Error(datos.error || 'Operacion no disponible.');
+                    }
+
+                    return datos;
+                }
+
+                async function sincronizarModoDesarrollo() {
+                    try {
+                        const datos = await apiJson('/api/desarrollo-firmas');
+                        aplicarBordeDesarrollo(!!datos.activo);
+                        const toggle = document.getElementById('ls-modo-desarrollo-firmas');
+                        if (toggle) {
+                            toggle.checked = !!datos.activo;
+                        }
+                    } catch {
+                    }
+                }
+
+                function formatearHashes(hashes) {
+                    return (Array.isArray(hashes) ? hashes : [])
+                        .map(item => `${item.scriptId || ''} | ${item.sha256 || ''}`)
+                        .join('\n');
+                }
+
+                async function cargarHashesBatchDetectados(panel) {
+                    const estado = panel.querySelector('#ls-hashes-batch-estado');
+                    const textarea = panel.querySelector('#ls-hashes-batch');
+                    estado.textContent = 'Buscando BAT/CMD...';
+
+                    try {
+                        const hashes = await apiJson('/api/hashes-batch-detectados');
+                        if (!Array.isArray(hashes) || hashes.length === 0) {
+                            estado.textContent = 'No hay .bat/.cmd detectados en la carpeta de scripts actual.';
+                            return;
+                        }
+
+                        textarea.value = formatearHashes(hashes);
+                        estado.textContent = 'Hashes BAT/CMD detectados cargados. Guarda para aplicarlos.';
+                    } catch (error) {
+                        estado.textContent = error.message || 'No se pudieron detectar hashes BAT/CMD.';
+                    }
+                }
+
+                async function cargarPanelFirmas(panel) {
+                    const estado = panel.querySelector('#ls-firmas-estado');
+                    estado.textContent = 'Cargando ajustes de firmas...';
+
+                    try {
+                        const [ajustes, modo, hashesDetectados] = await Promise.all([
+                            apiJson('/api/ajustes'),
+                            apiJson('/api/desarrollo-firmas').catch(() => ({ activo: false })),
+                            apiJson('/api/hashes-batch-detectados').catch(() => [])
+                        ]);
+                        const permisos = ajustes.permisos || {};
+                        const seguridad = permisos.seguridadScripts || {};
+                        const hashesGuardados = seguridad.hashesBatchPermitidos || [];
+
+                        panel.querySelector('#ls-certificados-ps').value = (seguridad.certificadosPowerShellPermitidos || []).join('\n');
+                        panel.querySelector('#ls-hashes-batch').value = formatearHashes(hashesGuardados.length > 0 ? hashesGuardados : hashesDetectados);
+                        panel.querySelector('#ls-permitir-bypass').checked = !!seguridad.permitirExecutionPolicyBypass;
+                        panel.querySelector('#ls-modo-desarrollo-firmas').checked = !!modo.activo;
+                        aplicarBordeDesarrollo(!!modo.activo);
+                        panel.querySelector('#ls-hashes-batch-estado').textContent = hashesGuardados.length > 0
+                            ? 'Hashes guardados cargados.'
+                            : Array.isArray(hashesDetectados) && hashesDetectados.length > 0
+                                ? 'Hashes BAT/CMD detectados cargados. Guarda para aplicarlos.'
+                                : 'No hay .bat/.cmd detectados en la carpeta de scripts actual.';
+                        estado.textContent = 'Ajustes de firmas cargados.';
+                    } catch (error) {
+                        estado.textContent = error.message || 'No se pudieron cargar los ajustes de firmas.';
+                    }
+                }
+
+                async function guardarPanelFirmas(panel) {
+                    const estado = panel.querySelector('#ls-firmas-estado');
+                    estado.textContent = 'Guardando firmas...';
+
+                    try {
+                        const ajustes = await apiJson('/api/ajustes');
+                        const permisos = ajustes.permisos || {};
+                        permisos.seguridadScripts = obtenerPoliticaDesdePanel();
+                        await apiJson('/api/ajustes', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(permisos)
+                        });
+
+                        estado.textContent = 'Firmas guardadas. Pulsa F5 para refrescar la lista.';
+                    } catch (error) {
+                        estado.textContent = error.message || 'No se pudieron guardar las firmas.';
+                    }
+                }
+
+                async function cambiarModoDesarrollo(panel, activo) {
+                    const estado = panel.querySelector('#ls-firmas-estado');
+                    estado.textContent = activo ? 'Activando modo desarrollo...' : 'Desactivando modo desarrollo...';
+
+                    try {
+                        const datos = await apiJson('/api/desarrollo-firmas', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ activo })
+                        });
+                        aplicarBordeDesarrollo(!!datos.activo);
+                        panel.querySelector('#ls-modo-desarrollo-firmas').checked = !!datos.activo;
+                        estado.textContent = datos.activo
+                            ? 'Modo desarrollo activo para esta sesion. Pulsa F5 para refrescar scripts.'
+                            : 'Modo desarrollo desactivado. Pulsa F5 para refrescar scripts.';
+                    } catch (error) {
+                        panel.querySelector('#ls-modo-desarrollo-firmas').checked = !activo;
+                        estado.textContent = error.message || 'No se pudo cambiar el modo desarrollo.';
+                    }
+                }
+
+                function crearPanelFirmas() {
+                    const cabeceraAjustes = Array.from(document.querySelectorAll('h2'))
+                        .find(elemento => (elemento.textContent || '').includes('Configuración Avanzada'));
+                    if (!cabeceraAjustes || document.getElementById(idPanelFirmas)) {
+                        return;
+                    }
+
+                    const contenedor = Array.from(document.querySelectorAll('div'))
+                        .find(elemento => {
+                            const clase = String(elemento.className || '');
+                            return clase.includes('space-y-8') && clase.includes('max-w-2xl');
+                        });
+                    if (!contenedor) {
+                        return;
+                    }
+
+                    const panel = document.createElement('section');
+                    panel.id = idPanelFirmas;
+                    panel.innerHTML = `
+                        <h3 class="text-sm font-medium text-gray-200 uppercase tracking-wider mb-4">Firmas y desarrollo</h3>
+                        <div class="bg-black/20 border border-white/5 rounded-lg p-5 space-y-5">
+                            <div class="flex items-center justify-between gap-4">
+                                <div>
+                                    <label class="text-sm font-medium text-gray-200 block">Modo desarrollo</label>
+                                    <span class="text-xs text-gray-500">Omite firma/hash solo hasta cerrar la app.</span>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input id="ls-modo-desarrollo-firmas" type="checkbox" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-200 block mb-1">Certificados PowerShell permitidos</label>
+                                <textarea id="ls-certificados-ps" class="w-full h-24 bg-[#0f1115] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-accent transition-all font-mono resize-y" placeholder="Thumbprint por linea"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-200 block mb-1">Hashes BAT/CMD permitidos</label>
+                                <textarea id="ls-hashes-batch" class="w-full h-28 bg-[#0f1115] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-accent transition-all font-mono resize-y" placeholder="script.cmd | SHA256"></textarea>
+                                <div class="flex items-center justify-between gap-3 mt-2">
+                                    <span id="ls-hashes-batch-estado" class="text-xs text-gray-500"></span>
+                                    <button id="ls-detectar-hashes-batch" type="button" class="px-2 py-1 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors text-[11px] font-medium">Detectar BAT/CMD</button>
+                                </div>
+                            </div>
+                            <label class="flex items-center gap-3 text-sm text-gray-300">
+                                <input id="ls-permitir-bypass" type="checkbox" class="h-4 w-4 rounded border-white/10 bg-[#0f1115]">
+                                Permitir ExecutionPolicy Bypass
+                            </label>
+                            <div class="flex items-center justify-between gap-3 pt-2">
+                                <span id="ls-firmas-estado" class="text-xs text-gray-500"></span>
+                                <button id="ls-guardar-firmas" type="button" class="px-3 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors text-xs font-medium">Guardar firmas</button>
+                            </div>
+                        </div>`;
+
+                    contenedor.appendChild(panel);
+                    panel.querySelector('#ls-guardar-firmas').addEventListener('click', () => guardarPanelFirmas(panel));
+                    panel.querySelector('#ls-detectar-hashes-batch').addEventListener('click', () => cargarHashesBatchDetectados(panel));
+                    panel.querySelector('#ls-modo-desarrollo-firmas').addEventListener('change', evento => cambiarModoDesarrollo(panel, evento.target.checked));
+                    cargarPanelFirmas(panel);
+                }
+
+                function crearBotonRefresco() {
+                    if (document.getElementById('ls-boton-refrescar-scripts')) {
+                        return;
+                    }
+
+                    const botonDetener = Array.from(document.querySelectorAll('button'))
+                        .find(boton => (boton.textContent || '').includes('Detener Todo'));
+                    if (!botonDetener || !botonDetener.parentElement) {
+                        return;
+                    }
+
+                    const boton = document.createElement('button');
+                    boton.id = 'ls-boton-refrescar-scripts';
+                    boton.type = 'button';
+                    boton.textContent = 'Refrescar';
+                    boton.title = 'Refrescar scripts';
+                    boton.className = 'flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 text-gray-300 hover:bg-white/5 hover:text-white transition-colors text-xs font-medium';
+                    boton.addEventListener('click', () => window.location.reload());
+                    botonDetener.parentElement.insertBefore(boton, botonDetener.nextSibling);
+                }
+
+                function iniciar() {
+                    instalarWrapperAjustes();
+                    window.addEventListener('keydown', (evento) => {
+                        if (evento.key === 'F5') {
+                            evento.preventDefault();
+                            window.location.reload();
+                        }
+                    }, true);
+
+                    const observador = new MutationObserver(() => {
+                        crearPanelFirmas();
+                        crearBotonRefresco();
+                    });
+                    observador.observe(document.body, { childList: true, subtree: true });
+                    crearPanelFirmas();
+                    crearBotonRefresco();
+                    sincronizarModoDesarrollo();
+                    window.setTimeout(sincronizarModoDesarrollo, 800);
+                    window.setTimeout(sincronizarModoDesarrollo, 2500);
+                    window.setTimeout(crearBotonRefresco, 800);
+                }
+
+                if (document.readyState === 'loading') {
+                    window.addEventListener('DOMContentLoaded', iniciar);
+                } else {
+                    iniciar();
+                }
+            })();
+            """;
+    }
+
+    private static string ObtenerPanelPermisosSubcarpetas()
+    {
+        // Anade gestion visual de permisos por subcarpetas en ajustes.
+        return """
+            (() => {
+                const idPanel = 'ls-ajustes-subcarpetas';
+                let wrapperInstalado = false;
+
+                function esApiAjustes(url, opciones) {
+                    const metodo = (opciones && opciones.method ? opciones.method : 'GET').toUpperCase();
+                    if (metodo !== 'POST') {
+                        return false;
+                    }
+
+                    try {
+                        const final = new URL(typeof url === 'string' ? url : url.url, window.location.href);
+                        return final.origin === window.location.origin && final.pathname === '/api/ajustes';
+                    } catch {
+                        return false;
+                    }
+                }
+
+                function obtenerClavesUsuario(panel) {
+                    return Array.from(panel.querySelectorAll('[data-ls-user-key]'))
+                        .map(elemento => elemento.getAttribute('data-ls-user-key'))
+                        .filter(Boolean);
+                }
+
+                function aplicarPermisosPanel(permisos) {
+                    const panel = document.getElementById(idPanel);
+                    if (!panel || !permisos || !Array.isArray(permisos.usuarios)) {
+                        return permisos;
+                    }
+
+                    const claves = obtenerClavesUsuario(panel);
+                    for (const usuario of permisos.usuarios) {
+                        const clave = usuario.id || usuario.nombreUsuario;
+                        if (!claves.includes(clave)) {
+                            continue;
+                        }
+
+                        if (String(usuario.rol || '').toLowerCase() === 'admin') {
+                            usuario.carpetasPermitidas = [];
+                            continue;
+                        }
+
+                        usuario.carpetasPermitidas = Array.from(panel.querySelectorAll(`input[data-ls-user-key="${CSS.escape(clave)}"][data-ls-folder]:checked`))
+                            .map(input => input.getAttribute('data-ls-folder'))
+                            .filter(Boolean);
+                    }
+
+                    return permisos;
+                }
+
+                function instalarWrapperAjustes() {
+                    if (wrapperInstalado) {
+                        return;
+                    }
+
+                    wrapperInstalado = true;
+                    const fetchAnterior = window.fetch.bind(window);
+                    window.fetch = async (entrada, opciones = {}) => {
+                        if (esApiAjustes(entrada, opciones) && typeof opciones.body === 'string') {
+                            try {
+                                const cuerpo = JSON.parse(opciones.body);
+                                aplicarPermisosPanel(cuerpo);
+                                opciones = { ...opciones, body: JSON.stringify(cuerpo) };
+                            } catch {
+                            }
+                        }
+
+                        return fetchAnterior(entrada, opciones);
+                    };
+                }
+
+                async function apiJson(url, opciones) {
+                    const respuesta = await fetch(url, opciones);
+                    const datos = await respuesta.json().catch(() => ({}));
+                    if (!respuesta.ok) {
+                        throw new Error(datos.error || 'Operacion no disponible.');
+                    }
+
+                    return datos;
+                }
+
+                function crearCheckbox(usuario, carpeta) {
+                    const clave = usuario.id || usuario.nombreUsuario;
+                    const permitidas = Array.isArray(usuario.carpetasPermitidas) ? usuario.carpetasPermitidas : [];
+                    const checked = permitidas.some(valor => String(valor).toLowerCase() === String(carpeta.id).toLowerCase());
+                    const disabled = String(usuario.rol || '').toLowerCase() === 'admin';
+
+                    return `
+                        <label class="flex items-center gap-2 text-xs text-gray-300 py-1">
+                            <input type="checkbox"
+                                   data-ls-user-key="${clave}"
+                                   data-ls-folder="${carpeta.id}"
+                                   ${checked || disabled ? 'checked' : ''}
+                                   ${disabled ? 'disabled' : ''}
+                                   class="h-3.5 w-3.5 rounded border-white/10 bg-[#0f1115]">
+                            <span class="font-mono">${carpeta.nombre}</span>
+                            <span class="text-gray-600">(${carpeta.totalScripts})</span>
+                        </label>`;
+                }
+
+                function crearFilaUsuario(usuario, carpetas) {
+                    const clave = usuario.id || usuario.nombreUsuario;
+                    const esAdmin = String(usuario.rol || '').toLowerCase() === 'admin';
+                    const controles = carpetas.length === 0
+                        ? '<p class="text-xs text-gray-500">No se han detectado subcarpetas con scripts.</p>'
+                        : carpetas.map(carpeta => crearCheckbox(usuario, carpeta)).join('');
+
+                    return `
+                        <div data-ls-user-key="${clave}" class="border border-white/5 bg-black/30 rounded-lg p-3">
+                            <div class="flex items-center justify-between gap-3 mb-2">
+                                <div class="text-sm text-gray-200 font-medium truncate">${usuario.nombreUsuario || 'Usuario sin nombre'}</div>
+                                <div class="text-[10px] uppercase tracking-wider ${esAdmin ? 'text-emerald-400' : 'text-gray-500'}">${esAdmin ? 'Admin: acceso completo' : 'Nominal'}</div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">${controles}</div>
+                        </div>`;
+                }
+
+                async function cargarPanel(panel) {
+                    const estado = panel.querySelector('#ls-subcarpetas-estado');
+                    estado.textContent = 'Cargando permisos por subcarpeta...';
+
+                    try {
+                        const [ajustes, carpetas] = await Promise.all([
+                            apiJson('/api/ajustes'),
+                            apiJson('/api/subcarpetas-scripts')
+                        ]);
+
+                        const permisos = ajustes.permisos || {};
+                        const usuarios = Array.isArray(permisos.usuarios) ? permisos.usuarios : [];
+                        const listaCarpetas = Array.isArray(carpetas) ? carpetas : [];
+                        const contenedor = panel.querySelector('#ls-subcarpetas-usuarios');
+
+                        contenedor.innerHTML = usuarios.length === 0
+                            ? '<p class="text-xs text-gray-500">No hay usuarios configurados.</p>'
+                            : usuarios.map(usuario => crearFilaUsuario(usuario, listaCarpetas)).join('');
+
+                        estado.textContent = listaCarpetas.length === 0
+                            ? 'No hay subcarpetas con scripts. Los scripts de la raiz son accesibles para todos los usuarios autorizados.'
+                            : 'Permisos cargados. Los scripts de la raiz son accesibles para todos los usuarios autorizados.';
+                    } catch (error) {
+                        estado.textContent = error.message || 'No se pudieron cargar los permisos por subcarpeta.';
+                    }
+                }
+
+                async function guardarPanel(panel) {
+                    const estado = panel.querySelector('#ls-subcarpetas-estado');
+                    estado.textContent = 'Guardando permisos por subcarpeta...';
+
+                    try {
+                        const ajustes = await apiJson('/api/ajustes');
+                        const permisos = aplicarPermisosPanel(ajustes.permisos || {});
+                        await apiJson('/api/ajustes', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(permisos)
+                        });
+
+                        estado.textContent = 'Permisos por subcarpeta guardados. Pulsa F5 para refrescar scripts.';
+                    } catch (error) {
+                        estado.textContent = error.message || 'No se pudieron guardar los permisos por subcarpeta.';
+                    }
+                }
+
+                function crearPanel() {
+                    const cabeceraAjustes = Array.from(document.querySelectorAll('h2'))
+                        .find(elemento => (elemento.textContent || '').includes('Configuración Avanzada'));
+                    if (!cabeceraAjustes || document.getElementById(idPanel)) {
+                        return;
+                    }
+
+                    const tituloPermisos = Array.from(document.querySelectorAll('h3'))
+                        .find(elemento => (elemento.textContent || '').includes('Permisos y Usuarios'));
+                    const seccionPermisos = tituloPermisos?.closest('section');
+                    if (!seccionPermisos) {
+                        return;
+                    }
+
+                    const panel = document.createElement('div');
+                    panel.id = idPanel;
+                    panel.className = 'mt-4';
+                    panel.innerHTML = `
+                        <div class="bg-black/20 border border-white/5 rounded-lg p-5 space-y-4">
+                            <h4 class="text-xs font-medium text-gray-400 mb-3">PERMISOS POR SUBCARPETAS</h4>
+                            <p class="text-xs text-gray-500">Los scripts colocados directamente en la carpeta raiz son accesibles para todos los usuarios autorizados. Los scripts dentro de subcarpetas requieren permiso por usuario.</p>
+                            <div id="ls-subcarpetas-usuarios" class="space-y-3"></div>
+                            <div class="flex items-center justify-between gap-3 pt-2">
+                                <span id="ls-subcarpetas-estado" class="text-xs text-gray-500"></span>
+                                <button id="ls-guardar-subcarpetas" type="button" class="px-3 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors text-xs font-medium">Guardar permisos</button>
+                            </div>
+                        </div>`;
+
+                    seccionPermisos.appendChild(panel);
+                    panel.querySelector('#ls-guardar-subcarpetas').addEventListener('click', () => guardarPanel(panel));
+                    cargarPanel(panel);
+                }
+
+                function iniciar() {
+                    instalarWrapperAjustes();
+                    const observador = new MutationObserver(crearPanel);
+                    observador.observe(document.body, { childList: true, subtree: true });
+                    crearPanel();
+                }
+
+                if (document.readyState === 'loading') {
+                    window.addEventListener('DOMContentLoaded', iniciar);
+                } else {
+                    iniciar();
+                }
             })();
             """;
     }
