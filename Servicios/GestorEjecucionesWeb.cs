@@ -249,7 +249,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
             }
 
             await EscribirIntegridadStagingAsync(log, scriptPreparado.Script, diagnosticoPreparado);
-            if (ServicioSeguridadScripts.RequiereBrokerElevado(ejecucion.Script, ejecucion.Permisos))
+            if (!ProcesoActualElevado() && ServicioSeguridadScripts.RequiereBrokerElevado(ejecucion.Script, ejecucion.Permisos))
             {
                 var resultadoBroker = await EjecutarConBrokerAsync(ejecucion, scriptPreparado.Script, log);
                 resultadoAuditoria = resultadoBroker.Resultado;
@@ -330,6 +330,19 @@ public sealed class GestorEjecucionesWeb : IDisposable
                 resultadoAuditoria,
                 codigoSalida,
                 detalleAuditoria);
+        }
+    }
+
+    private static bool ProcesoActualElevado()
+    {
+        try
+        {
+            using var identidad = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identidad).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
         }
     }
 
