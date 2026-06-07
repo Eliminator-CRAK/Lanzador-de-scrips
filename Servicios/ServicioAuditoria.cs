@@ -17,6 +17,9 @@ public sealed class ServicioAuditoria
     };
 
     private readonly SemaphoreSlim _bloqueo = new(1, 1);
+    private volatile string _ultimoError = string.Empty;
+
+    public string UltimoError => _ultimoError;
 
     public Task RegistrarInicioEjecucionAsync(Guid ejecucionId, ScriptInterno script, UsuarioCliente usuario)
     {
@@ -108,6 +111,7 @@ public sealed class ServicioAuditoria
         }
         catch
         {
+            _ultimoError = "No se pudo escribir auditoria local.";
         }
     }
 

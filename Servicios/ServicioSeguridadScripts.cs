@@ -97,9 +97,15 @@ public sealed class ServicioSeguridadScripts
             }
         }
 
+        var scriptsElevados = LeerArrayTexto(seguridad?["scriptsElevadosPermitidos"] as JsonArray)
+            .Select(valor => valor.Replace('\\', '/').Trim())
+            .Where(valor => !string.IsNullOrWhiteSpace(valor))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         return new PoliticaSeguridadScripts(
             certificados,
             hashes,
+            scriptsElevados,
             LeerBooleano(seguridad, "permitirExecutionPolicyBypass", false));
     }
 
@@ -133,12 +139,28 @@ public sealed class ServicioSeguridadScripts
             }
         }
 
+        var scriptsElevados = new JsonArray();
+        foreach (var scriptId in LeerArrayTexto(seguridad?["scriptsElevadosPermitidos"] as JsonArray)
+            .Select(valor => valor.Replace('\\', '/').Trim())
+            .Where(valor => !string.IsNullOrWhiteSpace(valor))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(valor => valor, StringComparer.OrdinalIgnoreCase))
+        {
+            scriptsElevados.Add(scriptId);
+        }
+
         return new JsonObject
         {
             ["certificadosPowerShellPermitidos"] = certificados,
             ["hashesBatchPermitidos"] = hashes,
+            ["scriptsElevadosPermitidos"] = scriptsElevados,
             ["permitirExecutionPolicyBypass"] = LeerBooleano(seguridad, "permitirExecutionPolicyBypass", false)
         };
+    }
+
+    public static bool RequiereBrokerElevado(ScriptInterno script, JsonObject permisos)
+    {
+        return LeerPolitica(permisos).ScriptsElevadosPermitidos.Contains(script.Id);
     }
 
     public static string CalcularSha256(string ruta)
@@ -335,6 +357,7 @@ public sealed class ServicioSeguridadScripts
 public sealed record PoliticaSeguridadScripts(
     IReadOnlySet<string> CertificadosPowerShellPermitidos,
     IReadOnlyDictionary<string, string> HashesBatchPermitidos,
+    IReadOnlySet<string> ScriptsElevadosPermitidos,
     bool PermitirExecutionPolicyBypass);
 
 public sealed record DiagnosticoEjecucionScript(

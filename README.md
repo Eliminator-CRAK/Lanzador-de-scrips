@@ -30,9 +30,11 @@ flowchart TD
 | Config usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
 | Config equipo | `C:\ProgramData\LanzadorScripts\configuracion.dat` |
 | Tokens admin | `%AppData%\LanzadorScripts\Tokens` |
+| Tokens maestro usados | `%AppData%\LanzadorScripts\Tokens\tokens-maestros-usados.json` |
 | Logs | `%LocalAppData%\LanzadorScripts\Logs` |
 | Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
 | Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2` |
+| Staging ejecucion | `%LocalAppData%\LanzadorScripts\Staging` |
 
 ## Configuracion
 
@@ -48,7 +50,7 @@ flowchart TD
 ## Publicacion
 
 ```powershell
-.\Herramientas\PublicarPortable.ps1
+.\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
 El script descarga el instalador oficial Evergreen Standalone x64 de WebView2 y lo embebe en el ejecutable publicado.
@@ -59,11 +61,13 @@ El instalador WebView2 se valida por SHA-256 y firma Authenticode antes de compi
 .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
-Tambien se puede usar `-CertPath` y `-CertPassword` con un certificado PFX. Si no se indica certificado, el script publica sin firmar y muestra un aviso.
+Tambien se puede usar `-CertPath` y `-CertPassword` con un certificado PFX. Si no se indica certificado, el script bloquea la publicacion salvo que se use `-AllowUnsignedForDev` para pruebas locales.
 
 El unico archivo distribuible para usuarios finales es `publicacion\LanzadorScripts.exe`. No se deben copiar los ejecutables generados en `bin\Debug` ni `bin\Release`, porque no representan el artefacto portable validado.
 
 La publicacion final debe ser self-contained, single-file y x64. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
+
+El pipeline de GitHub exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
 
 ## Recuperacion WebView2
 
@@ -81,7 +85,7 @@ Solo se conservan las ultimas 3 copias de diagnostico de perfiles dañados o de 
 
 La API local exige cookie de sesion y token interno aleatorio por arranque. Los endpoints admin requieren siempre `Authorization: Bearer <token>`.
 
-La politica de scripts vive en `permissions.json`:
+`permissions.json` debe estar firmado por el certificado corporativo. Si falta, esta corrupto o no es accesible, la aplicacion bloquea ejecuciones por defecto. La politica de scripts vive en `seguridadScripts`:
 
 ```json
 {
@@ -95,6 +99,9 @@ La politica de scripts vive en `permissions.json`:
         "sha256": "HASH_SHA256"
       }
     ],
+    "scriptsElevadosPermitidos": [
+      "admin/script.ps1"
+    ],
     "permitirExecutionPolicyBypass": false
   }
 }
@@ -102,12 +109,14 @@ La politica de scripts vive en `permissions.json`:
 
 La politica es fail closed. Los `.ps1` requieren firma Authenticode valida de un certificado permitido. Los `.bat` y `.cmd` requieren hash SHA-256 permitido. Los nombres y rutas relativas con `&`, `|`, `<`, `>`, `^`, `%` o `!` se rechazan.
 
-El cambio de cifrado compartido queda aplazado. La clave AES fija usada por paquetes compartidos sigue documentada como riesgo aceptado hasta definir certificado corporativo o una politica de integridad separada.
+Los permisos y paquetes se protegen mediante firma asimetrica. DPAPI queda reservado para secretos locales. Los scripts allowlistados en `scriptsElevadosPermitidos` usan broker elevado minimo; el resto se ejecuta sin elevar la app principal.
+
+Antes de ejecutar, la aplicacion valida integridad, copia el script a staging local, aplica protecciones de archivo y revalida la copia para mitigar TOCTOU.
 
 ## Pruebas
 
 ```powershell
-dotnet run --project .\Pruebas\LanzadorScripts.Pruebas.csproj
+dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj
 ```
 
 ## Requisitos
@@ -117,5 +126,11 @@ dotnet run --project .\Pruebas\LanzadorScripts.Pruebas.csproj
 | SO | Windows 10/11 Pro o Enterprise |
 | PowerShell | 5.1 |
 | WebView2 | Runtime instalado o instalador embebido en el EXE portable |
-| Permisos | Administrador local |
+| Permisos app | Usuario normal mediante `asInvoker` |
+| Permisos elevados | Solo broker bajo demanda para scripts allowlistados |
+
+## Manuales
+
+- [Manual de usuario](Manual_Usuarios.md)
+- [Manual de administradores y desarrolladores](Manual_Administradores_Desarrolladores.md)
 | Politicas | GPO/AppLocker/WDAC permitiendo app y `powershell.exe` |

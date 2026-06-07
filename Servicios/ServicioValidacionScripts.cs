@@ -35,6 +35,11 @@ public sealed class ServicioValidacionScripts
             return ResultadoValidacionConfiguracion.Error("La ruta de scripts contiene caracteres no validos.");
         }
 
+        if (EsAdminShare(rutaScripts))
+        {
+            return ResultadoValidacionConfiguracion.Error("La ruta de scripts no puede usar admin shares como C$.");
+        }
+
         if (string.IsNullOrWhiteSpace(rutaPermisos))
         {
             return ResultadoValidacionConfiguracion.Error("La ruta del archivo de permisos no puede estar vacia.");
@@ -43,6 +48,11 @@ public sealed class ServicioValidacionScripts
         if (ContieneCaracteresInvalidos(rutaPermisos))
         {
             return ResultadoValidacionConfiguracion.Error("La ruta de permisos contiene caracteres no validos.");
+        }
+
+        if (EsAdminShare(rutaPermisos))
+        {
+            return ResultadoValidacionConfiguracion.Error("La ruta de permisos no puede usar admin shares como C$.");
         }
 
         return ResultadoValidacionConfiguracion.Correcta();
@@ -339,6 +349,17 @@ public sealed class ServicioValidacionScripts
     private static bool ContieneCaracteresInvalidos(string texto)
     {
         return texto.IndexOfAny(Path.GetInvalidPathChars()) >= 0;
+    }
+
+    private static bool EsAdminShare(string ruta)
+    {
+        var partes = Environment.ExpandEnvironmentVariables(ruta.Trim())
+            .Replace('/', '\\')
+            .Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        return partes.Length >= 2
+            && partes[1].Length == 2
+            && partes[1][1] == '$'
+            && char.IsLetter(partes[1][0]);
     }
 
     private static string NormalizarSeparadores(string ruta)

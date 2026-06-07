@@ -7,9 +7,9 @@ namespace LanzadorScripts.Modelos;
 
 public sealed class ConfiguracionLanzador
 {
-    public string RutaScripts { get; set; } = @"\\MAD002MICROPRU\C$\REPO";
+    public string RutaScripts { get; set; } = @"\\MAD002MICROPRU\REPO";
 
-    public string RutaPermisos { get; set; } = @"\\MAD002MICROPRU\C$\REPO\PERMISOS\permisos.json";
+    public string RutaPermisos { get; set; } = @"\\MAD002MICROPRU\REPO\PERMISOS\permisos.json";
 
     public string RutaLogs { get; set; } = RutasAplicacion.RutaLogsUsuario;
 

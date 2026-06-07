@@ -1,0 +1,75 @@
+# (Autor: Alex Roman)
+# Descripcion: CI de build, pruebas y publicacion verificable.
+
+name: LanzadorScripts CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-test-publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
+
+      - name: Build Release
+        run: dotnet build .\LanzadorScripts.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
+
+      - name: Publish x64
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
+            $certPath = Join-Path $env:RUNNER_TEMP 'lanzador-signing.pfx'
+            [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+            $securePassword = ConvertTo-SecureString $env:WINDOWS_SIGNING_CERT_PASSWORD -AsPlainText -Force
+            .\Herramientas\PublicarPortable.ps1 -CertPath $certPath -CertPassword $securePassword
+          } elseif ($env:EVENT_NAME -eq 'pull_request') {
+            .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
+          } else {
+            throw 'Falta WINDOWS_SIGNING_CERT_BASE64. La publicacion en main exige firma Authenticode.'
+          }
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'publicacion\LanzadorScripts.exe'
+          if (-not (Test-Path -LiteralPath $exe)) {
+            throw 'No se genero LanzadorScripts.exe.'
+          }
+          $archivos = @(Get-ChildItem -LiteralPath (Split-Path $exe) -Recurse -File)
+          if ($archivos.Count -ne 1) {
+            throw "La publicacion debe generar un unico EXE. Archivos: $($archivos.Count)"
+          }
+          $firma = Get-AuthenticodeSignature -LiteralPath $exe
+          if ('${{ github.event_name }}' -ne 'pull_request' -and $firma.Status -ne 'Valid') {
+            throw "La firma del artefacto no es valida: $($firma.Status)."
+          }
+          Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LanzadorScripts-win-x64
+          path: publicacion/LanzadorScripts.exe

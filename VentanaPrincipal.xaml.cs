@@ -44,18 +44,23 @@ public partial class VentanaPrincipal : Window
     {
         try
         {
+            PanelArranque.Visibility = Visibility.Visible;
+            BotonReintentarArranque.Visibility = Visibility.Collapsed;
+            TextoArranque.Text = "Preparando WebView2...";
             var arranque = await _servicioArranqueWebView2.PrepararAsync(() => VistaCliente, RecrearVistaCliente);
             if (!arranque.Exito)
             {
+                TextoArranque.Text = arranque.Mensaje;
+                BotonReintentarArranque.Visibility = Visibility.Visible;
                 MessageBox.Show(
                     arranque.Mensaje,
                     "No se pudo preparar WebView2",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
-                Close();
                 return;
             }
 
+            TextoArranque.Text = "Aplicando protecciones del cliente local...";
             VistaCliente.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             VistaCliente.CoreWebView2.Settings.AreDevToolsEnabled = false;
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(_servidor.TokenApiInterno));
@@ -64,18 +69,41 @@ public partial class VentanaPrincipal : Window
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerMejorasInterfazScripts());
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelPermisosSubcarpetas());
             await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
+            VistaCliente.CoreWebView2.WebMessageReceived -= VistaCliente_WebMessageReceived;
             VistaCliente.CoreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
+            TextoArranque.Text = "Cargando cliente web local...";
+            VistaCliente.NavigationCompleted -= VistaCliente_NavigationCompleted;
+            VistaCliente.NavigationCompleted += VistaCliente_NavigationCompleted;
             VistaCliente.Source = _servidor.UrlBase;
         }
         catch (Exception ex)
         {
+            TextoArranque.Text = $"No se pudo iniciar WebView2. Logs: {RutasAplicacion.RutaLogsUsuario}";
+            BotonReintentarArranque.Visibility = Visibility.Visible;
             MessageBox.Show(
                 $"No se pudo iniciar WebView2: {ex.Message}",
                 "Error de inicio",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
-            Close();
         }
+    }
+
+    private void VistaCliente_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (e.IsSuccess)
+        {
+            PanelArranque.Visibility = Visibility.Collapsed;
+            BotonReintentarArranque.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        TextoArranque.Text = $"No se pudo cargar el cliente local. Logs: {RutasAplicacion.RutaLogsUsuario}";
+        BotonReintentarArranque.Visibility = Visibility.Visible;
+    }
+
+    private void BotonReintentarArranque_Click(object sender, RoutedEventArgs e)
+    {
+        CargarClienteAsync();
     }
 
     private WebView2 RecrearVistaCliente()
@@ -172,7 +200,7 @@ public partial class VentanaPrincipal : Window
         if (!_servicioTokenMaestro.PuedeGenerar())
         {
             MessageBox.Show(
-                "Sin mi certificado es imposible generar el token :)",
+                "No se encontro el certificado privado autorizado para generar el token maestro.",
                 "Token maestro",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -181,8 +209,9 @@ public partial class VentanaPrincipal : Window
 
         var token = _servicioTokenMaestro.Generar();
         Clipboard.SetText(token);
+        var tokenParcial = token.Length > 18 ? token[..18] + "..." : "[copiado]";
         MessageBox.Show(
-            $"Token maestro generado y copiado al portapapeles:\n\n{token}",
+            $"Token maestro generado para este usuario y equipo. Se ha copiado al portapapeles.\n\nReferencia: {tokenParcial}\nCaduca en 10 minutos y solo debe usarse con motivo operativo.",
             "Token maestro",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
@@ -251,7 +280,7 @@ public partial class VentanaPrincipal : Window
 
     private static string ObtenerProteccionApiLocal(string tokenApi)
     {
-        // Inyecta el token local de arranque en fetch y EventSource.
+        // Inyecta credenciales internas sin exponerlas a variables globales.
         var tokenJson = JsonSerializer.Serialize(tokenApi);
         return $$"""
             (() => {
@@ -271,30 +300,75 @@ public partial class VentanaPrincipal : Window
 
                 async function capturarTokenAdmin(respuesta, url) {
                     if (!esApiLocal(url)) {
-                        return;
+                        return respuesta;
                     }
 
                     const tipo = respuesta.headers.get('content-type') || '';
                     if (!tipo.includes('application/json')) {
-                        return;
+                        return respuesta;
                     }
 
-                    await respuesta.clone().json().then((datos) => {
+                    return await respuesta.clone().json().then((datos) => {
                         const nuevoToken = datos && (datos.tokenAdmin || datos.TokenAdmin);
                         if (typeof nuevoToken === 'string' && nuevoToken.length > 0) {
                             tokenAdmin = nuevoToken;
                         }
-                    }).catch(() => {});
+
+                        if (datos && ('tokenAdmin' in datos || 'TokenAdmin' in datos)) {
+                            delete datos.tokenAdmin;
+                            delete datos.TokenAdmin;
+                            const cabeceras = new Headers(respuesta.headers);
+                            cabeceras.delete('content-length');
+                            return new Response(JSON.stringify(datos), {
+                                status: respuesta.status,
+                                statusText: respuesta.statusText,
+                                headers: cabeceras
+                            });
+                        }
+
+                        return respuesta;
+                    }).catch(() => respuesta);
                 }
 
-                window.__lanzadorScripts = {
-                    obtenerTokenApi: () => tokenApi,
-                    obtenerTokenAdmin: () => tokenAdmin
-                };
+                function completarMotivoEmergencia(url, opciones) {
+                    const metodo = String(opciones.method || (opciones.body ? 'POST' : 'GET')).toUpperCase();
+                    const final = new URL(url, window.location.href);
+                    if (metodo !== 'POST' || final.pathname !== '/api/token-maestro/desbloquear') {
+                        return opciones;
+                    }
+
+                    let cuerpo = {};
+                    try {
+                        cuerpo = typeof opciones.body === 'string' && opciones.body.trim()
+                            ? JSON.parse(opciones.body)
+                            : {};
+                    } catch {
+                        cuerpo = {};
+                    }
+
+                    if (typeof cuerpo.motivo !== 'string' || cuerpo.motivo.trim().length < 10) {
+                        const motivo = window.prompt('Motivo operativo del desbloqueo de emergencia') || '';
+                        cuerpo.motivo = motivo.trim();
+                    }
+
+                    return {
+                        ...opciones,
+                        headers: {
+                            ...(opciones.headers || {}),
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(cuerpo)
+                    };
+                }
 
                 window.fetch = async (entrada, opciones = {}) => {
                     const url = typeof entrada === 'string' ? entrada : entrada.url;
-                    const cabeceras = new Headers(opciones.headers || (entrada && entrada.headers) || {});
+                    let opcionesFinales = opciones;
+                    if (esApiLocal(url)) {
+                        opcionesFinales = completarMotivoEmergencia(url, opcionesFinales);
+                    }
+
+                    const cabeceras = new Headers(opcionesFinales.headers || (entrada && entrada.headers) || {});
                     if (esApiLocal(url)) {
                         cabeceras.set('X-LanzadorScripts-ApiToken', tokenApi);
                         if (tokenAdmin && !cabeceras.has('Authorization')) {
@@ -302,21 +376,112 @@ public partial class VentanaPrincipal : Window
                         }
                     }
 
-                    const respuesta = await fetchOriginal(entrada, { ...opciones, headers: cabeceras });
-                    await capturarTokenAdmin(respuesta, url);
-                    return respuesta;
+                    const respuesta = await fetchOriginal(entrada, { ...opcionesFinales, headers: cabeceras });
+                    return await capturarTokenAdmin(respuesta, url);
                 };
 
                 if (typeof eventSourceOriginal === 'function') {
+                    class EventSourceLocalSeguro extends EventTarget {
+                        constructor(url, configuracion) {
+                            super();
+                            this.url = String(url);
+                            this.withCredentials = !!(configuracion && configuracion.withCredentials);
+                            this.readyState = EventSourceLocalSeguro.CONNECTING;
+                            this.onopen = null;
+                            this.onmessage = null;
+                            this.onerror = null;
+                            this.controlador = new AbortController();
+                            this.iniciar();
+                        }
+
+                        close() {
+                            this.readyState = EventSourceLocalSeguro.CLOSED;
+                            this.controlador.abort();
+                        }
+
+                        async iniciar() {
+                            try {
+                                const respuesta = await fetchOriginal(this.url, {
+                                    headers: { 'X-LanzadorScripts-ApiToken': tokenApi },
+                                    signal: this.controlador.signal,
+                                    credentials: this.withCredentials ? 'include' : 'same-origin'
+                                });
+                                if (!respuesta.ok || !respuesta.body) {
+                                    throw new Error('SSE no disponible');
+                                }
+
+                                this.readyState = EventSourceLocalSeguro.OPEN;
+                                this.emitir('open', {});
+                                const lector = respuesta.body.getReader();
+                                const decodificador = new TextDecoder();
+                                let buffer = '';
+                                while (this.readyState !== EventSourceLocalSeguro.CLOSED) {
+                                    const lectura = await lector.read();
+                                    if (lectura.done) {
+                                        break;
+                                    }
+
+                                    buffer += decodificador.decode(lectura.value, { stream: true });
+                                    let indice;
+                                    while ((indice = buffer.indexOf('\n\n')) >= 0) {
+                                        const bloque = buffer.slice(0, indice);
+                                        buffer = buffer.slice(indice + 2);
+                                        this.procesarBloque(bloque);
+                                    }
+                                }
+                            } catch {
+                                if (this.readyState !== EventSourceLocalSeguro.CLOSED) {
+                                    this.emitir('error', {});
+                                }
+                            }
+                        }
+
+                        procesarBloque(bloque) {
+                            if (!bloque || bloque.startsWith(':')) {
+                                return;
+                            }
+
+                            const datos = [];
+                            let id = '';
+                            for (const linea of bloque.split(/\r?\n/)) {
+                                if (linea.startsWith('data:')) {
+                                    datos.push(linea.slice(5).trimStart());
+                                } else if (linea.startsWith('id:')) {
+                                    id = linea.slice(3).trim();
+                                }
+                            }
+
+                            if (datos.length === 0) {
+                                return;
+                            }
+
+                            this.emitir('message', { data: datos.join('\n'), lastEventId: id });
+                        }
+
+                        emitir(tipo, datos) {
+                            const evento = new MessageEvent(tipo, datos);
+                            this.dispatchEvent(evento);
+                            const manejador = tipo === 'message' ? this.onmessage : tipo === 'open' ? this.onopen : this.onerror;
+                            if (typeof manejador === 'function') {
+                                manejador.call(this, evento);
+                            }
+                        }
+                    }
+
+                    EventSourceLocalSeguro.CONNECTING = 0;
+                    EventSourceLocalSeguro.OPEN = 1;
+                    EventSourceLocalSeguro.CLOSED = 2;
+
                     window.EventSource = function(url, configuracion) {
                         if (esApiLocal(url)) {
-                            const final = new URL(url, window.location.href);
-                            final.searchParams.set('apiToken', tokenApi);
-                            return new eventSourceOriginal(final.toString(), configuracion);
+                            return new EventSourceLocalSeguro(new URL(url, window.location.href).toString(), configuracion);
                         }
 
                         return new eventSourceOriginal(url, configuracion);
                     };
+                    window.EventSource.CONNECTING = EventSourceLocalSeguro.CONNECTING;
+                    window.EventSource.OPEN = EventSourceLocalSeguro.OPEN;
+                    window.EventSource.CLOSED = EventSourceLocalSeguro.CLOSED;
                 }
             })();
             """;
@@ -340,7 +505,15 @@ public partial class VentanaPrincipal : Window
                     async function cargar() {
                         panel.innerHTML = '<div style="margin-bottom:10px;font-weight:600">Diagnóstico de ejecución</div><div>Cargando scripts...</div>';
                         const scripts = await fetch('/api/scripts').then(r => r.json());
-                        const opciones = (Array.isArray(scripts) ? scripts : []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+                        const escapeHtml = valor => String(valor ?? '')
+                            .replaceAll('&', '&amp;')
+                            .replaceAll('<', '&lt;')
+                            .replaceAll('>', '&gt;')
+                            .replaceAll('"', '&quot;')
+                            .replaceAll("'", '&#39;');
+                        const opciones = (Array.isArray(scripts) ? scripts : [])
+                            .map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.nombre)}</option>`)
+                            .join('');
                         panel.innerHTML = `
                             <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
                                 <strong style="flex:1">Diagnóstico de ejecución</strong>
@@ -441,6 +614,13 @@ public partial class VentanaPrincipal : Window
                         .filter(item => item.scriptId && item.sha256.length === 64);
                 }
 
+                function leerScriptsElevados(texto) {
+                    return String(texto || '')
+                        .split(/[\n,;]+/)
+                        .map(valor => valor.trim().replace(/\\/g, '/'))
+                        .filter(Boolean);
+                }
+
                 function obtenerPoliticaDesdePanel() {
                     const panel = document.getElementById(idPanelFirmas);
                     if (!panel) {
@@ -450,6 +630,7 @@ public partial class VentanaPrincipal : Window
                     return {
                         certificadosPowerShellPermitidos: normalizarLista(panel.querySelector('#ls-certificados-ps')?.value || ''),
                         hashesBatchPermitidos: leerHashes(panel.querySelector('#ls-hashes-batch')?.value || ''),
+                        scriptsElevadosPermitidos: leerScriptsElevados(panel.querySelector('#ls-scripts-elevados')?.value || ''),
                         permitirExecutionPolicyBypass: !!panel.querySelector('#ls-permitir-bypass')?.checked
                     };
                 }
@@ -558,6 +739,7 @@ public partial class VentanaPrincipal : Window
 
                         panel.querySelector('#ls-certificados-ps').value = (seguridad.certificadosPowerShellPermitidos || []).join('\n');
                         panel.querySelector('#ls-hashes-batch').value = formatearHashes(hashesGuardados.length > 0 ? hashesGuardados : hashesDetectados);
+                        panel.querySelector('#ls-scripts-elevados').value = (seguridad.scriptsElevadosPermitidos || []).join('\n');
                         panel.querySelector('#ls-permitir-bypass').checked = !!seguridad.permitirExecutionPolicyBypass;
                         panel.querySelector('#ls-modo-desarrollo-firmas').checked = !!modo.activo;
                         aplicarBordeDesarrollo(!!modo.activo);
@@ -656,6 +838,10 @@ public partial class VentanaPrincipal : Window
                                     <button id="ls-detectar-hashes-batch" type="button" class="px-2 py-1 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors text-[11px] font-medium">Detectar BAT/CMD</button>
                                 </div>
                             </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-200 block mb-1">Scripts que requieren broker elevado</label>
+                                <textarea id="ls-scripts-elevados" class="w-full h-20 bg-[#0f1115] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-accent transition-all font-mono resize-y" placeholder="subcarpeta/script.ps1"></textarea>
+                            </div>
                             <label class="flex items-center gap-3 text-sm text-gray-300">
                                 <input id="ls-permitir-bypass" type="checkbox" class="h-4 w-4 rounded border-white/10 bg-[#0f1115]">
                                 Permitir ExecutionPolicy Bypass
@@ -694,6 +880,22 @@ public partial class VentanaPrincipal : Window
                     botonDetener.parentElement.insertBefore(boton, botonDetener.nextSibling);
                 }
 
+                function protegerDetenerTodo() {
+                    const botonDetener = Array.from(document.querySelectorAll('button'))
+                        .find(boton => (boton.textContent || '').includes('Detener Todo'));
+                    if (!botonDetener || botonDetener.dataset.lsConfirmado === '1') {
+                        return;
+                    }
+
+                    botonDetener.dataset.lsConfirmado = '1';
+                    botonDetener.addEventListener('click', (evento) => {
+                        if (!window.confirm('Detener todas las ejecuciones activas?')) {
+                            evento.preventDefault();
+                            evento.stopImmediatePropagation();
+                        }
+                    }, true);
+                }
+
                 function iniciar() {
                     instalarWrapperAjustes();
                     window.addEventListener('keydown', (evento) => {
@@ -706,14 +908,17 @@ public partial class VentanaPrincipal : Window
                     const observador = new MutationObserver(() => {
                         crearPanelFirmas();
                         crearBotonRefresco();
+                        protegerDetenerTodo();
                     });
                     observador.observe(document.body, { childList: true, subtree: true });
                     crearPanelFirmas();
                     crearBotonRefresco();
+                    protegerDetenerTodo();
                     sincronizarModoDesarrollo();
                     window.setTimeout(sincronizarModoDesarrollo, 800);
                     window.setTimeout(sincronizarModoDesarrollo, 2500);
                     window.setTimeout(crearBotonRefresco, 800);
+                    window.setTimeout(protegerDetenerTodo, 800);
                 }
 
                 if (document.readyState === 'loading') {
@@ -810,6 +1015,15 @@ public partial class VentanaPrincipal : Window
                     return datos;
                 }
 
+                function escapeHtml(valor) {
+                    return String(valor ?? '')
+                        .replaceAll('&', '&amp;')
+                        .replaceAll('<', '&lt;')
+                        .replaceAll('>', '&gt;')
+                        .replaceAll('"', '&quot;')
+                        .replaceAll("'", '&#39;');
+                }
+
                 function crearCheckbox(usuario, carpeta) {
                     const clave = usuario.id || usuario.nombreUsuario;
                     const permitidas = Array.isArray(usuario.carpetasPermitidas) ? usuario.carpetasPermitidas : [];
@@ -819,13 +1033,13 @@ public partial class VentanaPrincipal : Window
                     return `
                         <label class="flex items-center gap-2 text-xs text-gray-300 py-1">
                             <input type="checkbox"
-                                   data-ls-user-key="${clave}"
-                                   data-ls-folder="${carpeta.id}"
+                                   data-ls-user-key="${escapeHtml(clave)}"
+                                   data-ls-folder="${escapeHtml(carpeta.id)}"
                                    ${checked || disabled ? 'checked' : ''}
                                    ${disabled ? 'disabled' : ''}
                                    class="h-3.5 w-3.5 rounded border-white/10 bg-[#0f1115]">
-                            <span class="font-mono">${carpeta.nombre}</span>
-                            <span class="text-gray-600">(${carpeta.totalScripts})</span>
+                            <span class="font-mono">${escapeHtml(carpeta.nombre)}</span>
+                            <span class="text-gray-600">(${escapeHtml(carpeta.totalScripts)})</span>
                         </label>`;
                 }
 
@@ -837,9 +1051,9 @@ public partial class VentanaPrincipal : Window
                         : carpetas.map(carpeta => crearCheckbox(usuario, carpeta)).join('');
 
                     return `
-                        <div data-ls-user-key="${clave}" class="border border-white/5 bg-black/30 rounded-lg p-3">
+                        <div data-ls-user-key="${escapeHtml(clave)}" class="border border-white/5 bg-black/30 rounded-lg p-3">
                             <div class="flex items-center justify-between gap-3 mb-2">
-                                <div class="text-sm text-gray-200 font-medium truncate">${usuario.nombreUsuario || 'Usuario sin nombre'}</div>
+                                <div class="text-sm text-gray-200 font-medium truncate">${escapeHtml(usuario.nombreUsuario || 'Usuario sin nombre')}</div>
                                 <div class="text-[10px] uppercase tracking-wider ${esAdmin ? 'text-emerald-400' : 'text-gray-500'}">${esAdmin ? 'Admin: acceso completo' : 'Nominal'}</div>
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">${controles}</div>

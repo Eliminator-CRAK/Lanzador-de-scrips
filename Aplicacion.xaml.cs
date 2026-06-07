@@ -18,9 +18,16 @@ public partial class Aplicacion : System.Windows.Application
     private CancellationTokenSource? _cancelacionPipe;
     private VentanaPrincipal? _ventanaPrincipal;
     private bool _instanciaPrincipal;
+    private readonly ServicioLogInicio _servicioLogInicio = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (ServicioBrokerElevado.EsSolicitudBroker(e.Args))
+        {
+            Shutdown(ServicioBrokerElevado.EjecutarModoBroker(e.Args));
+            return;
+        }
+
         _mutex = new Mutex(initiallyOwned: true, NombreMutex, out _instanciaPrincipal);
         if (!_instanciaPrincipal)
         {
@@ -61,7 +68,7 @@ public partial class Aplicacion : System.Windows.Application
                 await pipe.WaitForConnectionAsync(cancelacion);
                 using var lector = new StreamReader(pipe, Encoding.UTF8);
                 var ruta = await lector.ReadLineAsync(cancelacion);
-                if (!string.IsNullOrWhiteSpace(ruta))
+                if (!string.IsNullOrWhiteSpace(ruta) && EsPaqueteConfiguracionValido(ruta))
                 {
                     Dispatcher.Invoke(() => ProcesarRutaPaquete(ruta));
                 }
@@ -72,13 +79,14 @@ public partial class Aplicacion : System.Windows.Application
             }
             catch
             {
+                await _servicioLogInicio.RegistrarAsync("pipe.argumentos.error", "No se pudo procesar el pipe local de argumentos.");
             }
         }
     }
 
     private static void EnviarArgumentosAInstanciaPrincipal(string[] argumentos)
     {
-        foreach (var argumento in argumentos.Where(EsPaqueteConfiguracion))
+        foreach (var argumento in argumentos.Where(EsPaqueteConfiguracionValido))
         {
             try
             {
@@ -98,7 +106,7 @@ public partial class Aplicacion : System.Windows.Application
 
     private void ProcesarArgumentos(string[] argumentos)
     {
-        foreach (var argumento in argumentos.Where(EsPaqueteConfiguracion))
+        foreach (var argumento in argumentos.Where(EsPaqueteConfiguracionValido))
         {
             ProcesarRutaPaquete(argumento);
         }
@@ -113,5 +121,19 @@ public partial class Aplicacion : System.Windows.Application
     private static bool EsPaqueteConfiguracion(string ruta)
     {
         return string.Equals(Path.GetExtension(ruta), ServicioPaquetesConfiguracion.ExtensionPaquete, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool EsPaqueteConfiguracionValido(string ruta)
+    {
+        try
+        {
+            return EsPaqueteConfiguracion(ruta)
+                && File.Exists(ruta)
+                && !Path.GetFullPath(ruta).Contains("..", StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

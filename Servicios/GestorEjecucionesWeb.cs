@@ -5,8 +5,11 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace LanzadorScripts.Servicios;
@@ -14,6 +17,9 @@ namespace LanzadorScripts.Servicios;
 public sealed class GestorEjecucionesWeb : IDisposable
 {
     private const int MaximoCaracteresEntrada = 8192;
+    private const int MaximoEventosPorEjecucion = 5000;
+    private static readonly TimeSpan TiempoMaximoEjecucion = TimeSpan.FromHours(2);
+    private static readonly TimeSpan TtlEjecucionesFinalizadas = TimeSpan.FromMinutes(30);
 
     private static readonly JsonSerializerOptions OpcionesJsonEventos = new()
     {
@@ -23,17 +29,29 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     private readonly ConcurrentDictionary<Guid, EjecucionWeb> _ejecuciones = new();
     private readonly ServicioAuditoria _servicioAuditoria;
+    private readonly ServicioSeguridadScripts _servicioSeguridadScripts;
+    private readonly ServicioBrokerElevado _servicioBrokerElevado = new();
 
-    public GestorEjecucionesWeb(ServicioAuditoria servicioAuditoria)
+    public GestorEjecucionesWeb(ServicioAuditoria servicioAuditoria, ServicioSeguridadScripts servicioSeguridadScripts)
     {
         _servicioAuditoria = servicioAuditoria;
+        _servicioSeguridadScripts = servicioSeguridadScripts;
     }
 
-    public int RecuentoActivas => _ejecuciones.Values.Count(ejecucion => !ejecucion.Finalizada);
-
-    public Guid Iniciar(ScriptInterno script, string rutaLogs, UsuarioCliente usuario, bool permitirExecutionPolicyBypass)
+    public int RecuentoActivas
     {
-        var ejecucion = new EjecucionWeb(script, rutaLogs, usuario, permitirExecutionPolicyBypass);
+        get
+        {
+            PurgarFinalizadasAntiguas();
+            return _ejecuciones.Values.Count(ejecucion => !ejecucion.Finalizada);
+        }
+    }
+
+    public Guid Iniciar(ScriptInterno script, string rutaLogs, UsuarioCliente usuario, bool permitirExecutionPolicyBypass, JsonObject permisos, bool modoDesarrolloFirmas)
+    {
+        PurgarFinalizadasAntiguas();
+        var permisosCongelados = JsonNode.Parse(permisos.ToJsonString()) as JsonObject ?? new JsonObject();
+        var ejecucion = new EjecucionWeb(script, rutaLogs, usuario, permitirExecutionPolicyBypass, permisosCongelados, modoDesarrolloFirmas);
         _ejecuciones[ejecucion.Id] = ejecucion;
         ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}...", "#B5CEA8");
         _ = _servicioAuditoria.RegistrarInicioEjecucionAsync(ejecucion.Id, script, usuario);
@@ -49,8 +67,20 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
 
         ejecucion.Cancelada = true;
+        _ = _servicioAuditoria.RegistrarEventoSeguridadAsync(
+            "ejecucion.cancelacion",
+            ejecucion.Usuario.NombreUsuario,
+            ejecucion.Script.Id,
+            "solicitado",
+            "Cancelacion solicitada por el usuario.");
         try
         {
+            if (ejecucion.CancelarBroker is not null)
+            {
+                _ = ejecucion.CancelarBroker();
+                return;
+            }
+
             if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
             {
                 ejecucion.Proceso.Kill(entireProcessTree: true);
@@ -65,7 +95,18 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     public async Task EnviarEntradaAsync(Guid id, string texto)
     {
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Proceso is null)
+        if (!_ejecuciones.TryGetValue(id, out var ejecucion))
+        {
+            return;
+        }
+
+        if (ejecucion.CancelarBroker is not null)
+        {
+            ejecucion.AgregarEvento("error", "> Entrada interactiva no disponible para ejecuciones elevadas por broker.", "#F44747");
+            return;
+        }
+
+        if (ejecucion.Proceso is null)
         {
             return;
         }
@@ -151,6 +192,11 @@ public sealed class GestorEjecucionesWeb : IDisposable
         {
             try
             {
+                if (ejecucion.CancelarBroker is not null)
+                {
+                    _ = ejecucion.CancelarBroker();
+                }
+
                 if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
                 {
                     ejecucion.Proceso.Kill(entireProcessTree: true);
@@ -180,14 +226,66 @@ public sealed class GestorEjecucionesWeb : IDisposable
             };
 
             await EscribirCabeceraLogAsync(log, ejecucion);
+            var diagnostico = _servicioSeguridadScripts.Diagnosticar(ejecucion.Script, ejecucion.Permisos, ejecucion.ModoDesarrolloFirmas);
+            if (!diagnostico.Permitido)
+            {
+                detalleAuditoria = diagnostico.MotivoBloqueo;
+                ejecucion.AgregarEvento("error", $"> Ejecucion bloqueada antes de iniciar: {detalleAuditoria}", "#F44747", finalizado: true);
+                await log.WriteLineAsync($"Bloqueo pre-ejecucion: {detalleAuditoria}");
+                return;
+            }
 
-            using var proceso = CrearProceso(ejecucion.Script, ejecucion.PermitirExecutionPolicyBypass);
+            await EscribirIntegridadValidadaAsync(log, diagnostico);
+            using var scriptPreparado = CrearCopiaTemporalValidada(ejecucion);
+            ejecucion.RutaScriptPreparado = scriptPreparado.Script.RutaCompleta;
+
+            var diagnosticoPreparado = _servicioSeguridadScripts.Diagnosticar(scriptPreparado.Script, ejecucion.Permisos, ejecucion.ModoDesarrolloFirmas);
+            if (!diagnosticoPreparado.Permitido)
+            {
+                detalleAuditoria = diagnosticoPreparado.MotivoBloqueo;
+                ejecucion.AgregarEvento("error", $"> Ejecucion bloqueada en staging: {detalleAuditoria}", "#F44747", finalizado: true);
+                await log.WriteLineAsync($"Bloqueo staging: {detalleAuditoria}");
+                return;
+            }
+
+            await EscribirIntegridadStagingAsync(log, scriptPreparado.Script, diagnosticoPreparado);
+            if (ServicioSeguridadScripts.RequiereBrokerElevado(ejecucion.Script, ejecucion.Permisos))
+            {
+                var resultadoBroker = await EjecutarConBrokerAsync(ejecucion, scriptPreparado.Script, log);
+                resultadoAuditoria = resultadoBroker.Resultado;
+                codigoSalida = resultadoBroker.CodigoSalida;
+                detalleAuditoria = resultadoBroker.Detalle;
+                return;
+            }
+
+            using var proceso = CrearProceso(scriptPreparado.Script, ejecucion.PermitirExecutionPolicyBypass);
             ejecucion.Proceso = proceso;
             proceso.Start();
 
             var salida = LeerFlujoAsync(proceso.StandardOutput, ejecucion, log, "info", null);
             var error = LeerFlujoAsync(proceso.StandardError, ejecucion, log, "error", "#F44747");
-            await proceso.WaitForExitAsync();
+            using var tiempoMaximo = new CancellationTokenSource(TiempoMaximoEjecucion);
+            try
+            {
+                await proceso.WaitForExitAsync(tiempoMaximo.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                resultadoAuditoria = "timeout";
+                detalleAuditoria = $"Tiempo maximo de ejecucion superado: {TiempoMaximoEjecucion.TotalMinutes:0} minutos.";
+                ejecucion.AgregarEvento("error", $"> {detalleAuditoria}", "#F44747", finalizado: true);
+                await log.WriteLineAsync(detalleAuditoria);
+                try
+                {
+                    proceso.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                return;
+            }
+
             await Task.WhenAll(salida, error);
 
             codigoSalida = proceso.ExitCode;
@@ -235,6 +333,57 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
+    private async Task<ResultadoEjecucionBroker> EjecutarConBrokerAsync(EjecucionWeb ejecucion, ScriptInterno scriptPreparado, StreamWriter log)
+    {
+        await log.WriteLineAsync("Ejecucion elevada: broker minimo solicitado por allowlist.");
+        ejecucion.AgregarEvento("info", "> Solicitando broker elevado para script autorizado...", "#9CDCFE");
+        using var tiempoMaximo = new CancellationTokenSource(TiempoMaximoEjecucion);
+        ejecucion.CancelarBroker = () =>
+        {
+            tiempoMaximo.Cancel();
+            return Task.CompletedTask;
+        };
+
+        var resultado = new ResultadoEjecucionBroker("error", null, "Broker elevado sin resultado final.");
+        try
+        {
+            await foreach (var evento in _servicioBrokerElevado.EjecutarAsync(scriptPreparado, ejecucion.PermitirExecutionPolicyBypass, tiempoMaximo.Token))
+            {
+                if (!string.IsNullOrWhiteSpace(evento.Mensaje))
+                {
+                    var mensaje = SanitizarMensaje(ejecucion, evento.Mensaje);
+                    ejecucion.AgregarEvento(evento.Tipo, mensaje, evento.Color, evento.Finalizado);
+                    await log.WriteAsync(mensaje);
+                }
+
+                if (evento.Finalizado)
+                {
+                    resultado = new ResultadoEjecucionBroker(
+                        string.IsNullOrWhiteSpace(evento.Resultado) ? "error" : evento.Resultado,
+                        evento.CodigoSalida,
+                        evento.Detalle);
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            resultado = ejecucion.Cancelada
+                ? new ResultadoEjecucionBroker("cancelado", null, "Cancelada por el usuario.")
+                : new ResultadoEjecucionBroker("timeout", null, $"Tiempo maximo de ejecucion superado: {TiempoMaximoEjecucion.TotalMinutes:0} minutos.");
+            ejecucion.AgregarEvento("error", $"> {resultado.Detalle}", "#F44747", finalizado: true);
+            await log.WriteLineAsync(resultado.Detalle);
+        }
+        finally
+        {
+            ejecucion.CancelarBroker = null;
+            await log.WriteLineAsync();
+            await log.WriteLineAsync($"Fin broker UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
+        }
+
+        return resultado;
+    }
+
     private static async Task EscribirCabeceraLogAsync(StreamWriter log, EjecucionWeb ejecucion)
     {
         await log.WriteLineAsync($"Id ejecucion: {ejecucion.Id}");
@@ -248,15 +397,80 @@ public sealed class GestorEjecucionesWeb : IDisposable
         await log.WriteLineAsync();
     }
 
+    private static async Task EscribirIntegridadValidadaAsync(StreamWriter log, DiagnosticoEjecucionScript diagnostico)
+    {
+        await log.WriteLineAsync("Integridad validada antes de ejecutar:");
+        await log.WriteLineAsync($"Firma estado: {diagnostico.FirmaEstado}");
+        await log.WriteLineAsync($"Firma thumbprint: {diagnostico.FirmaThumbprint}");
+        await log.WriteLineAsync($"SHA-256: {diagnostico.Sha256}");
+        await log.WriteLineAsync();
+    }
+
+    private static async Task EscribirIntegridadStagingAsync(StreamWriter log, ScriptInterno script, DiagnosticoEjecucionScript diagnostico)
+    {
+        await log.WriteLineAsync("Copia temporal validada:");
+        await log.WriteLineAsync($"Ruta staging: {script.RutaCompleta}");
+        await log.WriteLineAsync($"Firma estado: {diagnostico.FirmaEstado}");
+        await log.WriteLineAsync($"Firma thumbprint: {diagnostico.FirmaThumbprint}");
+        await log.WriteLineAsync($"SHA-256 final: {ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta)}");
+        await log.WriteLineAsync();
+    }
+
     private static async Task LeerFlujoAsync(StreamReader lector, EjecucionWeb ejecucion, StreamWriter log, string tipo, string? color)
     {
         var buffer = new char[512];
         int leidos;
         while ((leidos = await lector.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
         {
-            var texto = SanitizarMensaje(ejecucion.Script, new string(buffer, 0, leidos));
+            var texto = SanitizarMensaje(ejecucion, new string(buffer, 0, leidos));
             ejecucion.AgregarEvento(tipo, texto, color);
             await log.WriteAsync(texto);
+        }
+    }
+
+    private static ScriptPreparado CrearCopiaTemporalValidada(EjecucionWeb ejecucion)
+    {
+        var raizStaging = Path.Combine(RutasAplicacion.RaizLocalAppData, "Staging");
+        Directory.CreateDirectory(raizStaging);
+
+        var directorio = Path.Combine(raizStaging, ejecucion.Id.ToString("N"));
+        Directory.CreateDirectory(directorio);
+        AplicarAclDirectorioStaging(directorio);
+
+        var nombreArchivo = Path.GetFileName(ejecucion.Script.RutaCompleta);
+        var rutaDestino = Path.Combine(directorio, nombreArchivo);
+        File.Copy(ejecucion.Script.RutaCompleta, rutaDestino, overwrite: false);
+        File.SetAttributes(rutaDestino, File.GetAttributes(rutaDestino) | FileAttributes.ReadOnly);
+
+        // Mantiene la copia abierta solo para lectura y bloquea escrituras hasta terminar.
+        var bloqueoLectura = new FileStream(rutaDestino, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var scriptPreparado = new ScriptInterno(ejecucion.Script.Id, ejecucion.Script.Nombre, ejecucion.Script.Tipo, rutaDestino);
+        return new ScriptPreparado(scriptPreparado, directorio, bloqueoLectura);
+    }
+
+    private static void AplicarAclDirectorioStaging(string directorio)
+    {
+        try
+        {
+            var usuarioActual = WindowsIdentity.GetCurrent().User;
+            if (usuarioActual is null)
+            {
+                return;
+            }
+
+            var administradores = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var sistema = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+            var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+            var seguridad = new DirectorySecurity();
+            seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            seguridad.AddAccessRule(new FileSystemAccessRule(usuarioActual, FileSystemRights.Modify | FileSystemRights.ReadAndExecute, herencia, PropagationFlags.None, AccessControlType.Allow));
+            seguridad.AddAccessRule(new FileSystemAccessRule(administradores, FileSystemRights.FullControl, herencia, PropagationFlags.None, AccessControlType.Allow));
+            seguridad.AddAccessRule(new FileSystemAccessRule(sistema, FileSystemRights.FullControl, herencia, PropagationFlags.None, AccessControlType.Allow));
+            new DirectoryInfo(directorio).SetAccessControl(seguridad);
+        }
+        catch
+        {
+            // La ejecucion sigue fail-closed por integridad aunque la ACL local no pueda endurecerse.
         }
     }
 
@@ -564,6 +778,20 @@ function global:Get-Credential {
             "$1=[oculto]"));
     }
 
+    private static string SanitizarMensaje(EjecucionWeb ejecucion, string texto)
+    {
+        texto = OcultarRutas(ejecucion.Script, texto);
+        if (!string.IsNullOrWhiteSpace(ejecucion.RutaScriptPreparado))
+        {
+            texto = OcultarRutaPreparada(ejecucion.RutaScriptPreparado, texto);
+        }
+
+        return ServicioRedaccionSecretos.Sanitizar(Regex.Replace(
+            texto,
+            @"(?i)\b(token|password|contrasena|contraseña|clave)\b\s*[:=]\s*[^\s]+",
+            "$1=[oculto]"));
+    }
+
     private static string OcultarRutas(ScriptInterno script, string texto)
     {
         var carpeta = Path.GetDirectoryName(script.RutaCompleta);
@@ -575,6 +803,17 @@ function global:Get-Credential {
         return texto.Replace(script.RutaCompleta, "[script protegido]", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string OcultarRutaPreparada(string rutaScript, string texto)
+    {
+        var carpeta = Path.GetDirectoryName(rutaScript);
+        if (!string.IsNullOrWhiteSpace(carpeta))
+        {
+            texto = texto.Replace(carpeta, "[staging protegido]", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return texto.Replace(rutaScript, "[script staging protegido]", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static int LeerUltimoIndiceEvento(HttpListenerRequest peticion)
     {
         return int.TryParse(peticion.Headers["Last-Event-ID"], out var ultimoId)
@@ -582,7 +821,25 @@ function global:Get-Credential {
             : 0;
     }
 
-    private sealed class EjecucionWeb(ScriptInterno script, string rutaLogs, UsuarioCliente usuario, bool permitirExecutionPolicyBypass) : IDisposable
+    private void PurgarFinalizadasAntiguas()
+    {
+        var limite = DateTimeOffset.UtcNow - TtlEjecucionesFinalizadas;
+        foreach (var item in _ejecuciones.Where(item => item.Value.FinalizadaUtc is not null && item.Value.FinalizadaUtc < limite).ToList())
+        {
+            if (_ejecuciones.TryRemove(item.Key, out var ejecucion))
+            {
+                ejecucion.Dispose();
+            }
+        }
+    }
+
+    private sealed class EjecucionWeb(
+        ScriptInterno script,
+        string rutaLogs,
+        UsuarioCliente usuario,
+        bool permitirExecutionPolicyBypass,
+        JsonObject permisos,
+        bool modoDesarrolloFirmas) : IDisposable
     {
         private readonly List<EventoCliente> _eventos = [];
         private readonly SemaphoreSlim _senal = new(0);
@@ -598,11 +855,21 @@ function global:Get-Credential {
 
         public bool PermitirExecutionPolicyBypass { get; } = permitirExecutionPolicyBypass;
 
+        public JsonObject Permisos { get; } = permisos;
+
+        public bool ModoDesarrolloFirmas { get; } = modoDesarrolloFirmas;
+
         public Process? Proceso { get; set; }
+
+        public string? RutaScriptPreparado { get; set; }
+
+        public Func<Task>? CancelarBroker { get; set; }
 
         public bool Cancelada { get; set; }
 
         public bool Finalizada { get; private set; }
+
+        public DateTimeOffset? FinalizadaUtc { get; private set; }
 
         public int TotalEventos
         {
@@ -619,6 +886,21 @@ function global:Get-Credential {
         {
             lock (_bloqueo)
             {
+                if (_eventos.Count >= MaximoEventosPorEjecucion)
+                {
+                    if (finalizado)
+                    {
+                        _eventos[^1] = new EventoCliente(tipo, mensaje, color, finalizado);
+                    }
+                    else if (!_eventos.Any(evento => evento.Mensaje.Contains("limite de eventos", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _eventos[^1] = new EventoCliente("error", "> Salida truncada por limite de eventos.", "#F44747");
+                    }
+
+                    _senal.Release();
+                    return;
+                }
+
                 _eventos.Add(new EventoCliente(tipo, mensaje, color, finalizado));
             }
 
@@ -641,6 +923,7 @@ function global:Get-Credential {
         public void MarcarFinalizada()
         {
             Finalizada = true;
+            FinalizadaUtc = DateTimeOffset.UtcNow;
             _senal.Release();
         }
 
@@ -650,4 +933,42 @@ function global:Get-Credential {
             _senal.Dispose();
         }
     }
+
+    private sealed class ScriptPreparado : IDisposable
+    {
+        private readonly string _directorio;
+        private readonly FileStream _bloqueoLectura;
+
+        public ScriptPreparado(ScriptInterno script, string directorio, FileStream bloqueoLectura)
+        {
+            Script = script;
+            _directorio = directorio;
+            _bloqueoLectura = bloqueoLectura;
+        }
+
+        public ScriptInterno Script { get; }
+
+        public void Dispose()
+        {
+            _bloqueoLectura.Dispose();
+            try
+            {
+                if (File.Exists(Script.RutaCompleta))
+                {
+                    File.SetAttributes(Script.RutaCompleta, FileAttributes.Normal);
+                }
+
+                if (Directory.Exists(_directorio))
+                {
+                    Directory.Delete(_directorio, recursive: true);
+                }
+            }
+            catch
+            {
+                // La limpieza de staging no debe ocultar el resultado operativo del script.
+            }
+        }
+    }
+
+    private sealed record ResultadoEjecucionBroker(string Resultado, int? CodigoSalida, string? Detalle);
 }

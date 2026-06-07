@@ -10,6 +10,9 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServicioLogInicio
 {
     private static readonly SemaphoreSlim Bloqueo = new(1, 1);
+    private static volatile string ultimoError = string.Empty;
+
+    public static string UltimoError => ultimoError;
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -68,6 +71,7 @@ public sealed class ServicioLogInicio
         }
         catch
         {
+            ultimoError = "No se pudo escribir el log de arranque.";
         }
     }
 
