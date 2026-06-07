@@ -1,8 +1,8 @@
 {
   "_autor": "Alex Roman",
   "_descripcion": "Configuracion predeterminada embebida en el ejecutable publicado.",
-  "RutaScripts": "\\\\MAD002MICROPRU\\REPO",
-  "RutaPermisos": "\\\\MAD002MICROPRU\\REPO\\PERMISOS\\permisos.json",
+  "RutaScripts": "\\\\MAD002MICROPRU\\C$\\REPO",
+  "RutaPermisos": "\\\\MAD002MICROPRU\\C$\\REPO\\PERMISOS\\permisos.json",
   "MaximoEjecucionesParalelas": 5,
   "seguridadScripts": {
     "certificadosPowerShellPermitidos": [

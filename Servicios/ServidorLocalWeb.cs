@@ -723,7 +723,7 @@ public sealed class ServidorLocalWeb : IDisposable
         var identidad = WindowsIdentity.GetCurrent().Name;
         if (ObtenerEmergenciaActiva() is not null)
         {
-            return new UsuarioCliente(identidad, "emergencia", 1, true, string.Empty, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return new UsuarioCliente(identidad, "admin", 50, true, string.Empty, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var permisos = diagnosticoPermisos.Permisos;
@@ -776,7 +776,7 @@ public sealed class ServidorLocalWeb : IDisposable
             return new
             {
                 usuario.NombreUsuario,
-                Rol = "emergencia",
+                Rol = "admin",
                 usuario.MaxScriptsSimultaneos,
                 UsuarioAutorizado = true,
                 Bloqueado = false,

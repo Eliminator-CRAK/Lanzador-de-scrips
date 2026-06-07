@@ -31,6 +31,8 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 `permissions.json` debe estar firmado por el certificado corporativo configurado en la aplicacion. Si falta, esta corrupto o no es accesible, la aplicacion bloquea la ejecucion por defecto.
 
+La configuracion predeterminada embebida apunta a `\\MAD002MICROPRU\C$\REPO` y `\\MAD002MICROPRU\C$\REPO\PERMISOS\permisos.json`. Las instalaciones que hayan guardado la ruta anterior sin `C$` se migran automaticamente al arrancar.
+
 La politica de seguridad vive en `seguridadScripts`:
 
 ```json
@@ -57,7 +59,7 @@ El token maestro esta firmado por el certificado privado autorizado de Alex Roma
 
 - TTL del token: sin caducidad operativa en la aplicacion.
 - Uso: reutilizable mientras se conserve protegido y la firma sea valida.
-- Alcance: sesion de emergencia sin rol administrador total.
+- Alcance: sesion de emergencia con rol administrador para poder abrir Ajustes.
 - Auditoria: intento, resultado, emisor, usuario y equipo.
 
 ## Broker Elevado
@@ -113,7 +115,7 @@ Cobertura actual:
 - Permisos ausentes y corruptos.
 - Autorizacion admin.
 - Firma de contenedores y manipulacion.
-- Validacion de rutas y admin shares.
+- Validacion de rutas y admin shares operativos.
 - Firma/hash de scripts.
 - Ejecucion real con eventos finales.
 

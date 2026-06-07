@@ -41,6 +41,7 @@ public sealed class ServicioConfiguracion
         }
 
         var configuracion = configuraciones[0].Configuracion!;
+        MigrarRutasPredeterminadasAnteriores(configuracion, configuracionPredeterminada);
         Guardar(configuracion);
         return configuracion;
     }
@@ -180,6 +181,20 @@ public sealed class ServicioConfiguracion
         catch
         {
             return new ConfiguracionLanzador();
+        }
+    }
+
+    private static void MigrarRutasPredeterminadasAnteriores(ConfiguracionLanzador configuracion, ConfiguracionLanzador configuracionPredeterminada)
+    {
+        // Corrige instalaciones que guardaron la ruta predeterminada anterior sin admin share.
+        if (string.Equals(configuracion.RutaScripts, @"\\MAD002MICROPRU\REPO", StringComparison.OrdinalIgnoreCase))
+        {
+            configuracion.RutaScripts = configuracionPredeterminada.RutaScripts;
+        }
+
+        if (string.Equals(configuracion.RutaPermisos, @"\\MAD002MICROPRU\REPO\PERMISOS\permisos.json", StringComparison.OrdinalIgnoreCase))
+        {
+            configuracion.RutaPermisos = configuracionPredeterminada.RutaPermisos;
         }
     }
 

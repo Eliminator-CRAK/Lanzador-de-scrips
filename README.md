@@ -39,12 +39,14 @@ flowchart TD
 
 ```json
 {
-  "RutaScripts": "\\\\MAD002MICROPRU\\REPO",
-  "RutaPermisos": "PERMISOS\\\\permissions.json",
+  "RutaScripts": "\\\\MAD002MICROPRU\\C$\\REPO",
+  "RutaPermisos": "\\\\MAD002MICROPRU\\C$\\REPO\\PERMISOS\\permisos.json",
   "RutaLogs": "%LocalAppData%\\\\LanzadorScripts\\\\Logs",
   "MaximoEjecucionesParalelas": 5
 }
 ```
+
+Si una instalacion local quedo guardada con `\\MAD002MICROPRU\REPO`, la app la migra automaticamente a `\\MAD002MICROPRU\C$\REPO` al arrancar.
 
 ## Publicacion
 
