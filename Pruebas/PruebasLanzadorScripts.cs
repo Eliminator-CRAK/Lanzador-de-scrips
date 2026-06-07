@@ -34,12 +34,11 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void ConfiguracionRechazaAdminShares()
+    public void ConfiguracionPermiteAdminShareOperativo()
     {
         var validador = new ServicioValidacionScripts();
 
-        Assert.False(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\C$\REPO", @"\\SERVIDOR\REPO\PERMISOS\permisos.json").EsValida);
-        Assert.False(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\REPO", @"\\SERVIDOR\D$\PERMISOS\permisos.json").EsValida);
+        Assert.True(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\C$\REPO", @"\\SERVIDOR\C$\REPO\PERMISOS\permisos.json").EsValida);
         Assert.True(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\REPO", @"\\SERVIDOR\REPO\PERMISOS\permisos.json").EsValida);
     }
 
@@ -52,6 +51,19 @@ public sealed class PruebasLanzadorScripts
         Assert.Contains("requireAdministrator", manifiesto, StringComparison.Ordinal);
         Assert.DoesNotContain("asInvoker", manifiesto, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ConfiguracionPredeterminadaUsaRepoAdminShare()
+    {
+        var rutaConfiguracion = Path.Combine(ObtenerRaizProyecto(), "ConfiguracionPredeterminada.json");
+        var configuracion = File.ReadAllText(rutaConfiguracion);
+        var modelo = new ConfiguracionLanzador();
+
+        Assert.Contains(@"\\\\MAD002MICROPRU\\C$\\REPO", configuracion, StringComparison.Ordinal);
+        Assert.Equal(@"\\MAD002MICROPRU\C$\REPO", modelo.RutaScripts);
+        Assert.Equal(@"\\MAD002MICROPRU\C$\REPO\PERMISOS\permisos.json", modelo.RutaPermisos);
+    }
+
 
     [Fact]
     public void TokenMaestroFirmadoEsReutilizable()
@@ -121,7 +133,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PaqueteConfiguracionFirmadoImportaYRechazaAdminShare()
+    public void PaqueteConfiguracionFirmadoImportaAdminShareOperativo()
     {
         using var entorno = EntornoPruebas.Crear();
         using var rsa = RSA.Create(3072);
@@ -141,16 +153,17 @@ public sealed class PruebasLanzadorScripts
         Assert.Equal(configuracion.RutaScripts, importacion.Configuracion.RutaScripts);
         Assert.NotNull(importacion.Permisos);
 
-        var configuracionInsegura = new ConfiguracionLanzador
+        var configuracionAdminShare = new ConfiguracionLanzador
         {
             RutaScripts = @"\\SERVIDOR\C$\REPO",
             RutaPermisos = @"\\SERVIDOR\C$\REPO\PERMISOS\permisos.json"
         };
-        var paqueteInseguro = servicio.Exportar(configuracionInsegura, CrearPermisosAdmin());
-        var rutaInsegura = Path.Combine(entorno.Raiz, "inseguro.lanzadorconfig");
-        File.WriteAllBytes(rutaInsegura, Convert.FromBase64String(paqueteInseguro.ContenidoBase64));
+        var paqueteAdminShare = servicio.Exportar(configuracionAdminShare, CrearPermisosAdmin());
+        var rutaAdminShare = Path.Combine(entorno.Raiz, "admin-share.lanzadorconfig");
+        File.WriteAllBytes(rutaAdminShare, Convert.FromBase64String(paqueteAdminShare.ContenidoBase64));
 
-        Assert.Throws<InvalidOperationException>(() => servicio.Importar(rutaInsegura, new ConfiguracionLanzador()));
+        var importacionAdminShare = servicio.Importar(rutaAdminShare, new ConfiguracionLanzador());
+        Assert.Equal(configuracionAdminShare.RutaScripts, importacionAdminShare.Configuracion.RutaScripts);
     }
 
     [Fact]
@@ -208,6 +221,10 @@ public sealed class PruebasLanzadorScripts
         var cuerpo = new StringContent($"{{\"token\":\"{token}\"}}", Encoding.UTF8, "application/json");
         var primeraRespuesta = await cliente.PostAsync("/api/token-maestro/desbloquear", cuerpo);
         Assert.Equal(HttpStatusCode.OK, primeraRespuesta.StatusCode);
+
+        var usuario = await LeerJsonAsync(await cliente.GetAsync("/api/usuario"));
+        Assert.Equal("admin", usuario?["rol"]?.GetValue<string>());
+        Assert.False(string.IsNullOrWhiteSpace(usuario?["tokenAdmin"]?.GetValue<string>()));
 
         var cuerpoReutilizado = new StringContent($"{{\"token\":\"{token}\"}}", Encoding.UTF8, "application/json");
         var segundaRespuesta = await cliente.PostAsync("/api/token-maestro/desbloquear", cuerpoReutilizado);

@@ -25,56 +25,30 @@
 
     <Window.Resources>
         <Style x:Key="BotonVentanaMac" TargetType="Button">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="32" />
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Foreground" Value="#66000000" />
-            <Setter Property="FontSize" Value="9" />
-            <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Grid Width="{TemplateBinding Width}"
-                              Height="{TemplateBinding Height}"
-                              Background="Transparent">
-                            <Border x:Name="AnilloFoco"
-                                    Width="24"
-                                    Height="24"
-                                    CornerRadius="12"
-                                    BorderThickness="1"
-                                    BorderBrush="Transparent"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center" />
-                            <Ellipse x:Name="Circulo"
-                                     Width="14"
-                                     Height="14"
-                                     Fill="{TemplateBinding Background}"
-                                     Stroke="#33000000"
-                                     StrokeThickness="0.5"
-                                     Opacity="0.96"
-                                     HorizontalAlignment="Center"
-                                     VerticalAlignment="Center" />
-                            <TextBlock x:Name="Simbolo"
-                                       Text="{TemplateBinding Tag}"
-                                       Foreground="{TemplateBinding Foreground}"
-                                       FontSize="{TemplateBinding FontSize}"
-                                       FontWeight="{TemplateBinding FontWeight}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Opacity="0" />
-                        </Grid>
+                        <Border x:Name="Circulo"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="7"
+                                Opacity="0.92">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Circulo" Property="Opacity" Value="1" />
-                                <Setter TargetName="Simbolo" Property="Opacity" Value="0.78" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Circulo" Property="Opacity" Value="0.76" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="AnilloFoco" Property="BorderBrush" Value="#93C5FD" />
+                                <Setter TargetName="Circulo" Property="Opacity" Value="1" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -103,7 +77,6 @@
                 <Button x:Name="BotonCerrar"
                         Style="{StaticResource BotonVentanaMac}"
                         Background="#FF5F57"
-                        Tag="x"
                         Click="BotonCerrar_Click"
                         ToolTip="Cerrar"
                         AutomationProperties.Name="Cerrar ventana" />
@@ -111,7 +84,6 @@
                         Style="{StaticResource BotonVentanaMac}"
                         Background="#FFBD2E"
                         Margin="9,0,0,0"
-                        Tag="-"
                         Click="BotonMinimizar_Click"
                         ToolTip="Minimizar"
                         AutomationProperties.Name="Minimizar ventana" />
@@ -119,7 +91,6 @@
                         Style="{StaticResource BotonVentanaMac}"
                         Background="#28C840"
                         Margin="9,0,0,0"
-                        Tag="+"
                         Click="BotonMaximizar_Click"
                         ToolTip="Maximizar"
                         AutomationProperties.Name="Maximizar o restaurar ventana" />
