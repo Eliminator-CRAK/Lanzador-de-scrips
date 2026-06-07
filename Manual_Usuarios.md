@@ -10,8 +10,9 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 ## Inicio
 
 1. Abra `LanzadorScripts.exe`.
-2. Espere a que finalice la pantalla de preparacion.
-3. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
+2. Acepte el aviso de administrador de Windows si aparece.
+3. Espere a que finalice la pantalla de preparacion.
+4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
 ## Ejecutar Un Script
 

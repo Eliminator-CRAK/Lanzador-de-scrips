@@ -30,7 +30,6 @@ flowchart TD
 | Config usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
 | Config equipo | `C:\ProgramData\LanzadorScripts\configuracion.dat` |
 | Tokens admin | `%AppData%\LanzadorScripts\Tokens` |
-| Tokens maestro usados | `%AppData%\LanzadorScripts\Tokens\tokens-maestros-usados.json` |
 | Logs | `%LocalAppData%\LanzadorScripts\Logs` |
 | Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
 | Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2` |
@@ -109,7 +108,9 @@ La API local exige cookie de sesion y token interno aleatorio por arranque. Los 
 
 La politica es fail closed. Los `.ps1` requieren firma Authenticode valida de un certificado permitido. Los `.bat` y `.cmd` requieren hash SHA-256 permitido. Los nombres y rutas relativas con `&`, `|`, `<`, `>`, `^`, `%` o `!` se rechazan.
 
-Los permisos y paquetes se protegen mediante firma asimetrica. DPAPI queda reservado para secretos locales. Los scripts allowlistados en `scriptsElevadosPermitidos` usan broker elevado minimo; el resto se ejecuta sin elevar la app principal.
+Los permisos y paquetes se protegen mediante firma asimetrica. DPAPI queda reservado para secretos locales. La aplicacion solicita administrador al iniciar y ejecuta los scripts desde el proceso principal elevado. El broker elevado queda como compatibilidad interna si alguna ejecucion futura se lanza sin elevacion.
+
+El token maestro se firma con el certificado privado autorizado de Alex Roman. El mismo token puede reutilizarse mientras se conserve protegido y la firma sea valida; no requiere motivo operativo ni se registra como usado.
 
 Antes de ejecutar, la aplicacion valida integridad, copia el script a staging local, aplica protecciones de archivo y revalida la copia para mitigar TOCTOU.
 
@@ -126,8 +127,8 @@ dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj
 | SO | Windows 10/11 Pro o Enterprise |
 | PowerShell | 5.1 |
 | WebView2 | Runtime instalado o instalador embebido en el EXE portable |
-| Permisos app | Usuario normal mediante `asInvoker` |
-| Permisos elevados | Solo broker bajo demanda para scripts allowlistados |
+| Permisos app | Administrador mediante `requireAdministrator` |
+| Permisos elevados | Todos los scripts se ejecutan desde la app elevada |
 
 ## Manuales
 

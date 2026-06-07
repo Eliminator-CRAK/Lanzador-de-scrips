@@ -12,7 +12,6 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServicioTokenMaestro
 {
     private const string PrefijoToken = "LSMT1";
-    private static readonly TimeSpan VigenciaToken = TimeSpan.FromMinutes(10);
 
     internal const string HuellaCertificado = "500266A64E574889370D92E5CE0D65D55CC963B7";
     internal const string CertificadoPublicoBase64 = "MIIEUDCCArigAwIBAgIQFi8pJshCCatPid+un7OHJzANBgkqhkiG9w0BAQUFADA7MTkwNwYDVQQDDDBMYW56YWRvclNjcmlwdHMgTWFzdGVyIFRva2VuIFNpZ25lciAtIEFsZXggUm9tYW4wHhcNMjYwNTIyMDIzOTEzWhcNNDYwNTIyMDI0OTEzWjA7MTkwNwYDVQQDDDBMYW56YWRvclNjcmlwdHMgTWFzdGVyIFRva2VuIFNpZ25lciAtIEFsZXggUm9tYW4wggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGKAoIBgQDOd49FWtyHc7c1lNlaiMTSbc8eu5pseNylTH/dXWTm1KId4ji64Wb4eBN0QRYBj+B6TwcKRPJCTlcZ+LqG2xAmE3amgnVuY1l1oZiknx6juYS6A00X4WqwFSJInLHgPmOiG8qGvjPSfs9r2GoHm0o4qgoAbJzQ1CT6POpVLWGe7MDd50uIX7T+r/mztU/F2D/CbyU15cPje5E+Zktg7gwDGUHAkUKFhvIevzskuRgnnVHlOI3WQ9RR0ZtYf7qxxri8PbG6M6yUC7siPb7w4tASTx+xnszH0xuDSUA3UIcgYT/6abZXaS6sL4vVONqjOCzrJrwcFQ7qy3M9Wl+jBNu88zUzuyjVcEQtMdz3UumMRrCh0YyscDjHeqbBzPsvSbsyxjAHklFHqDyOgzSdgQXAix+TniRp0DJCQbkIhVNG7TngId40vD4bwbkx9WiZ3mHCzy9EwRAhKwcLV1YUXWaMCzpB1fA7uTzot5DplloPL+Z22pr8zDJPLMzhjIjmDSUCAwEAAaNQME4wDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcDATAdBgNVHQ4EFgQUfno/gwusO4R8WrCvu0bm+aVs5h4wDQYJKoZIhvcNAQEFBQADggGBAGEa5W8JHwjHJR4cCH8ylMRCb/vCWTXCBZ+OY76nC7WZrx1gn0su+Ijr33x2IrK4FvxgBe0KqH9GX9VTwDn23WsNyLE2Nl3UiLl9G+kQtqjONf20IuuFeKNEIdCUqtU0R8kj2jBugY3sKjxPLfs+rL68mIZizVzSS+HXcV5SVB14y/sunaXqVnEaGg2ft6NSiTdXB1PbcYkCNEYLG73GzOpQEMRWtDfZOeK3W0eOgnY48Dkho5LemDFmED0OrzNJcDp1jdQArfKuZPpHavs2BuRar/0zubTr/K4sONRXCFpadV1o9gWCf21XFxyvKfyMhtO/HqOhQ0dOG3+aw2jVWsx09Rbx2O0IGHBxzRydAMBfp9L8w1MXFCi2DrwYf686BqI+2mcfJZlYzYrRlvnA1Bhfe6v+s9S5xbkLJ8Ej10im/u1w2IPoCK40ef6H8UQo2tg4VmUjzdYvQXvaOyJJ4FPdvvzbd2529ElxV9CDV5xjl4rkqohuUVsu+XAUSlGEWg==";
@@ -22,31 +21,58 @@ public sealed class ServicioTokenMaestro
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private readonly X509Certificate2 _certificadoPublico = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(CertificadoPublicoBase64));
+    private readonly RSA _claveVerificacion;
+    private readonly RSA? _claveFirmaPruebas;
+
+    public ServicioTokenMaestro()
+    {
+        var certificadoPublico = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(CertificadoPublicoBase64));
+        _claveVerificacion = certificadoPublico.GetRSAPublicKey()
+            ?? throw new InvalidOperationException("El certificado publico no tiene clave RSA.");
+    }
+
+    internal ServicioTokenMaestro(RSA claveFirma, RSA claveVerificacion)
+    {
+        _claveFirmaPruebas = claveFirma;
+        _claveVerificacion = claveVerificacion;
+    }
 
     public bool PuedeGenerar()
     {
+        if (_claveFirmaPruebas is not null)
+        {
+            return true;
+        }
+
         using var certificado = BuscarCertificadoPrivado();
         return certificado is not null;
     }
 
     public string Generar()
     {
-        return Generar(WindowsIdentity.GetCurrent().Name, Environment.MachineName);
-    }
+        if (_claveFirmaPruebas is not null)
+        {
+            return GenerarConClave(_claveFirmaPruebas);
+        }
 
-    public string Generar(string usuarioDestino, string equipoDestino)
-    {
         using var certificado = BuscarCertificadoPrivado()
             ?? throw new InvalidOperationException("No se encontro el certificado privado de Alex Roman.");
         using var rsa = certificado.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("El certificado no tiene clave privada RSA.");
 
+        return GenerarConClave(rsa);
+    }
+
+    public string Generar(string usuarioDestino, string equipoDestino)
+    {
+        return Generar();
+    }
+
+    private static string GenerarConClave(RSA rsa)
+    {
         var payload = new TokenMaestroPayload(
             Guid.NewGuid().ToString("N"),
             DateTimeOffset.UtcNow,
-            equipoDestino,
-            usuarioDestino,
             Environment.MachineName,
             WindowsIdentity.GetCurrent().Name);
         var payloadJson = JsonSerializer.Serialize(payload, OpcionesJson);
@@ -58,10 +84,15 @@ public sealed class ServicioTokenMaestro
 
     public bool Validar(string? token, out TokenMaestroPayload? payload)
     {
-        return Validar(token, WindowsIdentity.GetCurrent().Name, Environment.MachineName, out payload, out _);
+        return Validar(token, out payload, out _);
     }
 
     public bool Validar(string? token, string usuarioDestino, string equipoDestino, out TokenMaestroPayload? payload, out string motivo)
+    {
+        return Validar(token, out payload, out motivo);
+    }
+
+    public bool Validar(string? token, out TokenMaestroPayload? payload, out string motivo)
     {
         payload = null;
         motivo = string.Empty;
@@ -82,8 +113,7 @@ public sealed class ServicioTokenMaestro
         {
             var payloadBytes = DecodificarBase64Url(partes[1]);
             var firma = DecodificarBase64Url(partes[2]);
-            using var rsa = _certificadoPublico.GetRSAPublicKey();
-            if (rsa is null || !rsa.VerifyData(Encoding.UTF8.GetBytes(partes[1]), firma, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+            if (!_claveVerificacion.VerifyData(Encoding.UTF8.GetBytes(partes[1]), firma, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
             {
                 motivo = "Firma de token no valida.";
                 return false;
@@ -93,19 +123,6 @@ public sealed class ServicioTokenMaestro
             if (payload is null)
             {
                 motivo = "Payload de token no valido.";
-                return false;
-            }
-
-            if (DateTimeOffset.UtcNow - payload.Creado > VigenciaToken || payload.Creado > DateTimeOffset.UtcNow.AddMinutes(2))
-            {
-                motivo = "Token caducado.";
-                return false;
-            }
-
-            if (!string.Equals(payload.EquipoDestino, equipoDestino, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(payload.UsuarioDestino, usuarioDestino, StringComparison.OrdinalIgnoreCase))
-            {
-                motivo = "Token emitido para otro equipo o usuario.";
                 return false;
             }
 
@@ -123,7 +140,7 @@ public sealed class ServicioTokenMaestro
         using var almacen = new X509Store(StoreName.My, StoreLocation.CurrentUser);
         almacen.Open(OpenFlags.ReadOnly);
         return almacen.Certificates
-            .Find(X509FindType.FindByThumbprint, HuellaCertificado, validOnly: true)
+            .Find(X509FindType.FindByThumbprint, HuellaCertificado, validOnly: false)
             .OfType<X509Certificate2>()
             .FirstOrDefault(certificado => certificado.HasPrivateKey);
     }
@@ -144,7 +161,5 @@ public sealed class ServicioTokenMaestro
 public sealed record TokenMaestroPayload(
     string Id,
     DateTimeOffset Creado,
-    string EquipoDestino,
-    string UsuarioDestino,
     string EquipoEmisor,
     string UsuarioEmisor);

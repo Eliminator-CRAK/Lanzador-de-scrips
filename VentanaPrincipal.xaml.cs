@@ -200,7 +200,7 @@ public partial class VentanaPrincipal : Window
         if (!_servicioTokenMaestro.PuedeGenerar())
         {
             MessageBox.Show(
-                "No se encontro el certificado privado autorizado para generar el token maestro.",
+                "No se encontro el certificado privado de Alex Roman con clave RSA para generar el token maestro.",
                 "Token maestro",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -211,7 +211,7 @@ public partial class VentanaPrincipal : Window
         Clipboard.SetText(token);
         var tokenParcial = token.Length > 18 ? token[..18] + "..." : "[copiado]";
         MessageBox.Show(
-            $"Token maestro generado para este usuario y equipo. Se ha copiado al portapapeles.\n\nReferencia: {tokenParcial}\nCaduca en 10 minutos y solo debe usarse con motivo operativo.",
+            $"Token maestro generado y copiado al portapapeles.\n\nReferencia: {tokenParcial}\nPuede reutilizarse mientras siga firmado y protegido.",
             "Token maestro",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
@@ -330,43 +330,9 @@ public partial class VentanaPrincipal : Window
                     }).catch(() => respuesta);
                 }
 
-                function completarMotivoEmergencia(url, opciones) {
-                    const metodo = String(opciones.method || (opciones.body ? 'POST' : 'GET')).toUpperCase();
-                    const final = new URL(url, window.location.href);
-                    if (metodo !== 'POST' || final.pathname !== '/api/token-maestro/desbloquear') {
-                        return opciones;
-                    }
-
-                    let cuerpo = {};
-                    try {
-                        cuerpo = typeof opciones.body === 'string' && opciones.body.trim()
-                            ? JSON.parse(opciones.body)
-                            : {};
-                    } catch {
-                        cuerpo = {};
-                    }
-
-                    if (typeof cuerpo.motivo !== 'string' || cuerpo.motivo.trim().length < 10) {
-                        const motivo = window.prompt('Motivo operativo del desbloqueo de emergencia') || '';
-                        cuerpo.motivo = motivo.trim();
-                    }
-
-                    return {
-                        ...opciones,
-                        headers: {
-                            ...(opciones.headers || {}),
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(cuerpo)
-                    };
-                }
-
                 window.fetch = async (entrada, opciones = {}) => {
                     const url = typeof entrada === 'string' ? entrada : entrada.url;
-                    let opcionesFinales = opciones;
-                    if (esApiLocal(url)) {
-                        opcionesFinales = completarMotivoEmergencia(url, opcionesFinales);
-                    }
+                    const opcionesFinales = opciones;
 
                     const cabeceras = new Headers(opcionesFinales.headers || (entrada && entrada.headers) || {});
                     if (esApiLocal(url)) {

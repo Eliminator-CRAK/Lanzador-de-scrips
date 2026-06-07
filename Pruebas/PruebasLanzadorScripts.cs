@@ -44,6 +44,40 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void ManifiestoSolicitaAdministrador()
+    {
+        var rutaManifiesto = Path.Combine(ObtenerRaizProyecto(), "manifiesto.manifest");
+        var manifiesto = File.ReadAllText(rutaManifiesto);
+
+        Assert.Contains("requireAdministrator", manifiesto, StringComparison.Ordinal);
+        Assert.DoesNotContain("asInvoker", manifiesto, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TokenMaestroFirmadoEsReutilizable()
+    {
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioTokenMaestro(rsa, rsa);
+        var token = servicio.Generar();
+
+        Assert.True(servicio.Validar(token, out var primerPayload, out var primerMotivo), primerMotivo);
+        Assert.True(servicio.Validar(token, out var segundoPayload, out var segundoMotivo), segundoMotivo);
+        Assert.Equal(primerPayload?.Id, segundoPayload?.Id);
+    }
+
+    [Fact]
+    public void TokenMaestroRechazaFirmaManipulada()
+    {
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioTokenMaestro(rsa, rsa);
+        var partes = servicio.Generar().Split('.');
+        partes[2] = partes[2][..^1] + (partes[2][^1] == 'A' ? "B" : "A");
+
+        Assert.False(servicio.Validar(string.Join(".", partes), out _, out var motivo));
+        Assert.Equal("Firma de token no valida.", motivo);
+    }
+
+    [Fact]
     public void SeguridadBloqueaScriptsSinFirmaOHash()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -159,6 +193,28 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public async Task ApiDesbloqueaConTokenReutilizableSinMotivo()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        using var rsaPermisos = RSA.Create(3072);
+        using var rsaToken = RSA.Create(3072);
+        var firma = new ServicioCifradoAplicacion(rsaPermisos, rsaPermisos, "Pruebas");
+        var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes(), firma, servicioToken);
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var token = servicioToken.Generar();
+        var cuerpo = new StringContent($"{{\"token\":\"{token}\"}}", Encoding.UTF8, "application/json");
+        var primeraRespuesta = await cliente.PostAsync("/api/token-maestro/desbloquear", cuerpo);
+        Assert.Equal(HttpStatusCode.OK, primeraRespuesta.StatusCode);
+
+        var cuerpoReutilizado = new StringContent($"{{\"token\":\"{token}\"}}", Encoding.UTF8, "application/json");
+        var segundaRespuesta = await cliente.PostAsync("/api/token-maestro/desbloquear", cuerpoReutilizado);
+        Assert.Equal(HttpStatusCode.OK, segundaRespuesta.StatusCode);
+    }
+
+    [Fact]
     public async Task ApiAdminExigeBearer()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -224,6 +280,22 @@ public sealed class PruebasLanzadorScripts
         {
             BaseAddress = servidor.UrlBase
         };
+    }
+
+    private static string ObtenerRaizProyecto()
+    {
+        var directorio = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directorio is not null)
+        {
+            if (File.Exists(Path.Combine(directorio.FullName, "manifiesto.manifest")))
+            {
+                return directorio.FullName;
+            }
+
+            directorio = directorio.Parent;
+        }
+
+        throw new DirectoryNotFoundException("No se encontro la raiz del proyecto.");
     }
 
     private static async Task PrepararSesionAsync(HttpClient cliente, ServidorLocalWeb servidor)

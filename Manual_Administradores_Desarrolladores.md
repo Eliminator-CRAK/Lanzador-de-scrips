@@ -9,11 +9,11 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 ## Arquitectura
 
-- WPF ejecuta la ventana principal sin elevacion global mediante `asInvoker`.
+- WPF ejecuta la ventana principal con elevacion global mediante `requireAdministrator`.
 - WebView2 muestra el cliente embebido y se comunica con un servidor HTTP local.
 - El servidor local exige cookie de sesion y token interno por arranque para `/api/*`.
 - Los endpoints de administracion requieren ademas autorizacion de administrador local.
-- Los scripts allowlistados como elevados se ejecutan mediante broker minimo bajo demanda.
+- Los scripts se ejecutan desde el proceso principal elevado. El broker queda como compatibilidad interna si se arranca sin elevacion.
 
 ## Rutas Operativas
 
@@ -22,7 +22,6 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Configuracion usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
 | Configuracion equipo | `C:\ProgramData\LanzadorScripts\configuracion.dat` |
 | Tokens de administrador | `%AppData%\LanzadorScripts\Tokens` |
-| Tokens maestro usados | `%AppData%\LanzadorScripts\Tokens\tokens-maestros-usados.json` |
 | Logs de ejecucion | `%LocalAppData%\LanzadorScripts\Logs` |
 | Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
 | Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2` |
@@ -49,21 +48,21 @@ Reglas:
 
 - `.ps1` requiere firma Authenticode valida de certificado permitido.
 - `.bat` y `.cmd` requieren SHA-256 permitido.
-- Los scripts elevados deben estar en `scriptsElevadosPermitidos`.
+- `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
 
 ## Emergencia
 
-El token maestro es temporal, de un solo uso, vinculado a usuario y equipo, y requiere motivo operativo.
+El token maestro esta firmado por el certificado privado autorizado de Alex Roman y permite abrir una sesion de emergencia cuando los permisos no estan disponibles.
 
-- TTL: 10 minutos.
-- Uso: una sola vez, persistido localmente.
+- TTL del token: sin caducidad operativa en la aplicacion.
+- Uso: reutilizable mientras se conserve protegido y la firma sea valida.
 - Alcance: sesion de emergencia sin rol administrador total.
-- Auditoria: intento, resultado, motivo, usuario y equipo.
+- Auditoria: intento, resultado, emisor, usuario y equipo.
 
 ## Broker Elevado
 
-La aplicacion principal no exige administrador. Cuando un script esta allowlistado como elevado, la app lanza el mismo ejecutable en modo interno `--broker-elevado` mediante UAC.
+La aplicacion principal exige administrador. El broker elevado se mantiene como mecanismo interno de compatibilidad para ejecuciones iniciadas sin elevacion, pero no es la ruta normal de operacion.
 
 Controles:
 

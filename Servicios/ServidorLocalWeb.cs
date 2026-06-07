@@ -31,7 +31,7 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly CancellationTokenSource _cancelacion = new();
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
     private readonly ServicioTokensAdmin _servicioTokensAdmin = new();
-    private readonly ServicioTokenMaestro _servicioTokenMaestro = new();
+    private readonly ServicioTokenMaestro _servicioTokenMaestro;
     private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion;
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
     private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
@@ -39,7 +39,6 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
-    private readonly HashSet<string> _tokensMaestrosUsados = new(StringComparer.Ordinal);
     private readonly object _bloqueoEmergencia = new();
     private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly string _tokenApiInterno = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -47,15 +46,21 @@ public sealed class ServidorLocalWeb : IDisposable
     private volatile bool _modoDesarrolloFirmas;
 
     private ServidorLocalWeb(int puerto)
-        : this(puerto, new ServicioCifradoAplicacion())
+        : this(puerto, new ServicioCifradoAplicacion(), new ServicioTokenMaestro())
     {
     }
 
     private ServidorLocalWeb(int puerto, ServicioCifradoAplicacion servicioCifradoAplicacion)
+        : this(puerto, servicioCifradoAplicacion, new ServicioTokenMaestro())
+    {
+    }
+
+    private ServidorLocalWeb(int puerto, ServicioCifradoAplicacion servicioCifradoAplicacion, ServicioTokenMaestro servicioTokenMaestro)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
         _servicioCifradoAplicacion = servicioCifradoAplicacion;
+        _servicioTokenMaestro = servicioTokenMaestro;
         _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria, _servicioSeguridadScripts);
     }
 
@@ -67,6 +72,12 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion)
         : this(puerto, servicioCifradoAplicacion)
+    {
+        _configuracionFija = configuracion;
+    }
+
+    private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion, ServicioTokenMaestro servicioTokenMaestro)
+        : this(puerto, servicioCifradoAplicacion, servicioTokenMaestro)
     {
         _configuracionFija = configuracion;
     }
@@ -96,6 +107,15 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         // Inicia el servidor con servicios aislados de pruebas.
         var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioCifradoAplicacion);
+        servidor._escuchador.Start();
+        _ = servidor.EscucharAsync();
+        return servidor;
+    }
+
+    internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion, ServicioTokenMaestro servicioTokenMaestro)
+    {
+        // Inicia el servidor con servicios aislados de pruebas.
+        var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioCifradoAplicacion, servicioTokenMaestro);
         servidor._escuchador.Start();
         _ = servidor.EscucharAsync();
         return servidor;
@@ -289,15 +309,9 @@ public sealed class ServidorLocalWeb : IDisposable
 
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var token = LeerTexto(cuerpo, "token", string.Empty);
-            var motivo = LeerTexto(cuerpo, "motivo", string.Empty).Trim();
-            if (motivo.Length < 10)
-            {
-                await EscribirJsonAsync(contexto, 400, new { error = "El desbloqueo de emergencia requiere un motivo operativo." });
-                return;
-            }
 
             var usuarioActual = WindowsIdentity.GetCurrent().Name;
-            if (!_servicioTokenMaestro.Validar(token, usuarioActual, Environment.MachineName, out var payload, out var motivoToken))
+            if (!_servicioTokenMaestro.Validar(token, out var payload, out var motivoToken))
             {
                 await _servicioAuditoria.RegistrarEventoSeguridadAsync(
                     "seguridad.emergencia",
@@ -309,24 +323,14 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            if (!ActivarEmergencia(payload!, motivo, usuarioActual, out var emergencia, out var errorEmergencia))
-            {
-                await _servicioAuditoria.RegistrarEventoSeguridadAsync(
-                    "seguridad.emergencia",
-                    usuarioActual,
-                    null,
-                    "denegado",
-                    errorEmergencia);
-                await EscribirJsonAsync(contexto, 403, new { error = errorEmergencia });
-                return;
-            }
+            var emergencia = ActivarEmergencia(payload!, usuarioActual);
 
             await _servicioAuditoria.RegistrarEventoSeguridadAsync(
                 "seguridad.emergencia",
                 usuarioActual,
                 null,
                 "activado",
-                $"Motivo: {motivo}; VenceUtc: {emergencia.VenceUtc:O}; Emisor: {payload!.UsuarioEmisor}");
+                $"VenceUtc: {emergencia.VenceUtc:O}; Emisor: {payload!.UsuarioEmisor}");
 
             var tokenAdmin = _servicioTokensAdmin.ObtenerOCrear(usuarioActual);
             await EscribirJsonAsync(contexto, 200, new
@@ -1226,74 +1230,14 @@ public sealed class ServidorLocalWeb : IDisposable
         return _configuracionFija ?? _servicioConfiguracion.Cargar();
     }
 
-    private bool ActivarEmergencia(TokenMaestroPayload payload, string motivo, string usuario, out SesionEmergencia emergencia, out string error)
+    private SesionEmergencia ActivarEmergencia(TokenMaestroPayload payload, string usuario)
     {
         lock (_bloqueoEmergencia)
         {
-            emergencia = new SesionEmergencia(usuario, motivo, DateTimeOffset.UtcNow.AddMinutes(10), payload.Id);
-            error = string.Empty;
-            CargarTokensMaestrosUsados();
-            if (_tokensMaestrosUsados.Contains(payload.Id))
-            {
-                error = "Token maestro ya usado.";
-                return false;
-            }
-
-            if (!RegistrarTokenMaestroUsado(payload.Id, out error))
-            {
-                return false;
-            }
-
-            _tokensMaestrosUsados.Add(payload.Id);
+            var emergencia = new SesionEmergencia(usuario, string.Empty, DateTimeOffset.UtcNow.AddMinutes(10), payload.Id);
             _sesionEmergencia = emergencia;
-            return true;
+            return emergencia;
         }
-    }
-
-    private void CargarTokensMaestrosUsados()
-    {
-        try
-        {
-            var ruta = ObtenerRutaTokensMaestrosUsados();
-            if (!File.Exists(ruta))
-            {
-                return;
-            }
-
-            var ids = JsonSerializer.Deserialize<string[]>(File.ReadAllText(ruta)) ?? [];
-            foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
-            {
-                _tokensMaestrosUsados.Add(id);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private bool RegistrarTokenMaestroUsado(string tokenId, out string error)
-    {
-        try
-        {
-            Directory.CreateDirectory(RutasAplicacion.RutaTokensUsuario);
-            var ruta = ObtenerRutaTokensMaestrosUsados();
-            var temporal = ruta + ".tmp";
-            var ids = _tokensMaestrosUsados.Append(tokenId).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
-            File.WriteAllText(temporal, JsonSerializer.Serialize(ids), Encoding.UTF8);
-            File.Move(temporal, ruta, overwrite: true);
-            error = string.Empty;
-            return true;
-        }
-        catch
-        {
-            error = "No se pudo registrar el uso del token maestro.";
-            return false;
-        }
-    }
-
-    private static string ObtenerRutaTokensMaestrosUsados()
-    {
-        return Path.Combine(RutasAplicacion.RutaTokensUsuario, "tokens-maestros-usados.json");
     }
 
     private SesionEmergencia? ObtenerEmergenciaActiva()
