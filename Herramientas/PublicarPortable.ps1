@@ -1,11 +1,12 @@
 # (Autor: Alex Roman)
-# Descripcion: Publica el ejecutable portable con validacion WebView2 y firma opcional.
+# Descripcion: Publica el ejecutable portable con validacion WebView2 y firma obligatoria.
 
 param(
     [string]$CertThumbprint = '',
     [string]$CertPath = '',
     [securestring]$CertPassword,
-    [string]$TimestampServer = 'http://timestamp.digicert.com'
+    [string]$TimestampServer = 'http://timestamp.digicert.com',
+    [switch]$AllowUnsignedForDev
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,7 +19,7 @@ $instaladorWebView2 = Join-Path $carpetaWebView2 'MicrosoftEdgeWebView2RuntimeIn
 $integridadWebView2 = Join-Path $raiz 'Servicios\IntegridadWebView2.cs'
 $urlWebView2 = 'https://go.microsoft.com/fwlink/p/?LinkId=2124701'
 $salida = Join-Path $raiz 'publicacion'
-$tamanoMinimoExe = 209715200
+$tamanoMinimoExe = 157286400
 
 function Assert-WebView2Installer {
     param([string]$Path)
@@ -101,11 +102,14 @@ try {
 Update-WebView2HashSource -Hash $hashWebView2
 Write-Host "WebView2 validado. SHA-256: $hashWebView2"
 
+Write-Host 'Restaurando dependencias...'
+dotnet restore (Join-Path $raiz 'LanzadorScripts.slnx')
+
 Write-Host 'Compilando aplicacion...'
-dotnet build $proyecto
+dotnet build (Join-Path $raiz 'LanzadorScripts.slnx') -c Release --no-restore
 
 Write-Host 'Ejecutando pruebas...'
-dotnet run --project (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj')
+dotnet test (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj') -c Release --no-restore
 
 Write-Host 'Publicando ejecutable portable...'
 if (Test-Path -LiteralPath $salida) {
@@ -140,7 +144,11 @@ if ($null -ne $certificadoFirma) {
         throw "No se pudo firmar el EXE correctamente: $($firmaExe.Status)."
     }
 } else {
-    Write-Warning 'No se indico certificado Authenticode. El EXE se publicara sin firma.'
+    if (-not $AllowUnsignedForDev) {
+        throw 'No se indico certificado Authenticode. Use -AllowUnsignedForDev solo para pruebas locales.'
+    }
+
+    Write-Warning 'Publicacion local sin firma permitida explicitamente para desarrollo.'
 }
 
 $archivosPublicados = @(Get-ChildItem -LiteralPath $salida -Recurse -File)

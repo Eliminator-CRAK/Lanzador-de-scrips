@@ -25,16 +25,19 @@
 
     <Window.Resources>
         <Style x:Key="BotonVentanaMac" TargetType="Button">
-            <Setter Property="Width" Value="14" />
-            <Setter Property="Height" Value="14" />
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}"
-                                CornerRadius="7"
+                                CornerRadius="16"
                                 Opacity="0.92">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center" />
@@ -65,20 +68,26 @@
                 <Button x:Name="BotonCerrar"
                         Style="{StaticResource BotonVentanaMac}"
                         Background="#FF5F57"
+                        Content="X"
                         Click="BotonCerrar_Click"
-                        ToolTip="Cerrar" />
+                        ToolTip="Cerrar"
+                        AutomationProperties.Name="Cerrar ventana" />
                 <Button x:Name="BotonMinimizar"
                         Style="{StaticResource BotonVentanaMac}"
                         Background="#FFBD2E"
                         Margin="9,0,0,0"
+                        Content="-"
                         Click="BotonMinimizar_Click"
-                        ToolTip="Minimizar" />
+                        ToolTip="Minimizar"
+                        AutomationProperties.Name="Minimizar ventana" />
                 <Button x:Name="BotonMaximizar"
                         Style="{StaticResource BotonVentanaMac}"
                         Background="#28C840"
                         Margin="9,0,0,0"
+                        Content="□"
                         Click="BotonMaximizar_Click"
-                        ToolTip="Maximizar" />
+                        ToolTip="Maximizar"
+                        AutomationProperties.Name="Maximizar o restaurar ventana" />
             </StackPanel>
 
             <TextBlock Text="Lanzador de Scripts"
@@ -90,7 +99,48 @@
         </Grid>
 
         <Grid Grid.Row="1">
-            <wv2:WebView2 x:Name="VistaCliente" />
+            <wv2:WebView2 x:Name="VistaCliente"
+                          AutomationProperties.Name="Cliente web del lanzador de scripts" />
+            <Border x:Name="PanelArranque"
+                    Background="#0F1115"
+                    Padding="32"
+                    Visibility="Visible">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Width="520">
+                    <TextBlock Text="Preparando Lanzador de Scripts"
+                               Foreground="#F9FAFB"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center" />
+                    <TextBlock x:Name="TextoArranque"
+                               Text="Inicializando WebView2 y servidor local..."
+                               Foreground="#9CA3AF"
+                               FontSize="13"
+                               Margin="0,14,0,0"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <ProgressBar IsIndeterminate="True"
+                                 Height="6"
+                                 Margin="0,22,0,0"
+                                 Foreground="#60A5FA"
+                                 Background="#1F2937" />
+                    <TextBlock Text="Los detalles tecnicos se registran en la carpeta local de logs."
+                               Foreground="#6B7280"
+                               FontSize="12"
+                               Margin="0,18,0,0"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <Button x:Name="BotonReintentarArranque"
+                            Content="Reintentar"
+                            Width="128"
+                            Height="34"
+                            Margin="0,18,0,0"
+                            Visibility="Collapsed"
+                            Click="BotonReintentarArranque_Click"
+                            AutomationProperties.Name="Reintentar arranque del cliente web" />
+                </StackPanel>
+            </Border>
         </Grid>
         </Grid>
     </Border>

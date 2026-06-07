@@ -1,0 +1,8 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Solucion de app y pruebas automatizadas. -->
+<Solution>
+  <Folder Name="/Pruebas/">
+    <Project Path="Pruebas/LanzadorScripts.Pruebas.csproj" />
+  </Folder>
+  <Project Path="LanzadorScripts.csproj" />
+</Solution>

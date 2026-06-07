@@ -21,7 +21,17 @@ public sealed class ServicioPaquetesConfiguracion
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly ServicioCifradoAplicacion _servicioCifrado = new();
+    private readonly ServicioCifradoAplicacion _servicioCifrado;
+
+    public ServicioPaquetesConfiguracion()
+        : this(new ServicioCifradoAplicacion())
+    {
+    }
+
+    public ServicioPaquetesConfiguracion(ServicioCifradoAplicacion servicioCifrado)
+    {
+        _servicioCifrado = servicioCifrado;
+    }
 
     public PaqueteExportado Exportar(ConfiguracionLanzador configuracion, JsonObject permisos)
     {
@@ -54,6 +64,12 @@ public sealed class ServicioPaquetesConfiguracion
 
         var payload = JsonSerializer.Deserialize<PayloadConfiguracionExportada>(json, OpcionesJson)
             ?? throw new InvalidOperationException("El paquete de configuracion no contiene rutas validas.");
+
+        var validacion = new ServicioValidacionScripts().ValidarConfiguracionBasica(payload.RutaScripts, payload.RutaPermisos);
+        if (!validacion.EsValida)
+        {
+            throw new InvalidOperationException(validacion.Mensaje);
+        }
 
         configuracionActual.RutaScripts = payload.RutaScripts;
         configuracionActual.RutaPermisos = payload.RutaPermisos;

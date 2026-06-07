@@ -17,7 +17,6 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServidorLocalWeb : IDisposable
 {
     private const string NombreCookieSesion = "LanzadorScriptsSesion";
-    private const string CertificadoPowerShellPredeterminado = "6C654649369000DDE0AA70F62645058D9A3437F5";
     private const string MensajeServidorNoDisponible = "No se puede conectar al servidor.";
 
     private static readonly Lazy<IReadOnlyDictionary<string, string>> IndiceRecursosCliente = new(CrearIndiceRecursosCliente);
@@ -33,27 +32,41 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
     private readonly ServicioTokensAdmin _servicioTokensAdmin = new();
     private readonly ServicioTokenMaestro _servicioTokenMaestro = new();
-    private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion = new();
+    private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion;
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
     private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts = new();
     private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
+    private readonly HashSet<string> _tokensMaestrosUsados = new(StringComparer.Ordinal);
+    private readonly object _bloqueoEmergencia = new();
     private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly string _tokenApiInterno = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-    private volatile bool _tokenMaestroSesionActiva;
+    private SesionEmergencia? _sesionEmergencia;
     private volatile bool _modoDesarrolloFirmas;
 
     private ServidorLocalWeb(int puerto)
+        : this(puerto, new ServicioCifradoAplicacion())
+    {
+    }
+
+    private ServidorLocalWeb(int puerto, ServicioCifradoAplicacion servicioCifradoAplicacion)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
-        _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria);
+        _servicioCifradoAplicacion = servicioCifradoAplicacion;
+        _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria, _servicioSeguridadScripts);
     }
 
     private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion)
-        : this(puerto)
+        : this(puerto, new ServicioCifradoAplicacion())
+    {
+        _configuracionFija = configuracion;
+    }
+
+    private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion)
+        : this(puerto, servicioCifradoAplicacion)
     {
         _configuracionFija = configuracion;
     }
@@ -74,6 +87,15 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         // Inicia el servidor con configuracion aislada de pruebas.
         var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion);
+        servidor._escuchador.Start();
+        _ = servidor.EscucharAsync();
+        return servidor;
+    }
+
+    internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion)
+    {
+        // Inicia el servidor con servicios aislados de pruebas.
+        var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioCifradoAplicacion);
         servidor._escuchador.Start();
         _ = servidor.EscucharAsync();
         return servidor;
@@ -171,7 +193,79 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/salud", StringComparison.OrdinalIgnoreCase))
         {
-            await EscribirJsonAsync(contexto, 200, new { estado = "ok" });
+            var configuracion = CargarConfiguracion();
+            var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+            var emergencia = ObtenerEmergenciaActiva();
+            var auditoriaCorrecta = string.IsNullOrWhiteSpace(_servicioAuditoria.UltimoError);
+            var saludAutenticada = SesionApiValidaPrivada(contexto.Request);
+            var politica = diagnosticoPermisos.EstaDisponible
+                ? ServicioSeguridadScripts.LeerPolitica(diagnosticoPermisos.Permisos)
+                : null;
+            var scriptsElevadosConfigurados = politica?.ScriptsElevadosPermitidos.Count ?? 0;
+            var brokerDisponible = ServicioBrokerElevado.EstaDisponible();
+            var brokerCorrecto = scriptsElevadosConfigurados == 0 || brokerDisponible;
+            var estadoSalud = diagnosticoPermisos.EstaDisponible && auditoriaCorrecta && brokerCorrecto ? "ok" : "degradado";
+            if (!saludAutenticada)
+            {
+                await EscribirJsonAsync(contexto, 200, new
+                {
+                    estado = estadoSalud,
+                    version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "desconocida"
+                });
+                return;
+            }
+
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                estado = estadoSalud,
+                version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "desconocida",
+                equipo = Environment.MachineName,
+                rutas = new
+                {
+                    scripts = configuracion.RutaScripts,
+                    permisos = diagnosticoPermisos.Ruta,
+                    logs = configuracion.RutaLogs,
+                    auditoria = RutasAplicacion.RutaAuditoria,
+                    perfilWebView2 = RutasAplicacion.RutaPerfilWebView2
+                },
+                permisos = new
+                {
+                    estado = diagnosticoPermisos.Estado.ToString(),
+                    disponible = diagnosticoPermisos.EstaDisponible,
+                    mensaje = diagnosticoPermisos.Mensaje
+                },
+                auditoria = new
+                {
+                    disponible = auditoriaCorrecta,
+                    ultimoError = _servicioAuditoria.UltimoError
+                },
+                webView2 = new
+                {
+                    perfil = RutasAplicacion.RutaPerfilWebView2,
+                    runtimeFijo = Directory.Exists(RutasAplicacion.RutaRuntimeWebView2Fijo)
+                },
+                ejecuciones = new
+                {
+                    activas = _gestorEjecuciones.RecuentoActivas
+                },
+                broker = new
+                {
+                    estado = brokerDisponible ? "disponible" : "no_disponible",
+                    scriptsElevadosConfigurados,
+                    mensaje = scriptsElevadosConfigurados == 0
+                        ? "Sin scripts elevados configurados."
+                        : brokerDisponible
+                            ? "Broker elevado minimo disponible bajo demanda."
+                            : "Broker elevado no disponible para scripts allowlistados."
+                },
+                emergencia = new
+                {
+                    activa = emergencia is not null,
+                    venceUtc = emergencia?.VenceUtc,
+                    motivo = emergencia?.Motivo ?? string.Empty
+                },
+                ultimoErrorCritico = auditoriaCorrecta ? string.Empty : _servicioAuditoria.UltimoError
+            });
             return;
         }
 
@@ -186,7 +280,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/token-maestro/desbloquear", StringComparison.OrdinalIgnoreCase))
         {
-            if (ObtenerDiagnosticoPermisos().EstaDisponible)
+            var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+            if (diagnosticoPermisos.EstaDisponible)
             {
                 await EscribirJsonAsync(contexto, 403, new { error = "El token maestro solo esta disponible si no se puede leer el archivo de permisos." });
                 return;
@@ -194,18 +289,51 @@ public sealed class ServidorLocalWeb : IDisposable
 
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var token = LeerTexto(cuerpo, "token", string.Empty);
-            if (!_servicioTokenMaestro.Validar(token, out var payload))
+            var motivo = LeerTexto(cuerpo, "motivo", string.Empty).Trim();
+            if (motivo.Length < 10)
             {
+                await EscribirJsonAsync(contexto, 400, new { error = "El desbloqueo de emergencia requiere un motivo operativo." });
+                return;
+            }
+
+            var usuarioActual = WindowsIdentity.GetCurrent().Name;
+            if (!_servicioTokenMaestro.Validar(token, usuarioActual, Environment.MachineName, out var payload, out var motivoToken))
+            {
+                await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                    "seguridad.emergencia",
+                    usuarioActual,
+                    null,
+                    "denegado",
+                    motivoToken);
                 await EscribirJsonAsync(contexto, 403, new { error = "Token maestro no valido." });
                 return;
             }
 
-            _tokenMaestroSesionActiva = true;
-            var tokenAdmin = _servicioTokensAdmin.ObtenerOCrear(WindowsIdentity.GetCurrent().Name);
+            if (!ActivarEmergencia(payload!, motivo, usuarioActual, out var emergencia, out var errorEmergencia))
+            {
+                await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                    "seguridad.emergencia",
+                    usuarioActual,
+                    null,
+                    "denegado",
+                    errorEmergencia);
+                await EscribirJsonAsync(contexto, 403, new { error = errorEmergencia });
+                return;
+            }
+
+            await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                "seguridad.emergencia",
+                usuarioActual,
+                null,
+                "activado",
+                $"Motivo: {motivo}; VenceUtc: {emergencia.VenceUtc:O}; Emisor: {payload!.UsuarioEmisor}");
+
+            var tokenAdmin = _servicioTokensAdmin.ObtenerOCrear(usuarioActual);
             await EscribirJsonAsync(contexto, 200, new
             {
                 exito = true,
                 mensaje = "Acceso maestro desbloqueado para esta sesion.",
+                venceUtc = emergencia.VenceUtc,
                 tokenAdmin = tokenAdmin.Valor,
                 emisor = payload
             });
@@ -465,7 +593,9 @@ public sealed class ServidorLocalWeb : IDisposable
             script,
             configuracion.RutaLogs,
             usuario,
-            diagnosticoSeguridad.ExecutionPolicyBypassPermitido);
+            diagnosticoSeguridad.ExecutionPolicyBypassPermitido,
+            diagnosticoPermisos.Permisos,
+            _modoDesarrolloFirmas);
         await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
     }
 
@@ -587,9 +717,9 @@ public sealed class ServidorLocalWeb : IDisposable
     private UsuarioCliente ObtenerUsuarioActual(DiagnosticoPermisos diagnosticoPermisos)
     {
         var identidad = WindowsIdentity.GetCurrent().Name;
-        if (_tokenMaestroSesionActiva)
+        if (ObtenerEmergenciaActiva() is not null)
         {
-            return new UsuarioCliente(identidad, "admin", 50, true, string.Empty, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return new UsuarioCliente(identidad, "emergencia", 1, true, string.Empty, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
         var permisos = diagnosticoPermisos.Permisos;
@@ -604,12 +734,12 @@ public sealed class ServidorLocalWeb : IDisposable
                 || string.Equals(LeerTexto(item, "nombreUsuario", string.Empty), usuarioCorto, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (diagnosticoPermisos.Estado == EstadoPermisos.Inaccesible)
+        if (diagnosticoPermisos.Estado != EstadoPermisos.Disponible)
         {
             return new UsuarioCliente(identidad, "nominal", 1, false, diagnosticoPermisos.Mensaje, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
-        if (diagnosticoPermisos.Estado == EstadoPermisos.Disponible && usuario is null)
+        if (usuario is null)
         {
             return new UsuarioCliente(identidad, "nominal", 1, false, "Usuario no incluido en el archivo de permisos.", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
@@ -636,12 +766,13 @@ public sealed class ServidorLocalWeb : IDisposable
     private object CrearUsuarioClienteSesion(UsuarioCliente usuario, DiagnosticoPermisos diagnosticoPermisos, TokenAdmin? tokenAdmin)
     {
         // Aplica el desbloqueo maestro solo a la sesion actual.
-        if (_tokenMaestroSesionActiva)
+        var emergencia = ObtenerEmergenciaActiva();
+        if (emergencia is not null)
         {
             return new
             {
                 usuario.NombreUsuario,
-                Rol = "admin",
+                Rol = "emergencia",
                 usuario.MaxScriptsSimultaneos,
                 UsuarioAutorizado = true,
                 Bloqueado = false,
@@ -650,6 +781,8 @@ public sealed class ServidorLocalWeb : IDisposable
                 PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
                 PermiteDesbloqueoEmergencia = false,
                 TokenMaestroActivo = true,
+                EmergenciaVenceUtc = emergencia.VenceUtc,
+                EmergenciaMotivo = emergencia.Motivo,
                 TokenAdmin = tokenAdmin?.Valor,
                 CarpetasPermitidas = Array.Empty<string>(),
                 ModoDesarrolloFirmas = _modoDesarrolloFirmas,
@@ -670,6 +803,8 @@ public sealed class ServidorLocalWeb : IDisposable
             PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
             PermiteDesbloqueoEmergencia = diagnosticoPermisos.PermiteDesbloqueoEmergencia,
             TokenMaestroActivo = false,
+            EmergenciaVenceUtc = (DateTimeOffset?)null,
+            EmergenciaMotivo = string.Empty,
             TokenAdmin = tokenAdmin?.Valor,
             CarpetasPermitidas = usuario.CarpetasPermitidas ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             ModoDesarrolloFirmas = _modoDesarrolloFirmas,
@@ -774,19 +909,25 @@ public sealed class ServidorLocalWeb : IDisposable
         try
         {
             var texto = File.ReadAllText(ruta, Encoding.UTF8);
-            if (_servicioCifradoAplicacion.IntentarDescifrarTexto("permisos", texto, out var permisosDescifrados))
+            if (!_servicioCifradoAplicacion.IntentarDescifrarTexto("permisos", texto, out var permisosDescifrados))
             {
-                texto = permisosDescifrados;
+                return new DiagnosticoPermisos(
+                    EstadoPermisos.Corrupto,
+                    ruta,
+                    CrearPermisosPorDefecto(),
+                    "El archivo de permisos no tiene una firma corporativa valida.");
             }
+
+            texto = permisosDescifrados;
 
             var permisos = JsonNode.Parse(texto) as JsonObject;
             if (permisos is null)
             {
                 return new DiagnosticoPermisos(
-                    EstadoPermisos.Inaccesible,
+                    EstadoPermisos.Corrupto,
                     ruta,
                     CrearPermisosPorDefecto(),
-                    MensajeServidorNoDisponible);
+                    "El archivo de permisos esta corrupto.");
             }
 
             return new DiagnosticoPermisos(EstadoPermisos.Disponible, ruta, permisos, string.Empty);
@@ -794,10 +935,10 @@ public sealed class ServidorLocalWeb : IDisposable
         catch
         {
             return new DiagnosticoPermisos(
-                EstadoPermisos.Inaccesible,
+                EstadoPermisos.Corrupto,
                 ruta,
                 CrearPermisosPorDefecto(),
-                MensajeServidorNoDisponible);
+                "El archivo de permisos no se pudo validar.");
         }
     }
 
@@ -811,7 +952,7 @@ public sealed class ServidorLocalWeb : IDisposable
     private bool PermisosInaccesiblesSinDesbloqueo(DiagnosticoPermisos diagnosticoPermisos)
     {
         // Bloquea ejecucion si no se puede validar permisos.
-        return diagnosticoPermisos.Estado == EstadoPermisos.Inaccesible && !_tokenMaestroSesionActiva;
+        return !diagnosticoPermisos.EstaDisponible && ObtenerEmergenciaActiva() is null;
     }
 
     private ResultadoGuardarPermisos GuardarPermisos(JsonNode permisos)
@@ -831,10 +972,17 @@ public sealed class ServidorLocalWeb : IDisposable
         }
 
         var json = permisosNormalizados.ToJsonString(OpcionesJson);
-        var cifrado = _servicioCifradoAplicacion.CifrarTexto("permisos", json);
-        File.WriteAllText(ruta, cifrado, Encoding.UTF8);
-        ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
-        return new ResultadoGuardarPermisos(true, string.Empty);
+        try
+        {
+            var firmado = _servicioCifradoAplicacion.CifrarTexto("permisos", json);
+            File.WriteAllText(ruta, firmado, Encoding.UTF8);
+            ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
+            return new ResultadoGuardarPermisos(true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            return new ResultadoGuardarPermisos(false, ServicioRedaccionSecretos.Sanitizar(ex.Message));
+        }
     }
 
     private JsonObject NormalizarPermisos(JsonNode permisos)
@@ -999,9 +1147,14 @@ public sealed class ServidorLocalWeb : IDisposable
             return true;
         }
 
-        if (_tokenMaestroSesionActiva || string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(usuario.Rol, "admin", StringComparison.OrdinalIgnoreCase))
         {
             return false;
+        }
+
+        if (ObtenerEmergenciaActiva() is not null)
+        {
+            return !string.IsNullOrWhiteSpace(ObtenerCarpetaScript(scriptId));
         }
 
         var carpeta = ObtenerCarpetaScript(scriptId);
@@ -1052,8 +1205,9 @@ public sealed class ServidorLocalWeb : IDisposable
             ["usuarios"] = new JsonArray(),
             ["seguridadScripts"] = new JsonObject
             {
-                ["certificadosPowerShellPermitidos"] = new JsonArray { CertificadoPowerShellPredeterminado },
+                ["certificadosPowerShellPermitidos"] = new JsonArray(),
                 ["hashesBatchPermitidos"] = new JsonArray(),
+                ["scriptsElevadosPermitidos"] = new JsonArray(),
                 ["permitirExecutionPolicyBypass"] = false
             },
             ["rolUsuarioActual"] = "nominal",
@@ -1072,6 +1226,95 @@ public sealed class ServidorLocalWeb : IDisposable
         return _configuracionFija ?? _servicioConfiguracion.Cargar();
     }
 
+    private bool ActivarEmergencia(TokenMaestroPayload payload, string motivo, string usuario, out SesionEmergencia emergencia, out string error)
+    {
+        lock (_bloqueoEmergencia)
+        {
+            emergencia = new SesionEmergencia(usuario, motivo, DateTimeOffset.UtcNow.AddMinutes(10), payload.Id);
+            error = string.Empty;
+            CargarTokensMaestrosUsados();
+            if (_tokensMaestrosUsados.Contains(payload.Id))
+            {
+                error = "Token maestro ya usado.";
+                return false;
+            }
+
+            if (!RegistrarTokenMaestroUsado(payload.Id, out error))
+            {
+                return false;
+            }
+
+            _tokensMaestrosUsados.Add(payload.Id);
+            _sesionEmergencia = emergencia;
+            return true;
+        }
+    }
+
+    private void CargarTokensMaestrosUsados()
+    {
+        try
+        {
+            var ruta = ObtenerRutaTokensMaestrosUsados();
+            if (!File.Exists(ruta))
+            {
+                return;
+            }
+
+            var ids = JsonSerializer.Deserialize<string[]>(File.ReadAllText(ruta)) ?? [];
+            foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
+            {
+                _tokensMaestrosUsados.Add(id);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private bool RegistrarTokenMaestroUsado(string tokenId, out string error)
+    {
+        try
+        {
+            Directory.CreateDirectory(RutasAplicacion.RutaTokensUsuario);
+            var ruta = ObtenerRutaTokensMaestrosUsados();
+            var temporal = ruta + ".tmp";
+            var ids = _tokensMaestrosUsados.Append(tokenId).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
+            File.WriteAllText(temporal, JsonSerializer.Serialize(ids), Encoding.UTF8);
+            File.Move(temporal, ruta, overwrite: true);
+            error = string.Empty;
+            return true;
+        }
+        catch
+        {
+            error = "No se pudo registrar el uso del token maestro.";
+            return false;
+        }
+    }
+
+    private static string ObtenerRutaTokensMaestrosUsados()
+    {
+        return Path.Combine(RutasAplicacion.RutaTokensUsuario, "tokens-maestros-usados.json");
+    }
+
+    private SesionEmergencia? ObtenerEmergenciaActiva()
+    {
+        lock (_bloqueoEmergencia)
+        {
+            if (_sesionEmergencia is null)
+            {
+                return null;
+            }
+
+            if (_sesionEmergencia.VenceUtc <= DateTimeOffset.UtcNow)
+            {
+                _sesionEmergencia = null;
+                return null;
+            }
+
+            return _sesionEmergencia;
+        }
+    }
+
     private bool SesionApiValida(HttpListenerRequest peticion, string ruta)
     {
         if (ruta.Equals("/api/salud", StringComparison.OrdinalIgnoreCase))
@@ -1081,11 +1324,14 @@ public sealed class ServidorLocalWeb : IDisposable
 
         var cookie = peticion.Cookies[NombreCookieSesion]?.Value;
         var tokenApi = peticion.Headers["X-LanzadorScripts-ApiToken"];
-        if (string.IsNullOrWhiteSpace(tokenApi) && ruta.Contains("/ejecuciones/", StringComparison.OrdinalIgnoreCase) && ruta.EndsWith("/eventos", StringComparison.OrdinalIgnoreCase))
-        {
-            tokenApi = peticion.QueryString["apiToken"];
-        }
+        return CompararTextoSeguro(cookie, _tokenSesion)
+            && CompararTextoSeguro(tokenApi, _tokenApiInterno);
+    }
 
+    private bool SesionApiValidaPrivada(HttpListenerRequest peticion)
+    {
+        var cookie = peticion.Cookies[NombreCookieSesion]?.Value;
+        var tokenApi = peticion.Headers["X-LanzadorScripts-ApiToken"];
         return CompararTextoSeguro(cookie, _tokenSesion)
             && CompararTextoSeguro(tokenApi, _tokenApiInterno);
     }
@@ -1218,7 +1464,8 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         Disponible,
         NoEncontrado,
-        Inaccesible
+        Inaccesible,
+        Corrupto
     }
 
     private enum CodigoAutorizacionAdmin
@@ -1236,6 +1483,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         public bool ModoOffline => Estado == EstadoPermisos.Inaccesible;
     }
+
+    private sealed record SesionEmergencia(string Usuario, string Motivo, DateTimeOffset VenceUtc, string TokenId);
 
     private sealed record ResultadoAutorizacionAdmin(CodigoAutorizacionAdmin Codigo, string Mensaje)
     {
