@@ -2,6 +2,7 @@
 // Descripcion: Pruebas automatizadas de seguridad, permisos y ejecucion.
 
 using System.Net;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
@@ -34,12 +35,46 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void ValidadorDescubreCarpetasAunqueNoTenganScripts()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var validador = new ServicioValidacionScripts();
+
+        var carpetas = validador.DescubrirCarpetasScripts(entorno.Raiz);
+
+        Assert.Contains("sub", carpetas);
+        Assert.Contains("vacia", carpetas);
+        Assert.DoesNotContain("PERMISOS", carpetas);
+        Assert.DoesNotContain(".git", carpetas);
+    }
+
+    [Fact]
     public void ConfiguracionPermiteAdminShareOperativo()
     {
         var validador = new ServicioValidacionScripts();
 
-        Assert.True(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\C$\REPO", @"\\SERVIDOR\C$\REPO\PERMISOS\permisos.json").EsValida);
-        Assert.True(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\REPO", @"\\SERVIDOR\REPO\PERMISOS\permisos.json").EsValida);
+        Assert.True(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\C$\REPO", @"\\SERVIDOR\C$\REPO\PERMISOS").EsValida);
+        Assert.True(validador.ValidarConfiguracionBasica(@"\\SERVIDOR\REPO", @"\\SERVIDOR\REPO\PERMISOS").EsValida);
+        Assert.False(validador.ValidarConfiguracionBasica(
+            @"\\SERVIDOR\REPO",
+            @"\\SERVIDOR\REPO\PERMISOS\permisos.json").EsValida);
+        Assert.False(validador.ValidarConfiguracionBasica(
+            @"\\SERVIDOR\REPO",
+            "PERMISOS").EsValida);
+    }
+
+    [Fact]
+    public void ConfiguracionAvisaRutasNoDisponiblesSinBloquear()
+    {
+        var validador = new ServicioValidacionScripts();
+        var raizNoDisponible = Path.Combine(Path.GetTempPath(), "LanzadorScripts_RutaAusente_" + Guid.NewGuid().ToString("N"));
+        var rutaPermisos = Path.Combine(raizNoDisponible, "PERMISOS");
+
+        Assert.True(validador.ValidarConfiguracionBasica(raizNoDisponible, rutaPermisos).EsValida);
+        var aviso = validador.CrearAvisoConfiguracionNoDisponible(raizNoDisponible, rutaPermisos);
+
+        Assert.Contains("carpeta de scripts no esta disponible", aviso, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("carpeta de permisos no esta disponible", aviso, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -53,15 +88,278 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void ConfiguracionPredeterminadaUsaRepoAdminShare()
+    public void AplicacionNoIncluyeModoServicio()
+    {
+        var raiz = ObtenerRaizProyecto();
+        var aplicacion = File.ReadAllText(Path.Combine(raiz, "Aplicacion.xaml.cs"));
+        var proyecto = File.ReadAllText(Path.Combine(raiz, "LanzadorScripts.csproj"));
+
+        Assert.DoesNotContain("ServicioWindowsLanzador", aplicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("System.ServiceProcess", proyecto, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioWindowsLanzador.cs")));
+        Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioDescubrimientoLocal.cs")));
+    }
+
+    [Fact]
+    public void AplicacionNoIncluyeInstaladores()
+    {
+        var raiz = ObtenerRaizProyecto();
+        var proyecto = File.ReadAllText(Path.Combine(raiz, "LanzadorScripts.csproj"));
+        var publicacion = File.ReadAllText(Path.Combine(raiz, "Herramientas", "PublicarPortable.ps1"));
+
+        Assert.DoesNotContain("RuntimeInstaller", proyecto, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start-Process", publicacion, StringComparison.Ordinal);
+        Assert.Contains("InicializarArtefactos", publicacion, StringComparison.Ordinal);
+        Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));
+    }
+
+    [Fact]
+    public void PerfilAplicacionNormalizaUsuario()
+    {
+        Assert.Equal("aroperez", PerfilAplicacion.Normalizar("AROPEREZ"));
+        Assert.Equal("usuario_micro", PerfilAplicacion.Normalizar("usuario micro"));
+        Assert.Equal("default", PerfilAplicacion.Normalizar(null));
+    }
+
+    [Fact]
+    public void PanelAjustesNoDuplicaExecutionPolicyUnrestricted()
+    {
+        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
+        var codigo = File.ReadAllText(rutaVentana);
+
+        Assert.DoesNotContain("ls-aplicar-unrestricted", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("ls-execution-policy-estado", codigo, StringComparison.Ordinal);
+        Assert.Contains("idBotonExecutionPolicyPrincipal", codigo, StringComparison.Ordinal);
+        Assert.Contains("Set Unrestricted", codigo, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PanelAjustesPublicaCatalogoUnificado()
+    {
+        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
+        var codigo = File.ReadAllText(rutaVentana);
+
+        Assert.Contains("Firmar scripts y publicar catálogo", codigo, StringComparison.Ordinal);
+        Assert.Contains("/api/catalogo-scripts", codigo, StringComparison.Ordinal);
+        Assert.Contains("data-ls-catalogo-checkbox", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/hashes-batch", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/firmas-powershell", codigo, StringComparison.Ordinal);
+        Assert.Contains("Ruta de la carpeta de permisos", codigo, StringComparison.Ordinal);
+        Assert.Contains(
+            "busca permisos.json y catalogo-scripts.json únicamente dentro de esta carpeta",
+            codigo,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InterfazNavegaScriptsPorCarpetas()
+    {
+        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
+        var codigo = File.ReadAllText(rutaVentana);
+
+        Assert.Contains("ls-carpeta-scripts-activa", codigo, StringComparison.Ordinal);
+        Assert.Contains("/api/scripts", codigo, StringComparison.Ordinal);
+        Assert.Contains("Abrir carpeta", codigo, StringComparison.Ordinal);
+        Assert.Contains("aplicarVistaCarpetasScripts", codigo, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EjecucionPowerShellTieneRutaRapidaNoInteractiva()
+    {
+        var rutaGestor = Path.Combine(ObtenerRaizProyecto(), "Servicios", "GestorEjecucionesWeb.cs");
+        var codigo = File.ReadAllText(rutaGestor);
+
+        Assert.Contains("CrearPlanPowerShell", codigo, StringComparison.Ordinal);
+        Assert.Contains("\"-File\"", codigo, StringComparison.Ordinal);
+        Assert.Contains("\"-NonInteractive\"", codigo, StringComparison.Ordinal);
+        Assert.Contains("RequiereAdaptadorInteractivo", codigo, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InterfazNoIncluyeInicioDeWindows()
+    {
+        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
+        var codigo = File.ReadAllText(rutaVentana);
+        var rutaAssets = Path.Combine(ObtenerRaizProyecto(), "ClienteWeb", "assets");
+        var bundles = Directory.GetFiles(rutaAssets, "*.js");
+
+        Assert.DoesNotContain("ObtenerInicioAutomaticoGestionado", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("inicioAutomatico", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("ls-inicio-automatico", codigo, StringComparison.Ordinal);
+        Assert.NotEmpty(bundles);
+        foreach (var bundle in bundles)
+        {
+            var codigoCliente = File.ReadAllText(bundle);
+            Assert.DoesNotContain("inicioAutomaticoWindows", codigoCliente, StringComparison.Ordinal);
+            Assert.DoesNotContain("Abrir automáticamente al iniciar Windows", codigoCliente, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AplicacionNoExponeTareasDeInicioWindows()
+    {
+        Assert.False(File.Exists(Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioInicioAutomaticoPerfil.cs")));
+        Assert.False(File.Exists(Path.Combine(ObtenerRaizProyecto(), "Servicios", "PerfilServicioLanzador.cs")));
+    }
+
+    [Fact]
+    public void PerfilWebView2PrincipalUsaLocalAppData()
+    {
+        var raizProgramData = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "LanzadorScripts",
+            "WebView2");
+        var raizLocalAppData = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "LanzadorScripts",
+            "WebView2");
+
+        Assert.StartsWith(raizLocalAppData, RutasAplicacion.RutaPerfilWebView2, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(raizProgramData, RutasAplicacion.RutaPerfilWebView2, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void WebView2SoportaRuntimeEmbebidoAutoextraible()
+    {
+        var rutaArranque = Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioArranqueWebView2.cs");
+        var codigo = File.ReadAllText(rutaArranque);
+
+        Assert.Contains("ServicioRuntimeWebView2Embebido", codigo, StringComparison.Ordinal);
+        Assert.Contains("runtime.embebido", codigo, StringComparison.Ordinal);
+        Assert.Contains("ResolverRuntimeFijoPortable", codigo, StringComparison.Ordinal);
+        Assert.Contains("Runtimes", RutasAplicacion.RutaRuntimesWebView2, StringComparison.Ordinal);
+        Assert.Contains("msedgewebview2.exe", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProgramData", codigo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RuntimeEmbebidoExtraeYReutilizaSiHashCoincide()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var zip = CrearZipRuntimeWebView2();
+        var servicio = new ServicioRuntimeWebView2Embebido(
+            () => new MemoryStream(zip),
+            [Path.Combine(entorno.Raiz, "Runtime")]);
+
+        var primerResultado = servicio.Preparar();
+        var segundoResultado = servicio.Preparar();
+
+        Assert.True(primerResultado.Exito, primerResultado.Mensaje);
+        Assert.True(primerResultado.ExtraidoAhora);
+        Assert.True(File.Exists(Path.Combine(primerResultado.RutaRuntime!, "msedgewebview2.exe")));
+        Assert.True(segundoResultado.Exito, segundoResultado.Mensaje);
+        Assert.False(segundoResultado.ExtraidoAhora);
+        Assert.Equal(primerResultado.RutaRuntime, segundoResultado.RutaRuntime);
+    }
+
+    [Fact]
+    public void RuntimeEmbebidoUsaTemporalSiPrimeraRutaNoEsEscribible()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var rutaBloqueada = Path.Combine(entorno.Raiz, "bloqueada");
+        File.WriteAllText(rutaBloqueada, "no es carpeta");
+        var rutaFallback = Path.Combine(entorno.Raiz, "fallback");
+        var servicio = new ServicioRuntimeWebView2Embebido(
+            () => new MemoryStream(CrearZipRuntimeWebView2()),
+            [rutaBloqueada, rutaFallback]);
+
+        var resultado = servicio.Preparar();
+
+        Assert.True(resultado.Exito, resultado.Mensaje);
+        Assert.StartsWith(rutaFallback, resultado.RutaRuntime!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RuntimeEmbebidoRechazaZipCorruptoOIncompleto()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var corrupto = new ServicioRuntimeWebView2Embebido(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("no es zip")),
+            [Path.Combine(entorno.Raiz, "corrupto")]);
+        var incompleto = new ServicioRuntimeWebView2Embebido(
+            () => new MemoryStream(CrearZipRuntimeWebView2(incluirEjecutable: false)),
+            [Path.Combine(entorno.Raiz, "incompleto")]);
+
+        Assert.False(corrupto.Preparar().Exito);
+        Assert.False(incompleto.Preparar().Exito);
+    }
+
+    [Fact]
+    public void ConfiguracionPredeterminadaUsaRutasOperativas()
     {
         var rutaConfiguracion = Path.Combine(ObtenerRaizProyecto(), "ConfiguracionPredeterminada.json");
         var configuracion = File.ReadAllText(rutaConfiguracion);
         var modelo = new ConfiguracionLanzador();
 
-        Assert.Contains(@"\\\\MAD002MICROPRU\\C$\\REPO", configuracion, StringComparison.Ordinal);
-        Assert.Equal(@"\\MAD002MICROPRU\C$\REPO", modelo.RutaScripts);
-        Assert.Equal(@"\\MAD002MICROPRU\C$\REPO\PERMISOS\permisos.json", modelo.RutaPermisos);
+        Assert.Contains(@"\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\SCRIPS", configuracion, StringComparison.Ordinal);
+        Assert.Contains(@"\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS", configuracion, StringComparison.Ordinal);
+        Assert.Contains("\"VersionConfiguracion\": 2", configuracion, StringComparison.Ordinal);
+        Assert.Equal(@"\\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS", modelo.RutaScripts);
+        Assert.Equal(RutasArtefactosProtegidos.CarpetaPredeterminada, modelo.RutaPermisos);
+        var rutas = new ServicioValidacionScripts().ResolverRutasArtefactos(modelo.RutaPermisos);
+        Assert.Equal(
+            Path.Combine(RutasArtefactosProtegidos.CarpetaPredeterminada, "permisos.json"),
+            rutas.RutaPermisos);
+        Assert.Equal(
+            Path.Combine(RutasArtefactosProtegidos.CarpetaPredeterminada, "catalogo-scripts.json"),
+            rutas.RutaCatalogo);
+        Assert.StartsWith(
+            rutas.Carpeta + Path.DirectorySeparatorChar,
+            rutas.RutaPermisos,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(
+            rutas.Carpeta + Path.DirectorySeparatorChar,
+            rutas.RutaCatalogo,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ConfiguracionMigraRutaArchivoALaCarpetaDePermisos()
+    {
+        var carpeta = Path.Combine(Path.GetTempPath(), "LanzadorScripts_Permisos");
+        var configuracion = new ConfiguracionLanzador
+        {
+            RutaPermisos = Path.Combine(carpeta, "permisos.json")
+        };
+
+        configuracion.Normalizar();
+
+        Assert.Equal(carpeta, configuracion.RutaPermisos);
+        Assert.Equal(
+            Path.Combine(carpeta, "catalogo-scripts.json"),
+            RutasArtefactosProtegidos.Resolver(configuracion.RutaPermisos).RutaCatalogo);
+
+        configuracion.RutaPermisos = "permisos.json";
+        configuracion.Normalizar();
+        Assert.Equal(RutasArtefactosProtegidos.CarpetaPredeterminada, configuracion.RutaPermisos);
+
+        configuracion.RutaPermisos = Path.Combine(AppContext.BaseDirectory, "permisos.json");
+        configuracion.Normalizar();
+        Assert.Equal(RutasArtefactosProtegidos.CarpetaPredeterminada, configuracion.RutaPermisos);
+    }
+
+    [Fact]
+    public void ConfiguracionAntiguaRestableceRutasPredeterminadas()
+    {
+        var antigua = new ConfiguracionLanzador
+        {
+            VersionConfiguracion = null,
+            RutaScripts = @"C:\RUTA-ANTIGUA\SCRIPS",
+            RutaPermisos = @"C:\RUTA-ANTIGUA\PERMISOS"
+        };
+        var predeterminada = new ConfiguracionLanzador
+        {
+            VersionConfiguracion = ConfiguracionLanzador.VersionActual
+        };
+
+        ServicioConfiguracion.MigrarRutasPredeterminadasAnteriores(antigua, predeterminada);
+
+        Assert.Equal(ConfiguracionLanzador.VersionActual, antigua.VersionConfiguracion);
+        Assert.Equal(predeterminada.RutaScripts, antigua.RutaScripts);
+        Assert.Equal(predeterminada.RutaPermisos, antigua.RutaPermisos);
     }
 
 
@@ -90,7 +388,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void SeguridadBloqueaScriptsSinFirmaOHash()
+    public void SeguridadBloqueaScriptsFueraDelCatalogo()
     {
         using var entorno = EntornoPruebas.Crear();
         var validador = new ServicioValidacionScripts();
@@ -100,21 +398,185 @@ public sealed class PruebasLanzadorScripts
         var ps1 = validador.ValidarScriptParaEjecucion(entorno.Raiz, "ok.ps1").Script!;
         var cmd = validador.ValidarScriptParaEjecucion(entorno.Raiz, "sub/ok.cmd").Script!;
 
-        Assert.False(seguridad.Diagnosticar(ps1, permisosVacios).Permitido);
-        Assert.False(seguridad.Diagnosticar(cmd, permisosVacios).Permitido);
+        Assert.False(seguridad.Diagnosticar(ps1, permisosVacios, null, "Catalogo ausente.").Permitido);
+        Assert.False(seguridad.Diagnosticar(cmd, permisosVacios, null, "Catalogo ausente.").Permitido);
 
-        var permisosHash = CrearPermisosBase();
-        permisosHash["seguridadScripts"]!["hashesBatchPermitidos"] = new JsonArray
-        {
-            new JsonObject
-            {
-                ["scriptId"] = "sub/ok.cmd",
-                ["sha256"] = ServicioSeguridadScripts.CalcularSha256(cmd.RutaCompleta)
-            }
-        };
+        var catalogo = new ServicioCatalogoScripts().Crear([ps1, cmd], [cmd.Id]);
+        Assert.True(seguridad.Diagnosticar(cmd, permisosVacios, catalogo, string.Empty).Permitido);
+        Assert.False(seguridad.Diagnosticar(ps1, permisosVacios, catalogo, string.Empty).Permitido);
+        Assert.True(seguridad.Diagnosticar(
+            ps1,
+            permisosVacios,
+            null,
+            "Catalogo ausente.",
+            modoDesarrolloFirmas: true).Permitido);
+    }
 
-        Assert.True(seguridad.Diagnosticar(cmd, permisosHash).Permitido);
-        Assert.True(seguridad.Diagnosticar(cmd, permisosVacios, modoDesarrolloFirmas: true).Permitido);
+    [Fact]
+    public void PoliticaNormalizaScriptsElevadosYBypass()
+    {
+        var permisos = CrearPermisosBase();
+        permisos["seguridadScripts"]!["scriptsElevadosPermitidos"] = new JsonArray("sub/ok.cmd", "sub/ok.cmd");
+        permisos["seguridadScripts"]!["permitirExecutionPolicyBypass"] = true;
+
+        var politica = ServicioSeguridadScripts.LeerPolitica(permisos);
+        var normalizada = ServicioSeguridadScripts.NormalizarPolitica(permisos["seguridadScripts"] as JsonObject);
+        var elevados = normalizada["scriptsElevadosPermitidos"] as JsonArray;
+
+        Assert.Contains("sub/ok.cmd", politica.ScriptsElevadosPermitidos);
+        Assert.True(politica.PermitirExecutionPolicyBypass);
+        Assert.NotNull(elevados);
+        Assert.Single(elevados!);
+    }
+
+    [Fact]
+    public void ArtefactoProtegidoCifraFirmaYSeparaTipos()
+    {
+        var claveAes = RandomNumberGenerator.GetBytes(32);
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosProtegidos(
+            claveAes,
+            rsa.ExportPkcs8PrivateKey(),
+            rsa.ExportSubjectPublicKeyInfo(),
+            "PRUEBAS");
+        var protegido = servicio.ProtegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            "{\"secreto\":\"Alex Roman\"}");
+
+        Assert.DoesNotContain("\"secreto\"", protegido, StringComparison.Ordinal);
+        Assert.True(servicio.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            protegido,
+            out var claro,
+            out _));
+        Assert.Contains("\"secreto\":\"Alex Roman\"", claro, StringComparison.Ordinal);
+        Assert.False(servicio.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoCatalogoScripts,
+            protegido,
+            out _,
+            out _));
+
+        var manipulado = JsonNode.Parse(protegido)!.AsObject();
+        var datos = manipulado["Datos"]!.GetValue<string>();
+        manipulado["Datos"] = datos[..^1] + (datos[^1] == 'A' ? "B" : "A");
+        Assert.False(servicio.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            manipulado.ToJsonString(),
+            out _,
+            out _));
+
+        var autorManipulado = JsonNode.Parse(protegido)!.AsObject();
+        autorManipulado["Autor"] = "Otro";
+        Assert.False(servicio.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            autorManipulado.ToJsonString(),
+            out _,
+            out _));
+
+        var campoDesconocido = JsonNode.Parse(protegido)!.AsObject();
+        campoDesconocido["Extra"] = true;
+        Assert.False(servicio.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            campoDesconocido.ToJsonString(),
+            out _,
+            out _));
+    }
+
+    [Fact]
+    public void ArtefactoProtegidoRecuperaCopiaValida()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "artefacto.json");
+        var servicio = new ServicioArtefactosProtegidos();
+        servicio.GuardarTextoProtegido(
+            ruta,
+            ServicioArtefactosProtegidos.TipoPermisos,
+            "{\"version\":1}");
+        servicio.GuardarTextoProtegido(
+            ruta,
+            ServicioArtefactosProtegidos.TipoPermisos,
+            "{\"version\":2}");
+        File.WriteAllText(ruta, "{");
+
+        Assert.True(servicio.IntentarCargarTextoProtegido(
+            ruta,
+            ServicioArtefactosProtegidos.TipoPermisos,
+            out var claro,
+            out _,
+            out var recuperado));
+        Assert.True(recuperado);
+        Assert.Contains("\"version\":1", claro, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CatalogoBloqueaScriptModificado()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var validador = new ServicioValidacionScripts();
+        var seguridad = new ServicioSeguridadScripts();
+        var script = validador.ValidarScriptParaEjecucion(entorno.Raiz, "sub/ok.cmd").Script!;
+        var catalogo = new ServicioCatalogoScripts().Crear([script], [script.Id]);
+
+        Assert.True(seguridad.Diagnosticar(
+            script,
+            CrearPermisosBase(),
+            catalogo,
+            string.Empty).Permitido);
+
+        File.AppendAllText(script.RutaCompleta, Environment.NewLine + "echo modificado");
+        var diagnostico = seguridad.Diagnosticar(
+            script,
+            CrearPermisosBase(),
+            catalogo,
+            string.Empty);
+        Assert.False(diagnostico.Permitido);
+        Assert.Equal("modificado", diagnostico.CatalogoEstado);
+    }
+
+    [Fact]
+    public void CatalogoAceptaExtensionEnMayusculas()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "INSTALADOR.BAT");
+        File.WriteAllText(ruta, "@echo off");
+        var script = new ServicioValidacionScripts()
+            .ValidarScriptParaEjecucion(entorno.Raiz, "INSTALADOR.BAT")
+            .Script!;
+        var servicio = new ServicioCatalogoScripts();
+        var catalogo = servicio.Crear([script], [script.Id]);
+        var rutaCatalogo = Path.Combine(entorno.Raiz, ServicioCatalogoScripts.NombreArchivo);
+
+        servicio.Guardar(rutaCatalogo, catalogo);
+
+        Assert.True(servicio.IntentarCargar(rutaCatalogo, out var cargado, out _));
+        Assert.Contains(cargado!.Scripts, entrada => entrada.ScriptId == "INSTALADOR.BAT");
+    }
+
+    [Fact]
+    public void GeneracionInicialIncluyeAdministradoresYCatalogoProtegido()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var salida = Path.Combine(entorno.Raiz, "salida-publicacion");
+        ServicioGeneracionArtefactosIniciales.Generar(entorno.Raiz, salida);
+        var artefactos = new ServicioArtefactosProtegidos();
+
+        var permisosProtegidos = File.ReadAllText(Path.Combine(salida, "permisos.json"));
+        Assert.True(artefactos.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            permisosProtegidos,
+            out var permisosJson,
+            out _));
+        var permisos = JsonNode.Parse(permisosJson)!.AsObject();
+        var usuarios = permisos["usuarios"]!.AsArray();
+        Assert.Contains(usuarios, usuario => usuario?["nombreUsuario"]?.GetValue<string>() == @"PCERA\alero");
+        Assert.Contains(usuarios, usuario => usuario?["nombreUsuario"]?.GetValue<string>() == @"MAD00\aroperez_micro");
+        Assert.All(usuarios, usuario => Assert.Equal("admin", usuario?["rol"]?.GetValue<string>()));
+
+        var rutaCatalogo = Path.Combine(salida, ServicioCatalogoScripts.NombreArchivo);
+        Assert.True(new ServicioCatalogoScripts().IntentarCargar(rutaCatalogo, out var catalogo, out _));
+        Assert.NotNull(catalogo);
+        Assert.Contains(catalogo!.Scripts, script => script.ScriptId == "ok.ps1");
+        Assert.Contains(catalogo.Scripts, script => script.ScriptId == "sub/ok.cmd");
     }
 
     [Fact]
@@ -122,14 +584,14 @@ public sealed class PruebasLanzadorScripts
     {
         using var rsa = RSA.Create(3072);
         var servicio = new ServicioCifradoAplicacion(rsa, rsa, "Pruebas");
-        var firmado = servicio.CifrarTexto("permisos", "{\"ok\":true}");
+        var firmado = servicio.CifrarTexto("configuracion-exportada", "{\"ok\":true}");
 
-        Assert.True(servicio.IntentarDescifrarTexto("permisos", firmado, out var claro));
+        Assert.True(servicio.IntentarDescifrarTexto("configuracion-exportada", firmado, out var claro));
         Assert.Contains("\"ok\":true", claro, StringComparison.Ordinal);
         var manipulado = JsonNode.Parse(firmado)!.AsObject();
         manipulado["Datos"] = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"ok\":false}"));
-        Assert.False(servicio.IntentarDescifrarTexto("permisos", manipulado.ToJsonString(), out _));
-        Assert.False(servicio.IntentarDescifrarTexto("configuracion-exportada", firmado, out _));
+        Assert.False(servicio.IntentarDescifrarTexto("configuracion-exportada", manipulado.ToJsonString(), out _));
+        Assert.False(servicio.IntentarDescifrarTexto("permisos", firmado, out _));
     }
 
     [Fact]
@@ -142,7 +604,7 @@ public sealed class PruebasLanzadorScripts
         var configuracion = new ConfiguracionLanzador
         {
             RutaScripts = entorno.Raiz,
-            RutaPermisos = Path.Combine(entorno.Raiz, "PERMISOS", "permisos.json")
+            RutaPermisos = Path.Combine(entorno.Raiz, "PERMISOS")
         };
 
         var paquete = servicio.Exportar(configuracion, CrearPermisosAdmin());
@@ -156,7 +618,7 @@ public sealed class PruebasLanzadorScripts
         var configuracionAdminShare = new ConfiguracionLanzador
         {
             RutaScripts = @"\\SERVIDOR\C$\REPO",
-            RutaPermisos = @"\\SERVIDOR\C$\REPO\PERMISOS\permisos.json"
+            RutaPermisos = @"\\SERVIDOR\C$\REPO\PERMISOS"
         };
         var paqueteAdminShare = servicio.Exportar(configuracionAdminShare, CrearPermisosAdmin());
         var rutaAdminShare = Path.Combine(entorno.Raiz, "admin-share.lanzadorconfig");
@@ -188,12 +650,46 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public async Task ApiBloqueaPermisosCorruptos()
+    public async Task ApiAceptaPermisosCifrados()
     {
         using var entorno = EntornoPruebas.Crear();
-        File.WriteAllText(entorno.RutaPermisos, "{\"usuarios\":[]}");
-        using var rsa = RSA.Create(3072);
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion(), new ServicioCifradoAplicacion(rsa, rsa, "Pruebas"));
+        entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var salud = await LeerJsonAsync(await cliente.GetAsync("/api/salud"));
+        Assert.Equal("ok", salud?["estado"]?.GetValue<string>());
+        Assert.Equal("Disponible", salud?["permisos"]?["estado"]?.GetValue<string>());
+
+        var usuario = await LeerJsonAsync(await cliente.GetAsync("/api/usuario"));
+        Assert.Equal("admin", usuario?["rol"]?.GetValue<string>());
+
+        var texto = File.ReadAllText(entorno.RutaPermisos, Encoding.UTF8);
+        Assert.DoesNotContain("\"usuarios\"", texto, StringComparison.Ordinal);
+        Assert.Contains("\"Firma\"", texto, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApiRechazaPermisosJsonPlano()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        File.WriteAllText(entorno.RutaPermisos, CrearPermisosAdmin().ToJsonString());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var salud = await LeerJsonAsync(await cliente.GetAsync("/api/salud"));
+        Assert.Equal("degradado", salud?["estado"]?.GetValue<string>());
+        Assert.Equal("Corrupto", salud?["permisos"]?["estado"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task ApiBloqueaPermisosJsonMalFormado()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        File.WriteAllText(entorno.RutaPermisos, "{");
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -209,11 +705,9 @@ public sealed class PruebasLanzadorScripts
     public async Task ApiDesbloqueaConTokenReutilizableSinMotivo()
     {
         using var entorno = EntornoPruebas.Crear();
-        using var rsaPermisos = RSA.Create(3072);
         using var rsaToken = RSA.Create(3072);
-        var firma = new ServicioCifradoAplicacion(rsaPermisos, rsaPermisos, "Pruebas");
         var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes(), firma, servicioToken);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes(), servicioToken);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -232,13 +726,31 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public async Task ApiGeneraTokenMaestroDesdeServicio()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        using var rsaToken = RSA.Create(3072);
+        var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes(), servicioToken);
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        using var cuerpo = new StringContent("{}", Encoding.UTF8, "application/json");
+        var respuesta = await cliente.PostAsync("/api/token-maestro/generar", cuerpo);
+        Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
+
+        var json = await LeerJsonAsync(respuesta);
+        var token = json?["token"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(token));
+        Assert.True(servicioToken.Validar(token!, out _, out var motivo), motivo);
+    }
+
+    [Fact]
     public async Task ApiAdminExigeBearer()
     {
         using var entorno = EntornoPruebas.Crear();
-        using var rsa = RSA.Create(3072);
-        var firma = new ServicioCifradoAplicacion(rsa, rsa, "Pruebas");
-        entorno.GuardarPermisosFirmados(firma, CrearPermisosAdmin());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion(), firma);
+        entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -252,13 +764,104 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public async Task EjecucionRealDevuelveEventosFinales()
+    public async Task ApiNominalNoPuedePublicarCatalogo()
     {
         using var entorno = EntornoPruebas.Crear();
-        using var rsa = RSA.Create(3072);
-        var firma = new ServicioCifradoAplicacion(rsa, rsa, "Pruebas");
-        entorno.GuardarPermisosFirmados(firma, CrearPermisosAdmin());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion(), firma);
+        var permisos = CrearPermisosAdmin();
+        permisos["usuarios"]![0]!["rol"] = "nominal";
+        entorno.GuardarPermisosProtegidos(permisos);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var usuario = await LeerJsonAsync(await cliente.GetAsync("/api/usuario"));
+        Assert.Equal("nominal", usuario?["rol"]?.GetValue<string>());
+        Assert.Null(usuario?["tokenAdmin"]);
+
+        using var publicar = new HttpRequestMessage(HttpMethod.Post, "/api/catalogo-scripts")
+        {
+            Content = new StringContent("{\"scriptIds\":[\"ok.ps1\"]}", Encoding.UTF8, "application/json")
+        };
+        publicar.Headers.TryAddWithoutValidation("Authorization", "Bearer no-autorizado");
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.SendAsync(publicar)).StatusCode);
+        Assert.False(File.Exists(ServicioCatalogoScripts.ObtenerRuta(entorno.RutaPermisos)));
+    }
+
+    [Fact]
+    public async Task ApiNominalSoloListaCarpetasPermitidas()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Directory.CreateDirectory(Path.Combine(entorno.Raiz, "secreto"));
+        File.WriteAllText(Path.Combine(entorno.Raiz, "secreto", "oculto.ps1"), "Write-Output 'oculto'");
+
+        var permisos = CrearPermisosAdmin();
+        permisos["usuarios"]![0]!["rol"] = "nominal";
+        permisos["usuarios"]![0]!["carpetasPermitidas"] = new JsonArray("sub");
+        entorno.GuardarPermisosProtegidos(permisos);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var raiz = await LeerJsonAsync(await cliente.GetAsync("/api/scripts")) as JsonArray;
+        Assert.NotNull(raiz);
+        Assert.Contains(raiz!, script => script?["nombre"]?.GetValue<string>() == "ok.ps1");
+        Assert.Contains(raiz!, script => script?["esCarpeta"]?.GetValue<bool>() == true && script?["carpeta"]?.GetValue<string>() == "sub");
+        Assert.DoesNotContain(raiz!, script => script?["id"]?.GetValue<string>() == "sub/ok.cmd");
+        Assert.DoesNotContain(raiz!, script => script?["carpeta"]?.GetValue<string>() == "secreto");
+
+        var sub = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=sub")) as JsonArray;
+        Assert.NotNull(sub);
+        Assert.Contains(sub!, script => script?["id"]?.GetValue<string>() == "sub/ok.cmd");
+        Assert.DoesNotContain(sub!, script => script?["nombre"]?.GetValue<string>() == "ok.ps1");
+
+        var secreto = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=secreto")) as JsonArray;
+        Assert.NotNull(secreto);
+        Assert.Empty(secreto!);
+    }
+
+    [Fact]
+    public async Task ApiGuardaPermisosCifrados()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var usuario = await LeerJsonAsync(await cliente.GetAsync("/api/usuario"));
+        var tokenAdmin = usuario?["tokenAdmin"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(tokenAdmin));
+        var permisosEntrada = CrearPermisosAdmin();
+
+        using var peticion = new HttpRequestMessage(HttpMethod.Post, "/api/ajustes")
+        {
+            Content = new StringContent(permisosEntrada.ToJsonString(), Encoding.UTF8, "application/json")
+        };
+        peticion.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+
+        var respuesta = await cliente.SendAsync(peticion);
+        Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
+
+        var texto = File.ReadAllText(entorno.RutaPermisos, Encoding.UTF8);
+        Assert.DoesNotContain("\"usuarios\"", texto, StringComparison.Ordinal);
+        Assert.Contains("\"Firma\"", texto, StringComparison.Ordinal);
+        Assert.Contains("\"Datos\"", texto, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(entorno.Raiz, "permisos.json")));
+        Assert.True(new ServicioArtefactosProtegidos().IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            texto,
+            out var claro,
+            out _));
+        Assert.NotNull(JsonNode.Parse(claro) as JsonObject);
+    }
+
+    [Fact]
+    public async Task EjecucionRealUsaCatalogoCifrado()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -266,12 +869,16 @@ public sealed class PruebasLanzadorScripts
         var tokenAdmin = usuario?["tokenAdmin"]?.GetValue<string>();
         Assert.False(string.IsNullOrWhiteSpace(tokenAdmin));
 
-        using var activarDev = new HttpRequestMessage(HttpMethod.Post, "/api/desarrollo-firmas")
+        using var publicarCatalogo = new HttpRequestMessage(HttpMethod.Post, "/api/catalogo-scripts")
         {
-            Content = new StringContent("{\"activo\":true}", Encoding.UTF8, "application/json")
+            Content = new StringContent("{\"scriptIds\":[\"ok.ps1\"]}", Encoding.UTF8, "application/json")
         };
-        activarDev.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
-        Assert.Equal(HttpStatusCode.OK, (await cliente.SendAsync(activarDev)).StatusCode);
+        publicarCatalogo.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.SendAsync(publicarCatalogo)).StatusCode);
+        var rutaCatalogo = ServicioCatalogoScripts.ObtenerRuta(entorno.RutaPermisos);
+        var catalogoProtegido = File.ReadAllText(rutaCatalogo, Encoding.UTF8);
+        Assert.DoesNotContain("\"ok.ps1\"", catalogoProtegido, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(entorno.Raiz, "catalogo-scripts.json")));
 
         using var cuerpo = new StringContent("{\"scriptId\":\"ok.ps1\"}", Encoding.UTF8, "application/json");
         var respuesta = await cliente.PostAsync("/api/ejecuciones", cuerpo);
@@ -354,17 +961,35 @@ public sealed class PruebasLanzadorScripts
         return eventos;
     }
 
+    private static byte[] CrearZipRuntimeWebView2(bool incluirEjecutable = true)
+    {
+        using var memoria = new MemoryStream();
+        using (var zip = new ZipArchive(memoria, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            if (incluirEjecutable)
+            {
+                var ejecutable = zip.CreateEntry("runtime/msedgewebview2.exe");
+                using var flujo = ejecutable.Open();
+                flujo.Write([1, 2, 3, 4]);
+            }
+
+            var recurso = zip.CreateEntry("runtime/resources.pak");
+            using var flujoRecurso = recurso.Open();
+            flujoRecurso.Write([5, 6, 7, 8]);
+        }
+
+        return memoria.ToArray();
+    }
+
     private static JsonObject CrearPermisosBase()
     {
         return new JsonObject
         {
-            ["inicioAutomaticoWindows"] = false,
             ["scriptsAdmin"] = new JsonArray(),
             ["usuarios"] = new JsonArray(),
             ["seguridadScripts"] = new JsonObject
             {
-                ["certificadosPowerShellPermitidos"] = new JsonArray(),
-                ["hashesBatchPermitidos"] = new JsonArray(),
+                ["scriptsElevadosPermitidos"] = new JsonArray(),
                 ["permitirExecutionPolicyBypass"] = false
             },
             ["rolUsuarioActual"] = "nominal",
@@ -395,12 +1020,15 @@ internal sealed class EntornoPruebas : IDisposable
     private EntornoPruebas(string raiz)
     {
         Raiz = raiz;
-        RutaPermisos = Path.Combine(Raiz, "PERMISOS", "permisos.json");
+        CarpetaPermisos = Path.Combine(Raiz, "PERMISOS");
+        RutaPermisos = Path.Combine(CarpetaPermisos, RutasArtefactosProtegidos.NombrePermisos);
     }
 
     public string Raiz { get; }
 
     public string RutaPermisos { get; }
+
+    public string CarpetaPermisos { get; }
 
     public static EntornoPruebas Crear()
     {
@@ -409,6 +1037,7 @@ internal sealed class EntornoPruebas : IDisposable
         File.WriteAllText(Path.Combine(raiz, "ok.ps1"), "Write-Output 'ok'");
         Directory.CreateDirectory(Path.Combine(raiz, "sub"));
         File.WriteAllText(Path.Combine(raiz, "sub", "ok.cmd"), "echo ok");
+        Directory.CreateDirectory(Path.Combine(raiz, "vacia"));
         Directory.CreateDirectory(Path.Combine(raiz, "PERMISOS"));
         File.WriteAllText(Path.Combine(raiz, "PERMISOS", "bloqueado.ps1"), "Write-Output 'no'");
         Directory.CreateDirectory(Path.Combine(raiz, ".git"));
@@ -423,25 +1052,38 @@ internal sealed class EntornoPruebas : IDisposable
         return new ConfiguracionLanzador
         {
             RutaScripts = Raiz,
-            RutaPermisos = RutaPermisos,
+            RutaPermisos = CarpetaPermisos,
             RutaLogs = Path.Combine(Raiz, "Logs")
         };
     }
 
     public ConfiguracionLanzador CrearConfiguracionPermisosAusentes()
     {
+        var carpetaPermisosAusentes = Path.Combine(Raiz, "PERMISOS-AUSENTES");
+        Directory.CreateDirectory(carpetaPermisosAusentes);
         return new ConfiguracionLanzador
         {
             RutaScripts = Raiz,
-            RutaPermisos = Path.Combine(Raiz, "PERMISOS", "ausente.json"),
+            RutaPermisos = carpetaPermisosAusentes,
             RutaLogs = Path.Combine(Raiz, "Logs")
         };
     }
 
-    public void GuardarPermisosFirmados(ServicioCifradoAplicacion firma, JsonObject permisos)
+    public void GuardarPermisosProtegidos(JsonObject permisos)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(RutaPermisos)!);
-        File.WriteAllText(RutaPermisos, firma.CifrarTexto("permisos", permisos.ToJsonString()));
+        new ServicioArtefactosProtegidos().GuardarTextoProtegido(
+            RutaPermisos,
+            ServicioArtefactosProtegidos.TipoPermisos,
+            permisos.ToJsonString());
+    }
+
+    public void GuardarCatalogo(IEnumerable<string> scriptIds)
+    {
+        var validador = new ServicioValidacionScripts();
+        var servicio = new ServicioCatalogoScripts();
+        var catalogo = servicio.Crear(validador.DescubrirScripts(Raiz), scriptIds);
+        servicio.Guardar(ServicioCatalogoScripts.ObtenerRuta(RutaPermisos), catalogo);
     }
 
     public void Dispose()

@@ -37,7 +37,7 @@ public sealed class ServicioValidacionScripts
 
         if (string.IsNullOrWhiteSpace(rutaPermisos))
         {
-            return ResultadoValidacionConfiguracion.Error("La ruta del archivo de permisos no puede estar vacia.");
+            return ResultadoValidacionConfiguracion.Error("La ruta de la carpeta de permisos no puede estar vacia.");
         }
 
         if (ContieneCaracteresInvalidos(rutaPermisos))
@@ -45,7 +45,53 @@ public sealed class ServicioValidacionScripts
             return ResultadoValidacionConfiguracion.Error("La ruta de permisos contiene caracteres no validos.");
         }
 
+        try
+        {
+            _ = RutasArtefactosProtegidos.Resolver(rutaPermisos);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or NotSupportedException)
+        {
+            return ResultadoValidacionConfiguracion.Error(ex.Message);
+        }
+
         return ResultadoValidacionConfiguracion.Correcta();
+    }
+
+    public string CrearAvisoConfiguracionNoDisponible(string rutaScripts, string rutaPermisos)
+    {
+        // Genera avisos operativos sin bloquear el guardado de rutas.
+        var avisos = new List<string>();
+        var rutaScriptsCompleta = ResolverRutaCompletaSegura(rutaScripts);
+        if (rutaScriptsCompleta is null || !Directory.Exists(rutaScriptsCompleta))
+        {
+            avisos.Add($"La carpeta de scripts no esta disponible: {rutaScripts.Trim()}.");
+        }
+
+        var rutasArtefactos = ResolverRutasArtefactosSegura(rutaPermisos);
+        if (rutasArtefactos is null)
+        {
+            avisos.Add($"La carpeta de permisos no se pudo resolver: {rutaPermisos.Trim()}.");
+            return string.Join(" ", avisos);
+        }
+
+        if (!Directory.Exists(rutasArtefactos.Carpeta))
+        {
+            avisos.Add($"La carpeta de permisos no esta disponible: {rutasArtefactos.Carpeta}.");
+        }
+        else
+        {
+            if (!File.Exists(rutasArtefactos.RutaPermisos))
+            {
+                avisos.Add($"El archivo de permisos no existe: {rutasArtefactos.RutaPermisos}.");
+            }
+
+            if (!File.Exists(rutasArtefactos.RutaCatalogo))
+            {
+                avisos.Add($"El catalogo de scripts no existe: {rutasArtefactos.RutaCatalogo}.");
+            }
+        }
+
+        return string.Join(" ", avisos);
     }
 
     public ResultadoValidacionScript ValidarScriptParaEjecucion(string rutaScripts, string identificador)
@@ -107,16 +153,57 @@ public sealed class ServicioValidacionScripts
             .ToList();
     }
 
-    public string ResolverRutaPermisos(string rutaScripts, string rutaPermisos)
+    public IReadOnlyList<string> DescubrirCarpetasScripts(string rutaScripts)
     {
-        var permisos = Environment.ExpandEnvironmentVariables(rutaPermisos.Trim());
-        if (Path.IsPathRooted(permisos))
+        var resultadoRaiz = ObtenerRaizSegura(rutaScripts);
+        if (!resultadoRaiz.EsValida)
         {
-            return Path.GetFullPath(permisos);
+            return [];
         }
 
-        var raiz = Environment.ExpandEnvironmentVariables(rutaScripts.Trim());
-        return Path.GetFullPath(Path.Combine(raiz, permisos));
+        return EnumerarCarpetasPermitidas(resultadoRaiz.RutaCompleta!)
+            .Select(ruta => Path.GetRelativePath(resultadoRaiz.RutaCompleta!, ruta).Replace('\\', '/').Trim('/'))
+            .Where(carpeta => !string.IsNullOrWhiteSpace(carpeta) && EsIdentificadorCarpetaSeguro(carpeta))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(carpeta => carpeta, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public string ResolverRutaPermisos(string rutaScripts, string rutaPermisos)
+    {
+        _ = rutaScripts;
+        return RutasArtefactosProtegidos.Resolver(rutaPermisos).RutaPermisos;
+    }
+
+    public RutasArtefactos ResolverRutasArtefactos(string rutaCarpetaPermisos)
+    {
+        return RutasArtefactosProtegidos.Resolver(rutaCarpetaPermisos);
+    }
+
+    private static string? ResolverRutaCompletaSegura(string ruta)
+    {
+        // Resuelve rutas para avisos sin lanzar errores al cliente.
+        try
+        {
+            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(ruta.Trim()));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static RutasArtefactos? ResolverRutasArtefactosSegura(string rutaPermisos)
+    {
+        // Resuelve la carpeta y los dos archivos para diagnostico.
+        try
+        {
+            return RutasArtefactosProtegidos.Resolver(rutaPermisos);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static int ObtenerCodigoHttp(CodigoValidacionScript codigo)
@@ -181,6 +268,37 @@ public sealed class ServicioValidacionScripts
                 {
                     carpetas.Push(carpeta);
                 }
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerarCarpetasPermitidas(string raiz)
+    {
+        var carpetas = new Stack<string>();
+        carpetas.Push(raiz);
+
+        while (carpetas.Count > 0)
+        {
+            var actual = carpetas.Pop();
+            IEnumerable<string> hijas;
+            try
+            {
+                hijas = Directory.EnumerateDirectories(actual).ToList();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var carpeta in hijas)
+            {
+                if (EsCarpetaExcluida(carpeta) || TieneAtributoReparsePoint(carpeta))
+                {
+                    continue;
+                }
+
+                yield return carpeta;
+                carpetas.Push(carpeta);
             }
         }
     }
@@ -322,6 +440,22 @@ public sealed class ServicioValidacionScripts
     private static bool EsExtensionPermitida(string ruta)
     {
         return ExtensionesPermitidas.Contains(Path.GetExtension(ruta));
+    }
+
+    private static bool EsIdentificadorCarpetaSeguro(string carpeta)
+    {
+        if (string.IsNullOrWhiteSpace(carpeta)
+            || Path.IsPathRooted(carpeta)
+            || Path.IsPathFullyQualified(carpeta)
+            || ServicioSeguridadScripts.ContieneMetacaracteresPeligrosos(carpeta))
+        {
+            return false;
+        }
+
+        var segmentos = carpeta.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        return segmentos.Length > 0
+            && segmentos.All(segmento => segmento != "." && segmento != "..")
+            && string.IsNullOrWhiteSpace(Path.GetExtension(carpeta));
     }
 
     private static bool TieneAtributoReparsePoint(string ruta)

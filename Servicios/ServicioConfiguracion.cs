@@ -24,7 +24,6 @@ public sealed class ServicioConfiguracion
     {
         Directory.CreateDirectory(RutasAplicacion.RaizAppData);
         Directory.CreateDirectory(RutasAplicacion.RaizLocalAppData);
-        Directory.CreateDirectory(RutasAplicacion.RaizProgramData);
 
         var configuracionPredeterminada = CargarConfiguracionPredeterminada();
         var configuraciones = ResolverRutasConfiguracionExistentes()
@@ -49,13 +48,13 @@ public sealed class ServicioConfiguracion
     public void Guardar(ConfiguracionLanzador configuracion)
     {
         configuracion.Normalizar(CargarConfiguracionPredeterminada());
+        configuracion.VersionConfiguracion = ConfiguracionLanzador.VersionActual;
         Directory.CreateDirectory(RutasAplicacion.RaizAppData);
         Directory.CreateDirectory(RutasAplicacion.RaizLocalAppData);
-        Directory.CreateDirectory(RutasAplicacion.RaizProgramData);
         Directory.CreateDirectory(configuracion.RutaLogs);
 
         var json = JsonSerializer.Serialize(configuracion, OpcionesJson);
-        var protegido = ProtectedData.Protect(Encoding.UTF8.GetBytes(json), EntropiaConfiguracion, DataProtectionScope.LocalMachine);
+        var protegido = ProtectedData.Protect(Encoding.UTF8.GetBytes(json), EntropiaConfiguracion, DataProtectionScope.CurrentUser);
         foreach (var rutaDestino in ResolverRutasConfiguracionParaGuardar())
         {
             try
@@ -94,16 +93,6 @@ public sealed class ServicioConfiguracion
             yield return RutasAplicacion.RutaConfiguracionUsuarioLegadaJson;
         }
 
-        if (File.Exists(RutasAplicacion.RutaConfiguracionProgramData))
-        {
-            yield return RutasAplicacion.RutaConfiguracionProgramData;
-        }
-
-        if (File.Exists(RutasAplicacion.RutaConfiguracionProgramDataLegadaJson))
-        {
-            yield return RutasAplicacion.RutaConfiguracionProgramDataLegadaJson;
-        }
-
         if (File.Exists(RutasAplicacion.RutaConfiguracionLegada))
         {
             yield return RutasAplicacion.RutaConfiguracionLegada;
@@ -113,7 +102,6 @@ public sealed class ServicioConfiguracion
     private static IEnumerable<string> ResolverRutasConfiguracionParaGuardar()
     {
         yield return RutasAplicacion.RutaConfiguracionUsuario;
-        yield return RutasAplicacion.RutaConfiguracionProgramData;
     }
 
     private static ResultadoLecturaConfiguracion LeerConfiguracionSegura(string ruta, ConfiguracionLanzador configuracionPredeterminada)
@@ -147,11 +135,11 @@ public sealed class ServicioConfiguracion
         var datos = File.ReadAllBytes(ruta);
         try
         {
-            return Encoding.UTF8.GetString(ProtectedData.Unprotect(datos, EntropiaConfiguracion, DataProtectionScope.LocalMachine));
+            return Encoding.UTF8.GetString(ProtectedData.Unprotect(datos, EntropiaConfiguracion, DataProtectionScope.CurrentUser));
         }
         catch
         {
-            return Encoding.UTF8.GetString(ProtectedData.Unprotect(datos, EntropiaConfiguracion, DataProtectionScope.CurrentUser));
+            return Encoding.UTF8.GetString(ProtectedData.Unprotect(datos, EntropiaConfiguracion, DataProtectionScope.LocalMachine));
         }
     }
 
@@ -184,15 +172,40 @@ public sealed class ServicioConfiguracion
         }
     }
 
-    private static void MigrarRutasPredeterminadasAnteriores(ConfiguracionLanzador configuracion, ConfiguracionLanzador configuracionPredeterminada)
+    internal static void MigrarRutasPredeterminadasAnteriores(
+        ConfiguracionLanzador configuracion,
+        ConfiguracionLanzador configuracionPredeterminada)
     {
-        // Corrige instalaciones que guardaron la ruta predeterminada anterior sin admin share.
-        if (string.Equals(configuracion.RutaScripts, @"\\MAD002MICROPRU\REPO", StringComparison.OrdinalIgnoreCase))
+        // Corrige instalaciones que guardaron rutas predeterminadas anteriores.
+        if (configuracion.VersionConfiguracion is null
+            || configuracion.VersionConfiguracion < ConfiguracionLanzador.VersionActual)
+        {
+            configuracion.RutaScripts = configuracionPredeterminada.RutaScripts;
+            configuracion.RutaPermisos = configuracionPredeterminada.RutaPermisos;
+            configuracion.VersionConfiguracion = ConfiguracionLanzador.VersionActual;
+            return;
+        }
+
+        string[] rutasScriptsAnteriores =
+        [
+            @"\\MAD002MICROPRU\REPO",
+            @"\\MAD002MICROPRU\C$\REPO",
+            @"\\MAD002MICROPRU.mad.ae.aena.es\C$\REPO"
+        ];
+
+        string[] rutasPermisosAnteriores =
+        [
+            @"\\MAD002MICROPRU\REPO\PERMISOS",
+            @"\\MAD002MICROPRU\C$\REPO\PERMISOS",
+            @"\\MAD002MICROPRU.mad.ae.aena.es\C$\REPO\PERMISOS"
+        ];
+
+        if (rutasScriptsAnteriores.Any(ruta => string.Equals(configuracion.RutaScripts, ruta, StringComparison.OrdinalIgnoreCase)))
         {
             configuracion.RutaScripts = configuracionPredeterminada.RutaScripts;
         }
 
-        if (string.Equals(configuracion.RutaPermisos, @"\\MAD002MICROPRU\REPO\PERMISOS\permisos.json", StringComparison.OrdinalIgnoreCase))
+        if (rutasPermisosAnteriores.Any(ruta => string.Equals(configuracion.RutaPermisos, ruta, StringComparison.OrdinalIgnoreCase)))
         {
             configuracion.RutaPermisos = configuracionPredeterminada.RutaPermisos;
         }

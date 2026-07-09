@@ -10,33 +10,58 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServicioArranqueWebView2
 {
     private const int MaximoCopiasDiagnostico = 3;
+    private const string EjecutableWebView2 = "msedgewebview2.exe";
 
-    private readonly ServicioInstalacionWebView2 _servicioInstalacionWebView2 = new();
+    private readonly ServicioDisponibilidadWebView2 _servicioDisponibilidadWebView2 = new();
+    private readonly ServicioRuntimeWebView2Embebido _servicioRuntimeEmbebido = new();
     private readonly ServicioLogInicio _logInicio = new();
 
     public async Task<ResultadoArranqueWebView2> PrepararAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
     {
-        var runtimeFijoCandidato = Directory.Exists(RutasAplicacion.RutaRuntimeWebView2Fijo)
-            ? RutasAplicacion.RutaRuntimeWebView2Fijo
-            : null;
-        var runtimeFijo = _servicioInstalacionWebView2.ObtenerVersionRuta(runtimeFijoCandidato) is null
-            ? null
-            : runtimeFijoCandidato;
-
-        var instalacion = await _servicioInstalacionWebView2.AsegurarInstaladoAsync(runtimeFijo);
-        if (!instalacion.Exito)
+        var runtimeEmbebido = _servicioRuntimeEmbebido.Preparar();
+        if (!runtimeEmbebido.Exito && runtimeEmbebido.RecursoEncontrado)
         {
-            await _logInicio.RegistrarAsync("webview2.runtime.error", instalacion.Mensaje, CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2));
-            return ResultadoArranqueWebView2.Error(instalacion.Mensaje);
+            await _logInicio.RegistrarAsync(
+                "webview2.runtime.embebido.error",
+                runtimeEmbebido.Mensaje,
+                CrearDatosBase(null, RutasAplicacion.RutaPerfilWebView2));
+            return ResultadoArranqueWebView2.Error(runtimeEmbebido.Mensaje);
         }
 
-        var versionRuntime = _servicioInstalacionWebView2.ObtenerVersionDisponible(runtimeFijo);
+        var runtimeFijo = runtimeEmbebido.RutaRuntime ?? ResolverRuntimeFijoPortable();
+        var disponibilidad = _servicioDisponibilidadWebView2.Comprobar(runtimeFijo);
+        if (!disponibilidad.Exito)
+        {
+            await _logInicio.RegistrarAsync(
+                "webview2.runtime.error",
+                disponibilidad.Mensaje,
+                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2));
+            return ResultadoArranqueWebView2.Error(disponibilidad.Mensaje);
+        }
+
+        var versionRuntime = disponibilidad.Version;
+        if (runtimeEmbebido.Exito)
+        {
+            await _logInicio.RegistrarAsync(
+                runtimeEmbebido.ExtraidoAhora ? "webview2.runtime.embebido.extraido" : "webview2.runtime.embebido.reutilizado",
+                "WebView2 usara el runtime embebido autoextraido.",
+                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime, null, null, runtimeEmbebido.Hash));
+        }
+        else if (!string.IsNullOrWhiteSpace(runtimeFijo))
+        {
+            await _logInicio.RegistrarAsync(
+                "webview2.runtime.portable",
+                "WebView2 usara el runtime portable.",
+                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime));
+        }
+
+        var rutaPerfilPrincipal = await PrepararPerfilPrincipalAsync(runtimeFijo, versionRuntime);
         await _logInicio.RegistrarAsync(
             "webview2.inicio",
             "Preparando WebView2.",
-            CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime));
+            CrearDatosBase(runtimeFijo, rutaPerfilPrincipal, versionRuntime));
 
-        var primerIntento = await IntentarPrepararAsync(obtenerVista(), runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime, "perfil-principal");
+        var primerIntento = await IntentarPrepararAsync(obtenerVista(), runtimeFijo, rutaPerfilPrincipal, versionRuntime, "perfil-principal");
         if (primerIntento.Exito)
         {
             return primerIntento;
@@ -44,7 +69,7 @@ public sealed class ServicioArranqueWebView2
 
         await Task.Delay(TimeSpan.FromSeconds(1.5));
 
-        var segundoIntento = await IntentarPrepararAsync(recrearVista(), runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime, "perfil-principal-reintento");
+        var segundoIntento = await IntentarPrepararAsync(recrearVista(), runtimeFijo, rutaPerfilPrincipal, versionRuntime, "perfil-principal-reintento");
         if (segundoIntento.Exito)
         {
             return segundoIntento;
@@ -53,32 +78,32 @@ public sealed class ServicioArranqueWebView2
         string rutaPerfilRecuperado;
         try
         {
-            rutaPerfilRecuperado = await PrepararPerfilRecuperadoAsync(RutasAplicacion.RutaPerfilWebView2);
+            rutaPerfilRecuperado = await PrepararPerfilRecuperadoAsync(rutaPerfilPrincipal);
         }
         catch (Exception ex)
         {
             await _logInicio.RegistrarExcepcionAsync(
                 "webview2.perfil.error",
                 "preparar-perfil-recuperacion",
-                RutasAplicacion.RutaPerfilWebView2,
+                rutaPerfilPrincipal,
                 ex,
-                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime));
+                CrearDatosBase(runtimeFijo, rutaPerfilPrincipal, versionRuntime));
 
-            return ResultadoArranqueWebView2.Error("No se pudo preparar el perfil local de WebView2. Revisa permisos sobre %LocalAppData%\\LanzadorScripts.");
+            return ResultadoArranqueWebView2.Error($"No se pudo preparar el perfil de WebView2. Revisa permisos sobre {RutasAplicacion.RutaPerfilWebView2}.");
         }
 
         var tercerIntento = await IntentarPrepararAsync(recrearVista(), runtimeFijo, rutaPerfilRecuperado, versionRuntime, "perfil-recuperado");
         if (tercerIntento.Exito)
         {
             var mensaje = rutaPerfilRecuperado == RutasAplicacion.RutaPerfilWebView2
-                ? "WebView2 se recupero creando un perfil limpio."
+                ? "WebView2 se recupero creando un perfil local limpio."
                 : "WebView2 se inicio con un perfil temporal de recuperacion.";
             await _logInicio.RegistrarAsync("webview2.recuperado", mensaje, CrearDatosBase(runtimeFijo, rutaPerfilRecuperado, versionRuntime));
             return tercerIntento;
         }
 
         return ResultadoArranqueWebView2.Error(
-            "No se pudo iniciar Microsoft Edge WebView2. Revisa las politicas corporativas de Edge/WebView2 o el log de arranque en %LocalAppData%\\LanzadorScripts\\Logs.");
+            "No se pudo iniciar Microsoft Edge WebView2. Revisa las politicas corporativas de Edge/WebView2 o el log de arranque de LanzadorScripts.");
     }
 
     private async Task<ResultadoArranqueWebView2> IntentarPrepararAsync(WebView2 vista, string? runtimeFijo, string rutaPerfil, string? versionRuntime, string fase)
@@ -109,6 +134,28 @@ public sealed class ServicioArranqueWebView2
                 CrearDatosBase(runtimeFijo, rutaPerfil, versionRuntime));
 
             return ResultadoArranqueWebView2.Error(ex.Message);
+        }
+    }
+
+    private async Task<string> PrepararPerfilPrincipalAsync(string? runtimeFijo, string? versionRuntime)
+    {
+        try
+        {
+            Directory.CreateDirectory(RutasAplicacion.RutaPerfilWebView2);
+            ProbarEscrituraDirectorio(RutasAplicacion.RutaPerfilWebView2);
+            return RutasAplicacion.RutaPerfilWebView2;
+        }
+        catch (Exception ex)
+        {
+            var rutaTemporal = CrearPerfilTemporal();
+            await _logInicio.RegistrarExcepcionAsync(
+                "webview2.perfil.no_escribible",
+                "preparar-perfil-principal",
+                RutasAplicacion.RutaPerfilWebView2,
+                ex,
+                CrearDatosBase(runtimeFijo, rutaTemporal, versionRuntime));
+
+            return rutaTemporal;
         }
     }
 
@@ -153,6 +200,99 @@ public sealed class ServicioArranqueWebView2
                 });
             LimpiarCopiasDiagnostico(raiz);
             return rutaRecuperacion;
+        }
+    }
+
+    private static string CrearPerfilTemporal()
+    {
+        var ruta = Path.Combine(Path.GetTempPath(), "LanzadorScripts", "WebView2", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ruta);
+        ProbarEscrituraDirectorio(ruta);
+        return ruta;
+    }
+
+    internal static string? ResolverRuntimeFijoPortable()
+    {
+        // Localiza un runtime fijo copiado junto al EXE.
+        var candidatos = EnumerarCandidatosRuntimePortable();
+        foreach (var candidato in candidatos)
+        {
+            var ruta = ResolverCarpetaEjecutableWebView2(candidato);
+            if (!string.IsNullOrWhiteSpace(ruta))
+            {
+                return ruta;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerarCandidatosRuntimePortable()
+    {
+        var baseAplicacion = AppContext.BaseDirectory;
+        yield return RutasAplicacion.RutaRuntimeWebView2Portable;
+        yield return Path.Combine(baseAplicacion, "WebView2FixedRuntime");
+
+        IEnumerable<string> carpetas;
+        try
+        {
+            carpetas = Directory.EnumerateDirectories(baseAplicacion, "Microsoft.WebView2.FixedVersionRuntime*");
+        }
+        catch
+        {
+            yield break;
+        }
+
+        foreach (var carpeta in carpetas)
+        {
+            yield return carpeta;
+        }
+    }
+
+    private static string? ResolverCarpetaEjecutableWebView2(string carpeta)
+    {
+        if (!Directory.Exists(carpeta))
+        {
+            return null;
+        }
+
+        var ejecutableDirecto = Path.Combine(carpeta, EjecutableWebView2);
+        if (File.Exists(ejecutableDirecto))
+        {
+            return Path.GetFullPath(carpeta);
+        }
+
+        try
+        {
+            var ejecutable = Directory
+                .EnumerateFiles(carpeta, EjecutableWebView2, SearchOption.AllDirectories)
+                .OrderBy(ruta => ruta.Length)
+                .FirstOrDefault();
+            return string.IsNullOrWhiteSpace(ejecutable)
+                ? null
+                : Path.GetDirectoryName(Path.GetFullPath(ejecutable));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void ProbarEscrituraDirectorio(string ruta)
+    {
+        // Verifica escritura antes de entregar la ruta a Edge WebView2.
+        var prueba = Path.Combine(ruta, $".lanzador_write_{Guid.NewGuid():N}.tmp");
+        using (var flujo = new FileStream(prueba, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose))
+        {
+            flujo.WriteByte(1);
+        }
+
+        try
+        {
+            File.Delete(prueba);
+        }
+        catch
+        {
         }
     }
 
@@ -205,7 +345,7 @@ public sealed class ServicioArranqueWebView2
         });
     }
 
-    private static Dictionary<string, string?> CrearDatosBase(string? runtimeFijo, string rutaPerfil, string? versionRuntime = null, string? carpetaInformes = null, string? fase = null)
+    private static Dictionary<string, string?> CrearDatosBase(string? runtimeFijo, string rutaPerfil, string? versionRuntime = null, string? carpetaInformes = null, string? fase = null, string? hashRuntime = null)
     {
         return new Dictionary<string, string?>
         {
@@ -213,7 +353,8 @@ public sealed class ServicioArranqueWebView2
             ["rutaPerfil"] = rutaPerfil,
             ["versionRuntime"] = versionRuntime,
             ["carpetaInformes"] = carpetaInformes,
-            ["fase"] = fase
+            ["fase"] = fase,
+            ["hashRuntime"] = hashRuntime
         };
     }
 }

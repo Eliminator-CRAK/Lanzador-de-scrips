@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Manifiesto para solicitar permisos de administrador al iniciar. -->
+<!-- Descripcion: Manifiesto para ejecutar la aplicacion con elevacion UAC. -->
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
   <assemblyIdentity version="1.0.0.0" name="LanzadorScripts.app"/>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">

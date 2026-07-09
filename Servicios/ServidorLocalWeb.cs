@@ -32,10 +32,11 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
     private readonly ServicioTokensAdmin _servicioTokensAdmin = new();
     private readonly ServicioTokenMaestro _servicioTokenMaestro;
-    private readonly ServicioCifradoAplicacion _servicioCifradoAplicacion;
     private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
     private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts = new();
+    private readonly ServicioArtefactosProtegidos _servicioArtefactos = new();
+    private readonly ServicioCatalogoScripts _servicioCatalogoScripts;
     private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
@@ -46,38 +47,27 @@ public sealed class ServidorLocalWeb : IDisposable
     private volatile bool _modoDesarrolloFirmas;
 
     private ServidorLocalWeb(int puerto)
-        : this(puerto, new ServicioCifradoAplicacion(), new ServicioTokenMaestro())
+        : this(puerto, new ServicioTokenMaestro())
     {
     }
 
-    private ServidorLocalWeb(int puerto, ServicioCifradoAplicacion servicioCifradoAplicacion)
-        : this(puerto, servicioCifradoAplicacion, new ServicioTokenMaestro())
-    {
-    }
-
-    private ServidorLocalWeb(int puerto, ServicioCifradoAplicacion servicioCifradoAplicacion, ServicioTokenMaestro servicioTokenMaestro)
+    private ServidorLocalWeb(int puerto, ServicioTokenMaestro servicioTokenMaestro)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
-        _servicioCifradoAplicacion = servicioCifradoAplicacion;
         _servicioTokenMaestro = servicioTokenMaestro;
+        _servicioCatalogoScripts = new ServicioCatalogoScripts(_servicioArtefactos);
         _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria, _servicioSeguridadScripts);
     }
 
     private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion)
-        : this(puerto, new ServicioCifradoAplicacion())
+        : this(puerto, new ServicioTokenMaestro())
     {
         _configuracionFija = configuracion;
     }
 
-    private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion)
-        : this(puerto, servicioCifradoAplicacion)
-    {
-        _configuracionFija = configuracion;
-    }
-
-    private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion, ServicioTokenMaestro servicioTokenMaestro)
-        : this(puerto, servicioCifradoAplicacion, servicioTokenMaestro)
+    private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioTokenMaestro servicioTokenMaestro)
+        : this(puerto, servicioTokenMaestro)
     {
         _configuracionFija = configuracion;
     }
@@ -103,19 +93,10 @@ public sealed class ServidorLocalWeb : IDisposable
         return servidor;
     }
 
-    internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion)
+    internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion, ServicioTokenMaestro servicioTokenMaestro)
     {
         // Inicia el servidor con servicios aislados de pruebas.
-        var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioCifradoAplicacion);
-        servidor._escuchador.Start();
-        _ = servidor.EscucharAsync();
-        return servidor;
-    }
-
-    internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion, ServicioCifradoAplicacion servicioCifradoAplicacion, ServicioTokenMaestro servicioTokenMaestro)
-    {
-        // Inicia el servidor con servicios aislados de pruebas.
-        var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioCifradoAplicacion, servicioTokenMaestro);
+        var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioTokenMaestro);
         servidor._escuchador.Start();
         _ = servidor.EscucharAsync();
         return servidor;
@@ -262,7 +243,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 webView2 = new
                 {
                     perfil = RutasAplicacion.RutaPerfilWebView2,
-                    runtimeFijo = Directory.Exists(RutasAplicacion.RutaRuntimeWebView2Fijo)
+                    runtimeInstalado = new ServicioDisponibilidadWebView2().Comprobar().Exito
                 },
                 ejecuciones = new
                 {
@@ -295,6 +276,18 @@ public sealed class ServidorLocalWeb : IDisposable
             var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
             var tokenAdmin = AsegurarTokenAdmin(usuario);
             await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario, diagnosticoPermisos, tokenAdmin));
+            return;
+        }
+
+        if (metodo == "POST" && ruta.Equals("/api/token-maestro/generar", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_servicioTokenMaestro.PuedeGenerar())
+            {
+                await EscribirJsonAsync(contexto, 409, new { error = "No se encontro el certificado privado de Alex Roman con clave RSA para generar el token maestro." });
+                return;
+            }
+
+            await EscribirJsonAsync(contexto, 200, new { token = _servicioTokenMaestro.Generar() });
             return;
         }
 
@@ -346,7 +339,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/scripts", StringComparison.OrdinalIgnoreCase))
         {
-            await EscribirJsonAsync(contexto, 200, ObtenerScriptsParaCliente());
+            var carpeta = contexto.Request.QueryString["carpeta"] ?? string.Empty;
+            await EscribirJsonAsync(contexto, 200, ObtenerScriptsParaCliente(carpeta));
             return;
         }
 
@@ -430,7 +424,15 @@ public sealed class ServidorLocalWeb : IDisposable
             configuracion.RutaPermisos = nuevaRutaPermisos;
             configuracion.RutaScripts = nuevaRutaScripts;
             _servicioConfiguracion.Guardar(configuracion);
-            await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion de la aplicacion guardada exitosamente." });
+            var avisoConfiguracion = _servicioValidacionScripts.CrearAvisoConfiguracionNoDisponible(nuevaRutaScripts, nuevaRutaPermisos);
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                exito = true,
+                mensaje = string.IsNullOrWhiteSpace(avisoConfiguracion)
+                    ? "Configuracion de la aplicacion guardada exitosamente."
+                    : "Configuracion de la aplicacion guardada con advertencias.",
+                avisoConfiguracion
+            });
             return;
         }
 
@@ -441,8 +443,26 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            var paquete = _servicioPaquetesConfiguracion.Exportar(CargarConfiguracion(), ObtenerPermisos());
-            await EscribirJsonAsync(contexto, 200, paquete);
+            try
+            {
+                var paquete = _servicioPaquetesConfiguracion.Exportar(CargarConfiguracion(), ObtenerPermisos());
+                await EscribirJsonAsync(contexto, 200, paquete);
+            }
+            catch (Exception ex)
+            {
+                await _servicioAuditoria.RegistrarErrorInternoAsync("configuracion.exportar.error", ex.GetType().Name);
+                await EscribirJsonAsync(contexto, 500, new
+                {
+                    error = "No se pudo exportar la configuracion. " + ServicioRedaccionSecretos.Sanitizar(ex.Message)
+                });
+            }
+
+            return;
+        }
+
+        if (metodo == "POST" && ruta.Equals("/api/configuracion-paquete/importar", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProcesarImportacionPaqueteConfiguracionAsync(contexto);
             return;
         }
 
@@ -457,14 +477,68 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        if (metodo == "GET" && ruta.Equals("/api/hashes-batch-detectados", StringComparison.OrdinalIgnoreCase))
+        if (metodo == "GET" && ruta.Equals("/api/catalogo-scripts", StringComparison.OrdinalIgnoreCase))
         {
             if (!await RequerirAdministradorAsync(contexto))
             {
                 return;
             }
 
-            await EscribirJsonAsync(contexto, 200, ObtenerHashesBatchDetectados());
+            var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo();
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                valido = diagnosticoCatalogo.EstaDisponible,
+                mensaje = diagnosticoCatalogo.Mensaje,
+                keyId = diagnosticoCatalogo.Catalogo?.KeyId ?? _servicioArtefactos.KeyId,
+                generadoUtc = diagnosticoCatalogo.Catalogo?.GeneradoUtc,
+                scripts = _servicioCatalogoScripts.ObtenerEstados(
+                    ObtenerScriptsInternos(),
+                    diagnosticoCatalogo.Catalogo)
+            });
+            return;
+        }
+
+        if (metodo == "POST" && ruta.Equals("/api/catalogo-scripts", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!await RequerirAdministradorAsync(contexto))
+            {
+                return;
+            }
+
+            var cuerpo = await LeerJsonAsync(contexto.Request);
+            var seleccionados = LeerArrayTexto(cuerpo?["scriptIds"] as JsonArray);
+            try
+            {
+                var configuracion = CargarConfiguracion();
+                var catalogo = _servicioCatalogoScripts.Crear(
+                    _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts),
+                    seleccionados);
+                var rutaCatalogo = ServicioCatalogoScripts.ObtenerRuta(
+                    ObtenerRutaPermisosCompleta(configuracion));
+                _servicioCatalogoScripts.Guardar(rutaCatalogo, catalogo);
+                await _servicioAuditoria.RegistrarEventoSeguridadAsync(
+                    "seguridad.catalogo.publicado",
+                    WindowsIdentity.GetCurrent().Name,
+                    null,
+                    "publicado",
+                    $"Catalogo publicado con {catalogo.Scripts.Count} scripts.");
+                await EscribirJsonAsync(contexto, 200, new
+                {
+                    exito = true,
+                    mensaje = "Catalogo cifrado y firmado correctamente.",
+                    totalScripts = catalogo.Scripts.Count,
+                    catalogo.KeyId,
+                    catalogo.GeneradoUtc
+                });
+            }
+            catch (Exception ex)
+            {
+                await EscribirJsonAsync(contexto, 400, new
+                {
+                    error = ServicioRedaccionSecretos.Sanitizar(ex.Message)
+                });
+            }
+
             return;
         }
 
@@ -512,6 +586,51 @@ public sealed class ServidorLocalWeb : IDisposable
         await EscribirJsonAsync(contexto, 404, new { error = "Ruta no encontrada." });
     }
 
+    private async Task ProcesarImportacionPaqueteConfiguracionAsync(HttpListenerContext contexto)
+    {
+        var cuerpo = await LeerJsonAsync(contexto.Request);
+        var nombreArchivo = Path.GetFileName(LeerTexto(cuerpo, "nombreArchivo", "configuracion.lanzadorconfig"));
+        var contenidoBase64 = LeerTexto(cuerpo, "contenidoBase64", string.Empty);
+        if (string.IsNullOrWhiteSpace(contenidoBase64))
+        {
+            await EscribirJsonAsync(contexto, 400, new { error = "No se recibio el paquete de configuracion." });
+            return;
+        }
+
+        var rutaTemporal = Path.Combine(Path.GetTempPath(), $"LanzadorScripts_{Guid.NewGuid():N}_{nombreArchivo}");
+        try
+        {
+            File.WriteAllBytes(rutaTemporal, Convert.FromBase64String(contenidoBase64));
+            var configuracion = CargarConfiguracion();
+            var importacion = _servicioPaquetesConfiguracion.Importar(rutaTemporal, configuracion);
+            _servicioConfiguracion.Guardar(importacion.Configuracion);
+            if (importacion.Permisos is not null)
+            {
+                _servicioPaquetesConfiguracion.GuardarPermisosImportados(importacion.Configuracion, importacion.Permisos);
+            }
+
+            await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion importada correctamente en el servicio." });
+        }
+        catch (FormatException)
+        {
+            await EscribirJsonAsync(contexto, 400, new { error = "El contenido del paquete no esta en Base64 valido." });
+        }
+        catch (Exception ex)
+        {
+            await EscribirJsonAsync(contexto, 400, new { error = ServicioRedaccionSecretos.Sanitizar(ex.Message) });
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(rutaTemporal);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private async Task ProcesarInicioEjecucionAsync(HttpListenerContext contexto)
     {
         var cuerpo = await LeerJsonAsync(contexto.Request);
@@ -555,7 +674,13 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, diagnosticoPermisos.Permisos, _modoDesarrolloFirmas);
+        var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo();
+        var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(
+            script,
+            diagnosticoPermisos.Permisos,
+            diagnosticoCatalogo.Catalogo,
+            diagnosticoCatalogo.Mensaje,
+            _modoDesarrolloFirmas);
         if (!diagnosticoSeguridad.Permitido)
         {
             var motivo = string.IsNullOrWhiteSpace(diagnosticoSeguridad.MotivoBloqueo)
@@ -590,15 +715,18 @@ public sealed class ServidorLocalWeb : IDisposable
                 usuario.NombreUsuario,
                 script.Id,
                 "permitido",
-                "Validacion de firma/hash omitida por modo desarrollo temporal.");
+                "Validacion del catalogo omitida por modo desarrollo temporal.");
         }
 
+        var catalogoEjecucion = diagnosticoCatalogo.Catalogo
+            ?? new CatalogoScripts(1, DateTimeOffset.UtcNow, _servicioArtefactos.KeyId, []);
         var ejecucionId = _gestorEjecuciones.Iniciar(
             script,
             configuracion.RutaLogs,
             usuario,
             diagnosticoSeguridad.ExecutionPolicyBypassPermitido,
             diagnosticoPermisos.Permisos,
+            catalogoEjecucion,
             _modoDesarrolloFirmas);
         await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
     }
@@ -655,7 +783,16 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        await EscribirJsonAsync(contexto, 200, _servicioSeguridadScripts.Diagnosticar(validacion.Script!, ObtenerPermisos(), _modoDesarrolloFirmas));
+        var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo();
+        await EscribirJsonAsync(
+            contexto,
+            200,
+            _servicioSeguridadScripts.Diagnosticar(
+                validacion.Script!,
+                ObtenerPermisos(),
+                diagnosticoCatalogo.Catalogo,
+                diagnosticoCatalogo.Mensaje,
+                _modoDesarrolloFirmas));
     }
 
     private async Task EntregarClienteAsync(HttpListenerContext contexto, string ruta)
@@ -892,7 +1029,7 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
 
-        if (!File.Exists(ruta))
+        if (!File.Exists(ruta) && !File.Exists(ruta + ".bak"))
         {
             if (RutaPermisosInaccesible(ruta))
             {
@@ -912,19 +1049,21 @@ public sealed class ServidorLocalWeb : IDisposable
 
         try
         {
-            var texto = File.ReadAllText(ruta, Encoding.UTF8);
-            if (!_servicioCifradoAplicacion.IntentarDescifrarTexto("permisos", texto, out var permisosDescifrados))
+            if (!_servicioArtefactos.IntentarCargarTextoProtegido(
+                ruta,
+                ServicioArtefactosProtegidos.TipoPermisos,
+                out var jsonPermisos,
+                out var errorProteccion,
+                out _))
             {
                 return new DiagnosticoPermisos(
                     EstadoPermisos.Corrupto,
                     ruta,
                     CrearPermisosPorDefecto(),
-                    "El archivo de permisos no tiene una firma corporativa valida.");
+                    errorProteccion);
             }
 
-            texto = permisosDescifrados;
-
-            var permisos = JsonNode.Parse(texto) as JsonObject;
+            var permisos = JsonNode.Parse(jsonPermisos) as JsonObject;
             if (permisos is null)
             {
                 return new DiagnosticoPermisos(
@@ -934,7 +1073,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     "El archivo de permisos esta corrupto.");
             }
 
-            return new DiagnosticoPermisos(EstadoPermisos.Disponible, ruta, permisos, string.Empty);
+            return new DiagnosticoPermisos(EstadoPermisos.Disponible, ruta, NormalizarPermisos(permisos), string.Empty);
         }
         catch
         {
@@ -944,6 +1083,41 @@ public sealed class ServidorLocalWeb : IDisposable
                 CrearPermisosPorDefecto(),
                 "El archivo de permisos no se pudo validar.");
         }
+    }
+
+    private DiagnosticoCatalogo ObtenerDiagnosticoCatalogo()
+    {
+        var configuracion = CargarConfiguracion();
+        var rutaPermisos = ObtenerRutaPermisosCompleta(configuracion);
+        var rutaCatalogo = ServicioCatalogoScripts.ObtenerRuta(rutaPermisos);
+        if (RutaPermisosInaccesible(rutaCatalogo))
+        {
+            return new DiagnosticoCatalogo(
+                EstadoCatalogo.Inaccesible,
+                rutaCatalogo,
+                null,
+                MensajeServidorNoDisponible);
+        }
+
+        if (!_servicioCatalogoScripts.IntentarCargar(
+            rutaCatalogo,
+            out var catalogo,
+            out var error))
+        {
+            return new DiagnosticoCatalogo(
+                File.Exists(rutaCatalogo) || File.Exists(rutaCatalogo + ".bak")
+                    ? EstadoCatalogo.Corrupto
+                    : EstadoCatalogo.NoEncontrado,
+                rutaCatalogo,
+                null,
+                error);
+        }
+
+        return new DiagnosticoCatalogo(
+            EstadoCatalogo.Disponible,
+            rutaCatalogo,
+            catalogo,
+            string.Empty);
     }
 
     internal static bool RutaPermisosInaccesible(string ruta)
@@ -965,7 +1139,6 @@ public sealed class ServidorLocalWeb : IDisposable
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
         if (RutaPermisosInaccesible(ruta))
         {
-            ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
             return new ResultadoGuardarPermisos(false, MensajeServidorNoDisponible);
         }
 
@@ -978,9 +1151,10 @@ public sealed class ServidorLocalWeb : IDisposable
         var json = permisosNormalizados.ToJsonString(OpcionesJson);
         try
         {
-            var firmado = _servicioCifradoAplicacion.CifrarTexto("permisos", json);
-            File.WriteAllText(ruta, firmado, Encoding.UTF8);
-            ServicioInicioAutomatico.Aplicar(LeerBooleano(permisosNormalizados, "inicioAutomaticoWindows", false));
+            _servicioArtefactos.GuardarTextoProtegido(
+                ruta,
+                ServicioArtefactosProtegidos.TipoPermisos,
+                json);
             return new ResultadoGuardarPermisos(true, string.Empty);
         }
         catch (Exception ex)
@@ -996,7 +1170,6 @@ public sealed class ServidorLocalWeb : IDisposable
 
         return new JsonObject
         {
-            ["inicioAutomaticoWindows"] = LeerBooleano(objeto, "inicioAutomaticoWindows", false),
             ["scriptsAdmin"] = NormalizarScriptsAdmin(objeto["scriptsAdmin"] as JsonArray),
             ["usuarios"] = NormalizarUsuarios(objeto["usuarios"] as JsonArray),
             ["seguridadScripts"] = ServicioSeguridadScripts.NormalizarPolitica(objeto["seguridadScripts"] as JsonObject),
@@ -1075,12 +1248,19 @@ public sealed class ServidorLocalWeb : IDisposable
         return resultado;
     }
 
-    private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente()
+    private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente(string carpetaSolicitada = "")
     {
+        var carpetaActual = NormalizarCarpetaSolicitada(carpetaSolicitada);
+        if (carpetaActual is null)
+        {
+            return [];
+        }
+
         var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
         var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
         var permisos = diagnosticoPermisos.Permisos;
         var scripts = ObtenerScriptsInternos();
+        var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo();
         if (PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
         {
             return scripts
@@ -1088,29 +1268,101 @@ public sealed class ServidorLocalWeb : IDisposable
                 .ToList();
         }
 
-        if (!_modoDesarrolloFirmas)
+        if (!usuario.EstaAutorizado)
         {
-            _servicioSeguridadScripts.PrecargarFirmas(scripts);
+            return [];
         }
 
-        return scripts
-            .Select(script =>
-            {
-                var bloqueadoPorPermisos = ScriptBloqueado(script.Id, usuario, diagnosticoPermisos);
-                var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(script, permisos, _modoDesarrolloFirmas);
-                var bloqueado = bloqueadoPorPermisos || !diagnosticoSeguridad.Permitido;
-                var motivo = bloqueadoPorPermisos
-                    ? ObtenerMotivoBloqueoScript(script.Id, usuario)
-                    : diagnosticoSeguridad.MotivoBloqueo;
-
-                return new ScriptCliente(
-                    script.Id,
-                    script.Nombre,
-                    script.Tipo,
-                    bloqueado,
-                    motivo);
-            })
+        var scriptsVisibles = scripts
+            .Where(script => !ScriptBloqueado(script.Id, usuario, diagnosticoPermisos))
             .ToList();
+        var resultado = new List<ScriptCliente>();
+
+        foreach (var carpeta in ObtenerCarpetasDirectas(scriptsVisibles, carpetaActual))
+        {
+            resultado.Add(new ScriptCliente(
+                $"carpeta:{carpeta}",
+                Path.GetFileName(carpeta),
+                "carpeta",
+                false,
+                "Abrir carpeta",
+                true,
+                carpeta));
+        }
+
+        foreach (var script in scriptsVisibles.Where(script => string.Equals(ObtenerCarpetaScript(script.Id), carpetaActual, StringComparison.OrdinalIgnoreCase)))
+        {
+            var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(
+                script,
+                permisos,
+                diagnosticoCatalogo.Catalogo,
+                diagnosticoCatalogo.Mensaje,
+                _modoDesarrolloFirmas);
+            resultado.Add(new ScriptCliente(
+                script.Id,
+                script.Nombre,
+                script.Tipo,
+                !diagnosticoSeguridad.Permitido,
+                diagnosticoSeguridad.MotivoBloqueo,
+                false,
+                carpetaActual));
+        }
+
+        return resultado
+            .OrderBy(script => script.EsCarpeta ? 0 : 1)
+            .ThenBy(script => script.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> ObtenerCarpetasDirectas(IReadOnlyList<ScriptInterno> scripts, string carpetaActual)
+    {
+        var carpetas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var script in scripts)
+        {
+            var carpetaScript = ObtenerCarpetaScript(script.Id);
+            var rutaHija = ObtenerRutaHija(carpetaActual, carpetaScript);
+            if (string.IsNullOrWhiteSpace(rutaHija))
+            {
+                continue;
+            }
+
+            var primerSegmento = rutaHija.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(primerSegmento))
+            {
+                continue;
+            }
+
+            var carpetaDirecta = string.IsNullOrWhiteSpace(carpetaActual)
+                ? primerSegmento
+                : $"{carpetaActual}/{primerSegmento}";
+            carpetas.Add(carpetaDirecta);
+        }
+
+        return carpetas
+            .OrderBy(carpeta => carpeta, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string? ObtenerRutaHija(string carpetaActual, string carpetaScript)
+    {
+        if (string.IsNullOrWhiteSpace(carpetaScript))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(carpetaActual))
+        {
+            return carpetaScript;
+        }
+
+        if (string.Equals(carpetaScript, carpetaActual, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return carpetaScript.StartsWith(carpetaActual + "/", StringComparison.OrdinalIgnoreCase)
+            ? carpetaScript[(carpetaActual.Length + 1)..]
+            : null;
     }
 
     private IReadOnlyList<ScriptInterno> ObtenerScriptsInternos()
@@ -1121,21 +1373,19 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private IReadOnlyList<CarpetaScriptCliente> ObtenerSubcarpetasScripts()
     {
-        return ObtenerScriptsInternos()
+        var configuracion = CargarConfiguracion();
+        var scriptsPorCarpeta = ObtenerScriptsInternos()
             .Select(script => ObtenerCarpetaScript(script.Id))
             .Where(carpeta => !string.IsNullOrWhiteSpace(carpeta))
             .GroupBy(carpeta => carpeta, StringComparer.OrdinalIgnoreCase)
-            .Select(grupo => new CarpetaScriptCliente(grupo.Key, grupo.Key, grupo.Count()))
-            .OrderBy(carpeta => carpeta.Id, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
+            .ToDictionary(grupo => grupo.Key, grupo => grupo.Count(), StringComparer.OrdinalIgnoreCase);
 
-    private IReadOnlyList<HashBatchCliente> ObtenerHashesBatchDetectados()
-    {
-        return ObtenerScriptsInternos()
-            .Where(script => script.Tipo == "batch")
-            .Select(script => new HashBatchCliente(script.Id, ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta)))
-            .OrderBy(script => script.ScriptId, StringComparer.OrdinalIgnoreCase)
+        return _servicioValidacionScripts.DescubrirCarpetasScripts(configuracion.RutaScripts)
+            .Select(carpeta => new CarpetaScriptCliente(
+                carpeta,
+                carpeta,
+                scriptsPorCarpeta.TryGetValue(carpeta, out var total) ? total : 0))
+            .OrderBy(carpeta => carpeta.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -1200,17 +1450,51 @@ public sealed class ServidorLocalWeb : IDisposable
         return indice <= 0 ? string.Empty : normalizado[..indice];
     }
 
+    private static string? NormalizarCarpetaSolicitada(string carpeta)
+    {
+        // Normaliza la carpeta recibida desde la interfaz.
+        var valor = (carpeta ?? string.Empty).Replace('\\', '/').Trim().Trim('/');
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return string.Empty;
+        }
+
+        if (valor.Contains('\0')
+            || Path.IsPathRooted(valor)
+            || Path.IsPathFullyQualified(valor)
+            || ServicioSeguridadScripts.ContieneMetacaracteresPeligrosos(valor))
+        {
+            return null;
+        }
+
+        var segmentos = valor.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segmentos.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var carpetasExcluidas = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".git",
+            "PERMISOS",
+            "node_modules",
+            "bin",
+            "obj"
+        };
+
+        return segmentos.Any(segmento => segmento is "." or ".." || carpetasExcluidas.Contains(segmento))
+            ? null
+            : string.Join('/', segmentos);
+    }
+
     private static JsonObject CrearPermisosPorDefecto()
     {
         return new JsonObject
         {
-            ["inicioAutomaticoWindows"] = false,
             ["scriptsAdmin"] = new JsonArray(),
             ["usuarios"] = new JsonArray(),
             ["seguridadScripts"] = new JsonObject
             {
-                ["certificadosPowerShellPermitidos"] = new JsonArray(),
-                ["hashesBatchPermitidos"] = new JsonArray(),
                 ["scriptsElevadosPermitidos"] = new JsonArray(),
                 ["permitirExecutionPolicyBypass"] = false
             },
@@ -1380,6 +1664,16 @@ public sealed class ServidorLocalWeb : IDisposable
         return nodo?[propiedad]?.GetValue<bool>() ?? valorDefecto;
     }
 
+    private static IReadOnlyList<string> LeerArrayTexto(JsonArray? valores)
+    {
+        return valores is null
+            ? []
+            : valores
+                .Select(valor => valor?.GetValue<string>() ?? string.Empty)
+                .Where(valor => !string.IsNullOrWhiteSpace(valor))
+                .ToList();
+    }
+
     private static string ObtenerTipoContenido(string recurso)
     {
         return Path.GetExtension(recurso).ToLowerInvariant() switch
@@ -1412,6 +1706,14 @@ public sealed class ServidorLocalWeb : IDisposable
         Corrupto
     }
 
+    private enum EstadoCatalogo
+    {
+        Disponible,
+        NoEncontrado,
+        Inaccesible,
+        Corrupto
+    }
+
     private enum CodigoAutorizacionAdmin
     {
         Permitido,
@@ -1426,6 +1728,15 @@ public sealed class ServidorLocalWeb : IDisposable
         public bool PermiteDesbloqueoEmergencia => Estado != EstadoPermisos.Disponible;
 
         public bool ModoOffline => Estado == EstadoPermisos.Inaccesible;
+    }
+
+    private sealed record DiagnosticoCatalogo(
+        EstadoCatalogo Estado,
+        string Ruta,
+        CatalogoScripts? Catalogo,
+        string Mensaje)
+    {
+        public bool EstaDisponible => Estado == EstadoCatalogo.Disponible;
     }
 
     private sealed record SesionEmergencia(string Usuario, string Motivo, DateTimeOffset VenceUtc, string TokenId);
@@ -1452,9 +1763,14 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private sealed record ResultadoGuardarPermisos(bool PermisosGuardados, string AvisoConexion);
 
-    private sealed record ScriptCliente(string Id, string Nombre, string Tipo, bool EstaBloqueado, string MotivoBloqueo);
+    private sealed record ScriptCliente(
+        string Id,
+        string Nombre,
+        string Tipo,
+        bool EstaBloqueado,
+        string MotivoBloqueo,
+        bool EsCarpeta = false,
+        string Carpeta = "");
 
     private sealed record CarpetaScriptCliente(string Id, string Nombre, int TotalScripts);
-
-    private sealed record HashBatchCliente(string ScriptId, string Sha256);
 }

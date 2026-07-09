@@ -20,6 +20,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
     private const int MaximoEventosPorEjecucion = 5000;
     private static readonly TimeSpan TiempoMaximoEjecucion = TimeSpan.FromHours(2);
     private static readonly TimeSpan TtlEjecucionesFinalizadas = TimeSpan.FromMinutes(30);
+    private static readonly Lazy<string> RutaPowerShell = new(ResolverRutaPowerShell);
+    private static readonly Lazy<string> RutaCmd = new(ResolverRutaCmd);
 
     private static readonly JsonSerializerOptions OpcionesJsonEventos = new()
     {
@@ -47,11 +49,29 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    public Guid Iniciar(ScriptInterno script, string rutaLogs, UsuarioCliente usuario, bool permitirExecutionPolicyBypass, JsonObject permisos, bool modoDesarrolloFirmas)
+    public Guid Iniciar(
+        ScriptInterno script,
+        string rutaLogs,
+        UsuarioCliente usuario,
+        bool permitirExecutionPolicyBypass,
+        JsonObject permisos,
+        CatalogoScripts catalogo,
+        bool modoDesarrolloFirmas)
     {
         PurgarFinalizadasAntiguas();
         var permisosCongelados = JsonNode.Parse(permisos.ToJsonString()) as JsonObject ?? new JsonObject();
-        var ejecucion = new EjecucionWeb(script, rutaLogs, usuario, permitirExecutionPolicyBypass, permisosCongelados, modoDesarrolloFirmas);
+        var catalogoCongelado = catalogo with
+        {
+            Scripts = catalogo.Scripts.ToArray()
+        };
+        var ejecucion = new EjecucionWeb(
+            script,
+            rutaLogs,
+            usuario,
+            permitirExecutionPolicyBypass,
+            permisosCongelados,
+            catalogoCongelado,
+            modoDesarrolloFirmas);
         _ejecuciones[ejecucion.Id] = ejecucion;
         ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}...", "#B5CEA8");
         _ = _servicioAuditoria.RegistrarInicioEjecucionAsync(ejecucion.Id, script, usuario);
@@ -226,7 +246,12 @@ public sealed class GestorEjecucionesWeb : IDisposable
             };
 
             await EscribirCabeceraLogAsync(log, ejecucion);
-            var diagnostico = _servicioSeguridadScripts.Diagnosticar(ejecucion.Script, ejecucion.Permisos, ejecucion.ModoDesarrolloFirmas);
+            var diagnostico = _servicioSeguridadScripts.Diagnosticar(
+                ejecucion.Script,
+                ejecucion.Permisos,
+                ejecucion.Catalogo,
+                string.Empty,
+                ejecucion.ModoDesarrolloFirmas);
             if (!diagnostico.Permitido)
             {
                 detalleAuditoria = diagnostico.MotivoBloqueo;
@@ -239,7 +264,12 @@ public sealed class GestorEjecucionesWeb : IDisposable
             using var scriptPreparado = CrearCopiaTemporalValidada(ejecucion);
             ejecucion.RutaScriptPreparado = scriptPreparado.Script.RutaCompleta;
 
-            var diagnosticoPreparado = _servicioSeguridadScripts.Diagnosticar(scriptPreparado.Script, ejecucion.Permisos, ejecucion.ModoDesarrolloFirmas);
+            var diagnosticoPreparado = _servicioSeguridadScripts.Diagnosticar(
+                scriptPreparado.Script,
+                ejecucion.Permisos,
+                ejecucion.Catalogo,
+                string.Empty,
+                ejecucion.ModoDesarrolloFirmas);
             if (!diagnosticoPreparado.Permitido)
             {
                 detalleAuditoria = diagnosticoPreparado.MotivoBloqueo;
@@ -413,8 +443,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
     private static async Task EscribirIntegridadValidadaAsync(StreamWriter log, DiagnosticoEjecucionScript diagnostico)
     {
         await log.WriteLineAsync("Integridad validada antes de ejecutar:");
-        await log.WriteLineAsync($"Firma estado: {diagnostico.FirmaEstado}");
-        await log.WriteLineAsync($"Firma thumbprint: {diagnostico.FirmaThumbprint}");
+        await log.WriteLineAsync($"Catalogo estado: {diagnostico.CatalogoEstado}");
+        await log.WriteLineAsync($"Catalogo keyId: {diagnostico.CatalogoKeyId}");
         await log.WriteLineAsync($"SHA-256: {diagnostico.Sha256}");
         await log.WriteLineAsync();
     }
@@ -423,8 +453,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
     {
         await log.WriteLineAsync("Copia temporal validada:");
         await log.WriteLineAsync($"Ruta staging: {script.RutaCompleta}");
-        await log.WriteLineAsync($"Firma estado: {diagnostico.FirmaEstado}");
-        await log.WriteLineAsync($"Firma thumbprint: {diagnostico.FirmaThumbprint}");
+        await log.WriteLineAsync($"Catalogo estado: {diagnostico.CatalogoEstado}");
+        await log.WriteLineAsync($"Catalogo keyId: {diagnostico.CatalogoKeyId}");
         await log.WriteLineAsync($"SHA-256 final: {ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta)}");
         await log.WriteLineAsync();
     }
@@ -503,6 +533,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
         if (script.Tipo == "powershell")
         {
+            var plan = CrearPlanPowerShell(script.RutaCompleta);
             inicio.FileName = ObtenerRutaPowerShell();
             inicio.ArgumentList.Add("-NoLogo");
             inicio.ArgumentList.Add("-NoProfile");
@@ -512,8 +543,17 @@ public sealed class GestorEjecucionesWeb : IDisposable
                 inicio.ArgumentList.Add("Bypass");
             }
 
-            inicio.ArgumentList.Add("-Command");
-            inicio.ArgumentList.Add(CrearComandoPowerShell(script.RutaCompleta));
+            if (plan.UsarRutaRapida)
+            {
+                inicio.ArgumentList.Add("-NonInteractive");
+                inicio.ArgumentList.Add("-File");
+                inicio.ArgumentList.Add(script.RutaCompleta);
+            }
+            else
+            {
+                inicio.ArgumentList.Add("-Command");
+                inicio.ArgumentList.Add(plan.Comando);
+            }
         }
         else
         {
@@ -528,6 +568,11 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     private static string ObtenerRutaPowerShell()
     {
+        return RutaPowerShell.Value;
+    }
+
+    private static string ResolverRutaPowerShell()
+    {
         var ruta = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.System),
             "WindowsPowerShell",
@@ -539,14 +584,29 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     private static string ObtenerRutaCmd()
     {
+        return RutaCmd.Value;
+    }
+
+    private static string ResolverRutaCmd()
+    {
         var ruta = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
         return File.Exists(ruta) ? ruta : "cmd.exe";
     }
 
-    private static string CrearComandoPowerShell(string rutaScript)
+    private static PlanPowerShell CrearPlanPowerShell(string rutaScript)
+    {
+        var parametros = ObtenerParametrosObligatorios(rutaScript);
+        if (parametros.Count == 0 && !RequiereAdaptadorInteractivo(rutaScript))
+        {
+            return new PlanPowerShell(true, string.Empty);
+        }
+
+        return new PlanPowerShell(false, CrearComandoPowerShell(rutaScript, parametros));
+    }
+
+    private static string CrearComandoPowerShell(string rutaScript, IReadOnlyList<string> parametros)
     {
         var rutaEscapada = rutaScript.Replace("'", "''");
-        var parametros = ObtenerParametrosObligatorios(rutaScript);
         var adaptadorInteractivo = CrearAdaptadorInteractivoPowerShell();
         if (parametros.Count == 0)
         {
@@ -563,6 +623,19 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
         constructor.Append($"& '{rutaEscapada}' @__args *>&1; exit $LASTEXITCODE");
         return constructor.ToString();
+    }
+
+    private static bool RequiereAdaptadorInteractivo(string rutaScript)
+    {
+        try
+        {
+            var texto = File.ReadAllText(rutaScript, Encoding.UTF8);
+            return Regex.IsMatch(texto, @"(?im)\b(Read-Host|Pause|Get-Credential)\b");
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     private static string CrearAdaptadorInteractivoPowerShell()
@@ -846,12 +919,15 @@ function global:Get-Credential {
         }
     }
 
+    private sealed record PlanPowerShell(bool UsarRutaRapida, string Comando);
+
     private sealed class EjecucionWeb(
         ScriptInterno script,
         string rutaLogs,
         UsuarioCliente usuario,
         bool permitirExecutionPolicyBypass,
         JsonObject permisos,
+        CatalogoScripts catalogo,
         bool modoDesarrolloFirmas) : IDisposable
     {
         private readonly List<EventoCliente> _eventos = [];
@@ -869,6 +945,8 @@ function global:Get-Credential {
         public bool PermitirExecutionPolicyBypass { get; } = permitirExecutionPolicyBypass;
 
         public JsonObject Permisos { get; } = permisos;
+
+        public CatalogoScripts Catalogo { get; } = catalogo;
 
         public bool ModoDesarrolloFirmas { get; } = modoDesarrolloFirmas;
 

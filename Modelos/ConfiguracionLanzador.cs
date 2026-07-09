@@ -7,9 +7,13 @@ namespace LanzadorScripts.Modelos;
 
 public sealed class ConfiguracionLanzador
 {
-    public string RutaScripts { get; set; } = @"\\MAD002MICROPRU\C$\REPO";
+    public const int VersionActual = 2;
 
-    public string RutaPermisos { get; set; } = @"\\MAD002MICROPRU\C$\REPO\PERMISOS\permisos.json";
+    public int? VersionConfiguracion { get; set; }
+
+    public string RutaScripts { get; set; } = @"\\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS";
+
+    public string RutaPermisos { get; set; } = RutasArtefactosProtegidos.CarpetaPredeterminada;
 
     public string RutaLogs { get; set; } = RutasAplicacion.RutaLogsUsuario;
 
@@ -24,7 +28,10 @@ public sealed class ConfiguracionLanzador
             RutaScripts = valoresDefecto.RutaScripts;
         }
 
-        if (string.IsNullOrWhiteSpace(RutaPermisos))
+        RutaPermisos = RutasArtefactosProtegidos.NormalizarCarpetaConfigurada(
+            RutaPermisos,
+            valoresDefecto.RutaPermisos);
+        if (RutasArtefactosProtegidos.EsCarpetaDeLaAplicacion(RutaPermisos))
         {
             RutaPermisos = valoresDefecto.RutaPermisos;
         }
