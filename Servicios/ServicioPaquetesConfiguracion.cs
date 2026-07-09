@@ -22,6 +22,7 @@ public sealed class ServicioPaquetesConfiguracion
     };
 
     private readonly ServicioCifradoAplicacion _servicioCifrado;
+    private readonly ServicioArtefactosProtegidos _servicioArtefactos = new();
 
     public ServicioPaquetesConfiguracion()
         : this(new ServicioCifradoAplicacion())
@@ -65,14 +66,19 @@ public sealed class ServicioPaquetesConfiguracion
         var payload = JsonSerializer.Deserialize<PayloadConfiguracionExportada>(json, OpcionesJson)
             ?? throw new InvalidOperationException("El paquete de configuracion no contiene rutas validas.");
 
-        var validacion = new ServicioValidacionScripts().ValidarConfiguracionBasica(payload.RutaScripts, payload.RutaPermisos);
+        var rutaCarpetaPermisos = RutasArtefactosProtegidos.NormalizarCarpetaConfigurada(
+            payload.RutaPermisos,
+            RutasArtefactosProtegidos.CarpetaPredeterminada);
+        var validacion = new ServicioValidacionScripts().ValidarConfiguracionBasica(
+            payload.RutaScripts,
+            rutaCarpetaPermisos);
         if (!validacion.EsValida)
         {
             throw new InvalidOperationException(validacion.Mensaje);
         }
 
         configuracionActual.RutaScripts = payload.RutaScripts;
-        configuracionActual.RutaPermisos = payload.RutaPermisos;
+        configuracionActual.RutaPermisos = rutaCarpetaPermisos;
         configuracionActual.Normalizar();
         return new ResultadoImportacionConfiguracion(configuracionActual, payload.Permisos);
     }
@@ -86,9 +92,12 @@ public sealed class ServicioPaquetesConfiguracion
             Directory.CreateDirectory(carpeta);
         }
 
-        var json = permisos.ToJsonString(OpcionesJson);
-        var cifrado = _servicioCifrado.CifrarTexto("permisos", json);
-        File.WriteAllText(rutaPermisos, cifrado, Encoding.UTF8);
+        var json = ServicioSeguridadScripts.NormalizarPolitica(permisos["seguridadScripts"] as JsonObject);
+        permisos["seguridadScripts"] = json;
+        _servicioArtefactos.GuardarTextoProtegido(
+            rutaPermisos,
+            ServicioArtefactosProtegidos.TipoPermisos,
+            permisos.ToJsonString(OpcionesJson));
     }
 
     private sealed record PayloadConfiguracionExportada(

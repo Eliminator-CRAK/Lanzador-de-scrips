@@ -6,5 +6,6 @@ bin/
 obj/
 Pruebas/bin/
 Pruebas/obj/
-Recursos/WebView2/*.exe
+Recursos/WebView2/
 publicacion/
+publicacion_*/

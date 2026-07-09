@@ -51,9 +51,9 @@ public sealed class ServicioCifradoAplicacion
         using var certificado = _firmaPruebas is null ? BuscarCertificadoPrivado() : null;
         using var rsaCertificado = certificado?.GetRSAPrivateKey();
         var rsa = _firmaPruebas ?? rsaCertificado
-            ?? throw new InvalidOperationException("No se encontro el certificado corporativo de firma.");
+            ?? throw new InvalidOperationException($"No se encontro el certificado privado de firma de paquetes {ServicioTokenMaestro.HuellaCertificado} en CurrentUser\\My ni LocalMachine\\My.");
         var firma = rsa.SignData(ObtenerBytesFirmados(tipo, datos, creado), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        var emisor = _emisorPruebas ?? certificado?.Subject ?? "Certificado corporativo";
+        var emisor = _emisorPruebas ?? certificado?.Subject ?? "Certificado de paquetes";
 
         var contenedor = new ContenedorFirmado(
             "Alex Roman",
@@ -120,7 +120,7 @@ public sealed class ServicioCifradoAplicacion
     private static X509Certificate2? BuscarCertificadoPrivado(X509Store almacen)
     {
         return almacen.Certificates
-            .Find(X509FindType.FindByThumbprint, ServicioTokenMaestro.HuellaCertificado, validOnly: true)
+            .Find(X509FindType.FindByThumbprint, ServicioTokenMaestro.HuellaCertificado, validOnly: false)
             .OfType<X509Certificate2>()
             .FirstOrDefault(certificado => certificado.HasPrivateKey);
     }

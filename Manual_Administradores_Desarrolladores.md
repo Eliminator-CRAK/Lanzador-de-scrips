@@ -9,38 +9,41 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 ## Arquitectura
 
-- WPF ejecuta la ventana principal con elevacion global mediante `requireAdministrator`.
-- WebView2 muestra el cliente embebido y se comunica con un servidor HTTP local.
+- WPF ejecuta la ventana principal con elevacion UAC mediante `requireAdministrator`.
+- WebView2 muestra el cliente embebido y se comunica con el backend integrado.
+- El backend se aloja en el mismo proceso y no requiere instalar servicios.
 - El servidor local exige cookie de sesion y token interno por arranque para `/api/*`.
 - Los endpoints de administracion requieren ademas autorizacion de administrador local.
-- Los scripts se ejecutan desde el proceso principal elevado. El broker queda como compatibilidad interna si se arranca sin elevacion.
+- Los scripts se ejecutan con la identidad que abre la aplicacion.
 
 ## Rutas Operativas
 
 | Recurso | Ruta |
 |---|---|
 | Configuracion usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
-| Configuracion equipo | `C:\ProgramData\LanzadorScripts\configuracion.dat` |
 | Tokens de administrador | `%AppData%\LanzadorScripts\Tokens` |
 | Logs de ejecucion | `%LocalAppData%\LanzadorScripts\Logs` |
 | Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
-| Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2` |
+| Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2\<perfil>` |
+| Runtime WebView2 extraido | `%LocalAppData%\LanzadorScripts\Runtimes\WebView2\<hash-version>` |
+| Runtime WebView2 temporal | `%TEMP%\LanzadorScripts\Runtimes\WebView2\<hash-version>` |
 | Staging TOCTOU | `%LocalAppData%\LanzadorScripts\Staging` |
 
 ## Permisos
 
-`permissions.json` debe estar firmado por el certificado corporativo configurado en la aplicacion. Si falta, esta corrupto o no es accesible, la aplicacion bloquea la ejecucion por defecto.
+`permisos.json` es un contenedor cifrado y firmado. El catalogo usa la misma proteccion en `catalogo-scripts.json`. Ambos emplean AES-256-GCM y RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos.
 
-La configuracion predeterminada embebida apunta a `\\MAD002MICROPRU\C$\REPO` y `\\MAD002MICROPRU\C$\REPO\PERMISOS\permisos.json`. Las instalaciones que hayan guardado la ruta anterior sin `C$` se migran automaticamente al arrancar.
+La configuracion predeterminada apunta a:
 
-La politica de seguridad vive en `seguridadScripts`:
+- Scripts: `\\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS`
+- Permisos: `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`
+
+La ruta de permisos siempre representa una carpeta. La aplicacion busca dentro `permisos.json` y `catalogo-scripts.json`; no usa copias junto al EXE. Las configuraciones antiguas que incluian el nombre del archivo se migran a su carpeta.
+
+La politica operativa vive en `seguridadScripts`:
 
 ```json
 {
-  "certificadosPowerShellPermitidos": ["THUMBPRINT"],
-  "hashesBatchPermitidos": [
-    { "scriptId": "carpeta/script.cmd", "sha256": "HASH_SHA256" }
-  ],
   "scriptsElevadosPermitidos": ["admin/script.ps1"],
   "permitirExecutionPolicyBypass": false
 }
@@ -48,10 +51,18 @@ La politica de seguridad vive en `seguridadScripts`:
 
 Reglas:
 
-- `.ps1` requiere firma Authenticode valida de certificado permitido.
-- `.bat` y `.cmd` requieren SHA-256 permitido.
+- `.ps1`, `.bat` y `.cmd` deben figurar en el catalogo publicado.
+- Ruta relativa, extension, longitud y SHA-256 deben coincidir.
+- Un archivo nuevo, editado, movido o renombrado queda bloqueado hasta una nueva publicacion.
+- Solo un administrador puede seleccionar scripts y publicar el catalogo.
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
+
+## Uso Manual Y Servicio Local
+
+La aplicacion no registra tareas programadas ni configura la apertura con Windows.
+
+Al abrir la ventana se inicia el backend integrado en el mismo proceso elevado. La cuenta debe tener acceso a la carpeta de scripts y a los dos contenedores protegidos.
 
 ## Emergencia
 
@@ -64,7 +75,7 @@ El token maestro esta firmado por el certificado privado autorizado de Alex Roma
 
 ## Broker Elevado
 
-La aplicacion principal exige administrador. El broker elevado se mantiene como mecanismo interno de compatibilidad para ejecuciones iniciadas sin elevacion, pero no es la ruta normal de operacion.
+La aplicacion se abre elevada y usa su backend integrado. El broker elevado se mantiene como compatibilidad interna para una ejecucion que necesite separarse del proceso principal.
 
 Controles:
 
@@ -80,11 +91,12 @@ Limitacion operativa: la entrada interactiva no esta disponible para ejecuciones
 
 Antes de ejecutar:
 
-1. Se valida firma o hash del script original.
-2. Se copia a staging local.
-3. Se aplica ACL restrictiva y atributo de solo lectura.
-4. Se revalida firma o hash de la copia.
-5. Se ejecuta la copia y se registra el hash final.
+1. Se valida el catalogo cifrado y firmado.
+2. Se valida ruta, extension, longitud y SHA-256 del script original.
+3. Se copia a staging local.
+4. Se aplica ACL restrictiva y atributo de solo lectura.
+5. Se revalida la copia contra el mismo catalogo.
+6. Se ejecuta la copia y se registra el hash final.
 
 ## Salud Y Diagnostico
 
@@ -96,7 +108,7 @@ El diagnostico completo incluye:
 - Rutas operativas.
 - Estado de permisos.
 - Estado de auditoria.
-- WebView2.
+- WebView2, runtime extraido y perfil activo.
 - Ejecuciones activas.
 - Broker.
 - Emergencia activa.
@@ -116,7 +128,8 @@ Cobertura actual:
 - Autorizacion admin.
 - Firma de contenedores y manipulacion.
 - Validacion de rutas y admin shares operativos.
-- Firma/hash de scripts.
+- Cifrado, firma y separacion de tipos de los contenedores.
+- Catalogo valido, script modificado y script no incluido.
 - Ejecucion real con eventos finales.
 
 ## Publicacion
@@ -133,7 +146,17 @@ Para pruebas locales sin firma:
 .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
 ```
 
-No distribuir binarios de `bin`, `obj` ni `publicacion` versionados manualmente. El artefacto final debe salir del pipeline.
+La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
+
+Durante la publicacion se descarga o reutiliza el WebView2 Fixed Version Runtime x64 oficial, se valida que contiene `msedgewebview2.exe`, se genera un ZIP reproducible y se embebe en el EXE como recurso. La cache queda en `Recursos\WebView2` y no se versiona.
+
+Para inicializarlos expresamente:
+
+```powershell
+.\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
+```
+
+No se instala ningun servicio, certificado, cuenta, tarea ni puerto. Las claves integradas permiten portabilidad completa, con el riesgo aceptado de extraccion mediante ingenieria inversa.
 
 ## CI
 

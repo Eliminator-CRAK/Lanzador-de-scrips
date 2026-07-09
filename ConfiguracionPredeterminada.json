@@ -1,14 +1,8 @@
 {
   "_autor": "Alex Roman",
   "_descripcion": "Configuracion predeterminada embebida en el ejecutable publicado.",
-  "RutaScripts": "\\\\MAD002MICROPRU\\C$\\REPO",
-  "RutaPermisos": "\\\\MAD002MICROPRU\\C$\\REPO\\PERMISOS\\permisos.json",
-  "MaximoEjecucionesParalelas": 5,
-  "seguridadScripts": {
-    "certificadosPowerShellPermitidos": [
-      "6C654649369000DDE0AA70F62645058D9A3437F5"
-    ],
-    "hashesBatchPermitidos": [],
-    "permitirExecutionPolicyBypass": false
-  }
+  "VersionConfiguracion": 2,
+  "RutaScripts": "\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\SCRIPS",
+  "RutaPermisos": "\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS",
+  "MaximoEjecucionesParalelas": 5
 }

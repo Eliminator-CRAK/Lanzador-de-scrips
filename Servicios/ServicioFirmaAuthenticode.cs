@@ -206,7 +206,7 @@ public sealed class ServicioFirmaAuthenticode
         proceso.StartInfo.ArgumentList.Add("-NoProfile");
         proceso.StartInfo.ArgumentList.Add("-NonInteractive");
         proceso.StartInfo.ArgumentList.Add("-Command");
-        proceso.StartInfo.ArgumentList.Add("Get-ExecutionPolicy -Scope Process");
+        proceso.StartInfo.ArgumentList.Add("Get-ExecutionPolicy");
 
         try
         {

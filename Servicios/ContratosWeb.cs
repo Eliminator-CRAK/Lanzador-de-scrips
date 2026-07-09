@@ -14,3 +14,11 @@ public sealed record UsuarioCliente(
 public sealed record ScriptInterno(string Id, string Nombre, string Tipo, string RutaCompleta);
 
 public sealed record EventoCliente(string Tipo, string Mensaje, string? Color = null, bool Finalizado = false);
+
+public sealed record EstadoCatalogoScriptCliente(
+    string ScriptId,
+    string Tipo,
+    long Longitud,
+    string Sha256,
+    string Estado,
+    bool Incluido);

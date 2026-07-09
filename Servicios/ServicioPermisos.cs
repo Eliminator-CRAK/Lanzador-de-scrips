@@ -32,9 +32,9 @@ public sealed class ServicioPermisos
             return;
         }
 
-        var rutaPermisosCompleta = Path.IsPathRooted(rutaPermisos)
-            ? rutaPermisos
-            : Path.Combine(rutaScripts, rutaPermisos);
+        var rutaPermisosCompleta = RutasArtefactosProtegidos
+            .Resolver(rutaPermisos)
+            .RutaPermisos;
 
         if (!File.Exists(rutaPermisosCompleta))
         {

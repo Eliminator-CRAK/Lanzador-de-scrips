@@ -38,7 +38,7 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 | Script bloqueado por firma/hash | No ejecutar. El administrador debe revisar integridad. |
 | No se puede conectar al servidor | Esperar recuperacion de red o avisar a soporte. |
 | Permisos no disponibles | No ejecutar. Solo administracion puede activar emergencia temporal. |
-| WebView2 no disponible | Reiniciar la app o avisar a soporte con la ruta de logs. |
+| WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
 
 ## Logs
 

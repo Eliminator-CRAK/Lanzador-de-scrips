@@ -11,9 +11,9 @@
     <ApplicationManifest>manifiesto.manifest</ApplicationManifest>
     <AssemblyName>LanzadorScripts</AssemblyName>
     <RootNamespace>LanzadorScripts</RootNamespace>
-    <Version>1.3.0</Version>
-    <AssemblyVersion>1.3.0.0</AssemblyVersion>
-    <FileVersion>1.3.0.0</FileVersion>
+    <Version>1.4.0</Version>
+    <AssemblyVersion>1.4.0.0</AssemblyVersion>
+    <FileVersion>1.4.0.0</FileVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
@@ -26,6 +26,7 @@
     <DebugType>embedded</DebugType>
     <AllowedReferenceRelatedFileExtensions></AllowedReferenceRelatedFileExtensions>
     <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
+    <WebView2RuntimeZip>$(BaseIntermediateOutputPath)WebView2Runtime\WebView2Runtime.zip</WebView2RuntimeZip>
   </PropertyGroup>
 
   <ItemGroup>
@@ -42,13 +43,9 @@
     <EmbeddedResource Include="ClienteWeb\**\*">
       <LogicalName>ClienteWeb.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Recursos\WebView2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" Condition="Exists('Recursos\WebView2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe')">
-      <LogicalName>WebView2.MicrosoftEdgeWebView2RuntimeInstallerX64.exe</LogicalName>
+    <EmbeddedResource Include="$(WebView2RuntimeZip)" Condition="Exists('$(WebView2RuntimeZip)')">
+      <LogicalName>Recursos.WebView2Runtime.zip</LogicalName>
     </EmbeddedResource>
-    <None Include="WebView2Runtime\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </None>
   </ItemGroup>
 
   <ItemGroup>
