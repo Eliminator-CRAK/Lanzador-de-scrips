@@ -1,6 +1,7 @@
 // (Autor: Alex Roman)
 // Descripcion: Comprueba el desbloqueo visual y los diagnosticos del cliente WebView2.
 
+using LanzadorScripts.Servicios;
 using Xunit;
 
 namespace LanzadorScripts.Pruebas;
@@ -65,6 +66,38 @@ public sealed class PruebasDiagnosticoClienteWeb
         Assert.Contains("No se pudo abrir Ajustes a tiempo", codigo, StringComparison.Ordinal);
         Assert.Contains("rutasPendientes = new Set(rutasEsperadas)", codigo, StringComparison.Ordinal);
         Assert.Contains("respuesta.clone().json()", codigo, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClienteMuestraLaVersionRealDelEjecutable()
+    {
+        var carpetaAssets = Path.Combine(ObtenerRaizProyecto(), "ClienteWeb", "assets");
+        var rutaBundle = Directory.GetFiles(carpetaAssets, "index-*.js").Single();
+        var bundle = File.ReadAllText(rutaBundle);
+
+        var versionado = ServidorLocalWeb.AplicarVersionVisualCliente(bundle, new Version(9, 8, 7, 6));
+
+        Assert.Contains("children:\"v9.8.7\"", versionado, StringComparison.Ordinal);
+        Assert.DoesNotContain("children:\"v1.2.0\"", versionado, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ServidorEntregaElBundleConLaVersionReal()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var cliente = new HttpClient { BaseAddress = servidor.UrlBase };
+        var nombreBundle = Path.GetFileName(
+            Directory.GetFiles(Path.Combine(ObtenerRaizProyecto(), "ClienteWeb", "assets"), "index-*.js").Single());
+
+        var respuesta = await cliente.GetAsync($"/assets/{nombreBundle}");
+        respuesta.EnsureSuccessStatusCode();
+        var contenido = await respuesta.Content.ReadAsStringAsync();
+        var version = typeof(ServidorLocalWeb).Assembly.GetName().Version ?? new Version(0, 0, 0);
+        var etiquetaEsperada = $"children:\"v{version.Major}.{version.Minor}.{Math.Max(version.Build, 0)}\"";
+
+        Assert.Contains(etiquetaEsperada, contenido, StringComparison.Ordinal);
+        Assert.DoesNotContain("children:\"v1.2.0\"", contenido, StringComparison.Ordinal);
     }
 
     private static string LeerVentanaPrincipal()
