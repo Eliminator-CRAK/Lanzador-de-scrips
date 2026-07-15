@@ -42,6 +42,21 @@ public partial class Aplicacion : System.Windows.Application
             return;
         }
 
+        try
+        {
+            ServicioDirectoriosAplicacion.PrepararEstructuraAplicacion();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo preparar la carpeta local segura de LanzadorScripts.\n\n{ex.Message}",
+                "LanzadorScripts",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
         ServicioAsociacionArchivos.Registrar();
         _cancelacionPipe = new CancellationTokenSource();

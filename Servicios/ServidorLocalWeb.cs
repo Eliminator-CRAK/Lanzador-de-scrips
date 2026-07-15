@@ -62,23 +62,35 @@ public sealed class ServidorLocalWeb : IDisposable
     {
     }
 
-    private ServidorLocalWeb(int puerto, ServicioTokenMaestro servicioTokenMaestro)
+    private ServidorLocalWeb(
+        int puerto,
+        ServicioTokenMaestro servicioTokenMaestro,
+        string? rutaStaging = null)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
         _servicioTokenMaestro = servicioTokenMaestro;
         _servicioCatalogoScripts = new ServicioCatalogoScripts(_servicioArtefactos);
-        _gestorEjecuciones = new GestorEjecucionesWeb(_servicioAuditoria, _servicioSeguridadScripts);
+        _gestorEjecuciones = new GestorEjecucionesWeb(
+            _servicioAuditoria,
+            _servicioSeguridadScripts,
+            rutaStaging);
     }
 
     private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion)
-        : this(puerto, new ServicioTokenMaestro())
+        : this(
+            puerto,
+            new ServicioTokenMaestro(),
+            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"))
     {
         _configuracionFija = configuracion;
     }
 
     private ServidorLocalWeb(int puerto, ConfiguracionLanzador configuracion, ServicioTokenMaestro servicioTokenMaestro)
-        : this(puerto, servicioTokenMaestro)
+        : this(
+            puerto,
+            servicioTokenMaestro,
+            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"))
     {
         _configuracionFija = configuracion;
     }
@@ -711,7 +723,10 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        var rutaTemporal = Path.Combine(Path.GetTempPath(), $"LanzadorScripts_{Guid.NewGuid():N}_{nombreArchivo}");
+        ServicioDirectoriosAplicacion.PrepararDirectorioPrivado(RutasAplicacion.RutaImportacionesTemporales);
+        var rutaTemporal = Path.Combine(
+            RutasAplicacion.RutaImportacionesTemporales,
+            $"LanzadorScripts_{Guid.NewGuid():N}_{nombreArchivo}");
         try
         {
             File.WriteAllBytes(rutaTemporal, Convert.FromBase64String(contenidoBase64));

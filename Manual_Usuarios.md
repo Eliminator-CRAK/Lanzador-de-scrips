@@ -16,11 +16,13 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 
 ## Ejecutar Un Script
 
-1. Busque el script en la lista.
-2. Revise si aparece bloqueado y lea el motivo.
-3. Pulse ejecutar solo si el script esta permitido.
-4. Mantenga la consola visible hasta ver el evento final.
-5. Revise el codigo de salida cuando termine.
+1. Abra la carpeta autorizada que contiene el script.
+2. Use `← Volver` para subir una carpeta o `Principal` para regresar al inicio.
+3. Busque el script en la lista.
+4. Revise si aparece bloqueado y lea el motivo.
+5. Pulse ejecutar solo si el script esta permitido.
+6. Mantenga la consola visible hasta ver el evento final.
+7. Revise el codigo de salida cuando termine.
 
 ## Entrada Interactiva
 
@@ -44,7 +46,7 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 
 ## Logs
 
-Los logs de ejecucion se guardan en `%LocalAppData%\LanzadorScripts\Logs`. No modifique ni borre logs salvo indicacion del administrador.
+Los logs de ejecucion se guardan en `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs`. No modifique ni borre logs salvo indicacion del administrador.
 
 ## Buenas Practicas
 

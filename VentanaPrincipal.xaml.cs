@@ -1032,7 +1032,7 @@ public partial class VentanaPrincipal : Window
                         .ls-accion-parar:hover:not(:disabled) { background: rgba(239, 68, 68, .24) !important; color: #fee2e2 !important; }
                         .ls-tarjeta-carpeta { border-color: rgba(56, 189, 248, .22) !important; background: rgba(14, 165, 233, .08) !important; }
                         .ls-tarjeta-carpeta button { background: rgba(14, 165, 233, .16) !important; color: #bae6fd !important; }
-                        .ls-navegacion-carpetas { margin-bottom: .75rem; padding: .65rem; border: 1px solid rgba(255,255,255,.08); border-radius: .75rem; background: rgba(15,17,21,.78); display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+                        .ls-navegacion-carpetas { margin-bottom: .75rem; padding: .65rem; border: 1px solid rgba(255,255,255,.08); border-radius: .75rem; background: rgba(15,17,21,.78); display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: .75rem; }
                         .ls-navegacion-carpetas button { padding: .35rem .6rem; border-radius: .5rem; background: rgba(255,255,255,.06); color: #d1d5db; font-size: .72rem; }
                         .ls-navegacion-carpetas span { color: #9ca3af; font-size: .72rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                     `;
@@ -1592,12 +1592,14 @@ public partial class VentanaPrincipal : Window
                 }
 
                 function obtenerContenedorScripts() {
-                    return Array.from(document.querySelectorAll('aside .custom-scrollbar'))
-                        .find(contenedor => Array.from(contenedor.querySelectorAll('button'))
-                            .some(boton => {
-                                const texto = textoNormalizado(boton);
-                                return texto.includes('ejecutar script') || texto.includes('abrir carpeta');
-                            })) || null;
+                    const buscador = document.querySelector('input[placeholder="Buscar scripts..."]');
+                    const panelScripts = buscador?.closest('aside');
+                    if (!panelScripts) {
+                        return null;
+                    }
+
+                    return Array.from(panelScripts.children)
+                        .find(hijo => hijo.classList.contains('custom-scrollbar') && hijo.classList.contains('flex-1')) || null;
                 }
 
                 function obtenerTituloTarjeta(tarjeta) {
@@ -1626,13 +1628,13 @@ public partial class VentanaPrincipal : Window
                         panel.className = 'ls-navegacion-carpetas';
                         const botonVolver = document.createElement('button');
                         botonVolver.type = 'button';
-                        botonVolver.textContent = 'Volver';
+                        botonVolver.textContent = '← Volver';
                         botonVolver.setAttribute('data-ls-volver-carpetas', '');
                         const ruta = document.createElement('span');
                         ruta.setAttribute('data-ls-ruta-carpetas', '');
                         const botonRaiz = document.createElement('button');
                         botonRaiz.type = 'button';
-                        botonRaiz.textContent = 'Raiz';
+                        botonRaiz.textContent = 'Principal';
                         botonRaiz.setAttribute('data-ls-raiz-carpetas', '');
                         panel.append(botonVolver, ruta, botonRaiz);
                         botonVolver.addEventListener('click', () => {

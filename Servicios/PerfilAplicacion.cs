@@ -1,6 +1,8 @@
 // (Autor: Alex Roman)
 // Descripcion: Normaliza el perfil local usado por la aplicacion portable.
 
+using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 
 namespace LanzadorScripts.Servicios;
@@ -13,6 +15,27 @@ public static class PerfilAplicacion
     public static string ObtenerPerfilUsuarioActual()
     {
         return Normalizar(Environment.UserName);
+    }
+
+    public static string ObtenerIdentificadorUsuarioActual()
+    {
+        // Usa el SID para separar perfiles de usuarios con el mismo nombre.
+        try
+        {
+            return CrearIdentificadorSid(WindowsIdentity.GetCurrent().User?.Value);
+        }
+        catch
+        {
+            return CrearIdentificadorSid(Environment.UserDomainName + "\\" + Environment.UserName);
+        }
+    }
+
+    internal static string CrearIdentificadorSid(string? sid)
+    {
+        // Conserva la unicidad sin alargar las rutas locales.
+        var valor = string.IsNullOrWhiteSpace(sid) ? PerfilPredeterminado : sid.Trim();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(valor));
+        return "sid-" + Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
 
     internal static string Normalizar(string? perfil)

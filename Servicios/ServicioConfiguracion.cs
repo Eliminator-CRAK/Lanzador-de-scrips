@@ -22,8 +22,7 @@ public sealed class ServicioConfiguracion
 
     public ConfiguracionLanzador Cargar()
     {
-        Directory.CreateDirectory(RutasAplicacion.RaizAppData);
-        Directory.CreateDirectory(RutasAplicacion.RaizLocalAppData);
+        ServicioDirectoriosAplicacion.PrepararDatosUsuario();
 
         var configuracionPredeterminada = CargarConfiguracionPredeterminada();
         var configuraciones = ResolverRutasConfiguracionExistentes()
@@ -41,6 +40,7 @@ public sealed class ServicioConfiguracion
 
         var configuracion = configuraciones[0].Configuracion!;
         MigrarRutasPredeterminadasAnteriores(configuracion, configuracionPredeterminada);
+        MigrarRutaLogsLegada(configuracion);
         Guardar(configuracion);
         return configuracion;
     }
@@ -49,28 +49,19 @@ public sealed class ServicioConfiguracion
     {
         configuracion.Normalizar(CargarConfiguracionPredeterminada());
         configuracion.VersionConfiguracion = ConfiguracionLanzador.VersionActual;
-        Directory.CreateDirectory(RutasAplicacion.RaizAppData);
-        Directory.CreateDirectory(RutasAplicacion.RaizLocalAppData);
+        ServicioDirectoriosAplicacion.PrepararDatosUsuario();
         Directory.CreateDirectory(configuracion.RutaLogs);
 
         var json = JsonSerializer.Serialize(configuracion, OpcionesJson);
         var protegido = ProtectedData.Protect(Encoding.UTF8.GetBytes(json), EntropiaConfiguracion, DataProtectionScope.CurrentUser);
-        foreach (var rutaDestino in ResolverRutasConfiguracionParaGuardar())
+        var rutaDestino = RutasAplicacion.RutaConfiguracionUsuario;
+        var carpeta = Path.GetDirectoryName(rutaDestino);
+        if (!string.IsNullOrWhiteSpace(carpeta))
         {
-            try
-            {
-                var carpeta = Path.GetDirectoryName(rutaDestino);
-                if (!string.IsNullOrWhiteSpace(carpeta))
-                {
-                    Directory.CreateDirectory(carpeta);
-                }
-
-                File.WriteAllBytes(rutaDestino, protegido);
-            }
-            catch
-            {
-            }
+            Directory.CreateDirectory(carpeta);
         }
+
+        File.WriteAllBytes(rutaDestino, protegido);
     }
 
     public void AplicarRutasImportadas(string rutaScripts, string rutaPermisos)
@@ -88,6 +79,11 @@ public sealed class ServicioConfiguracion
             yield return RutasAplicacion.RutaConfiguracionUsuario;
         }
 
+        if (File.Exists(RutasAplicacion.RutaConfiguracionUsuarioLegadaDat))
+        {
+            yield return RutasAplicacion.RutaConfiguracionUsuarioLegadaDat;
+        }
+
         if (File.Exists(RutasAplicacion.RutaConfiguracionUsuarioLegadaJson))
         {
             yield return RutasAplicacion.RutaConfiguracionUsuarioLegadaJson;
@@ -97,11 +93,6 @@ public sealed class ServicioConfiguracion
         {
             yield return RutasAplicacion.RutaConfiguracionLegada;
         }
-    }
-
-    private static IEnumerable<string> ResolverRutasConfiguracionParaGuardar()
-    {
-        yield return RutasAplicacion.RutaConfiguracionUsuario;
     }
 
     private static ResultadoLecturaConfiguracion LeerConfiguracionSegura(string ruta, ConfiguracionLanzador configuracionPredeterminada)
@@ -208,6 +199,26 @@ public sealed class ServicioConfiguracion
         if (rutasPermisosAnteriores.Any(ruta => string.Equals(configuracion.RutaPermisos, ruta, StringComparison.OrdinalIgnoreCase)))
         {
             configuracion.RutaPermisos = configuracionPredeterminada.RutaPermisos;
+        }
+    }
+
+    internal static void MigrarRutaLogsLegada(ConfiguracionLanzador configuracion)
+    {
+        // Mueve el log predeterminado fuera del perfil de Windows.
+        try
+        {
+            var ruta = Path.GetFullPath(configuracion.RutaLogs);
+            var raizLegada = Path.GetFullPath(RutasAplicacion.RaizLocalAppDataLegada)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            if (ruta.StartsWith(raizLegada, StringComparison.OrdinalIgnoreCase))
+            {
+                configuracion.RutaLogs = RutasAplicacion.RutaLogsUsuario;
+            }
+        }
+        catch
+        {
+            configuracion.RutaLogs = RutasAplicacion.RutaLogsUsuario;
         }
     }
 

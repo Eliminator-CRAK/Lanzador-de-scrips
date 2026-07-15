@@ -51,6 +51,7 @@ public sealed class ServicioLogInicio
     {
         try
         {
+            ServicioDirectoriosAplicacion.PrepararDatosUsuario();
             Directory.CreateDirectory(RutasAplicacion.RutaLogsUsuario);
             var ruta = Path.Combine(RutasAplicacion.RutaLogsUsuario, $"arranque-{DateTime.UtcNow:yyyyMMdd}.jsonl");
             var entrada = new EntradaLogInicio(

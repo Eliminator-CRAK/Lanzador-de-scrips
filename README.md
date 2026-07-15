@@ -5,12 +5,12 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.1 |
+| Version | 1.4.2 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
 | Backend | Proceso integrado en el ejecutable |
-| Configuracion | `%AppData%\LanzadorScripts\configuracion.dat` |
+| Configuracion | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\configuracion.dat` |
 
 ```mermaid
 flowchart TD
@@ -29,14 +29,13 @@ flowchart TD
 
 | Recurso | Ruta |
 |---|---|
-| Config usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
-| Tokens admin | `%AppData%\LanzadorScripts\Tokens` |
-| Logs | `%LocalAppData%\LanzadorScripts\Logs` |
-| Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
-| Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2` |
-| Runtime WebView2 extraido | `%LocalAppData%\LanzadorScripts\Runtimes\WebView2` |
-| Runtime WebView2 temporal | `%TEMP%\LanzadorScripts\Runtimes\WebView2` |
-| Staging ejecucion | `%LocalAppData%\LanzadorScripts\Staging` |
+| Config usuario | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\configuracion.dat` |
+| Tokens admin | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Tokens` |
+| Logs | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
+| Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
+| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
+| Runtime WebView2 principal | `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2` |
+| Staging ejecucion | `%ProgramFiles%\LanzadorScripts\Staging` |
 
 ## Configuracion
 
@@ -44,7 +43,7 @@ flowchart TD
 {
   "RutaScripts": "\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\SCRIPS",
   "RutaPermisos": "\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS",
-  "RutaLogs": "%LocalAppData%\\\\LanzadorScripts\\\\Logs",
+  "RutaLogs": "%ProgramData%\\\\LanzadorScripts\\\\Usuarios\\\\<id-SID>\\\\Logs",
   "MaximoEjecucionesParalelas": 5
 }
 ```
@@ -79,19 +78,21 @@ La inicializacion explicita de ambos archivos operativos se realiza con:
 
 La publicacion final debe ser self-contained, single-file y x64. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
-El pipeline de GitHub exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
+El pipeline de GitHub instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
 
 ## Recuperacion WebView2
 
-La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%LocalAppData%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. Si esa ruta no es escribible, usa `%TEMP%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. La extraccion solo se reutiliza cuando coinciden el hash del ZIP, el ejecutable y la huella completa de sus 260 archivos; una copia local alterada se sustituye automaticamente. Se conservan solo la version actual y una anterior.
+La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. La extraccion solo se reutiliza cuando coinciden el hash del ZIP, el ejecutable y la huella completa de sus 260 archivos; una copia local alterada se sustituye automaticamente. Un bloqueo explicito de WDAC o AppLocker debe autorizarse mediante la politica corporativa.
 
-La aplicacion usa `%LocalAppData%\LanzadorScripts\WebView2` como perfil local de WebView2. Si el perfil falla durante el arranque, la aplicacion intenta recuperarlo automaticamente.
+Cada extraccion concede lectura y ejecucion a `ALL APPLICATION PACKAGES` y `ALL RESTRICTED APPLICATION PACKAGES`, requeridos por el aislamiento de WebView2 Fixed Runtime. Los usuarios normales no reciben permisos de escritura sobre los binarios.
+
+La aplicacion usa `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` como perfil local de WebView2. El identificador se obtiene del hash completo del SID; las raices impiden que otro usuario precree carpetas y la carpeta privada solo concede escritura a ese usuario, administradores y sistema. Si el perfil falla, la aplicacion intenta recuperarlo dentro de su zona privada y, como ultimo recurso, en `C:\Windows\Temp\LanzadorScripts` sin ejecutar binarios desde esa ruta.
 
 | Caso | Accion |
 |---|---|
 | Perfil recuperable | Renombra a `WebView2_Danado_yyyyMMdd_HHmmss` y crea un perfil limpio |
 | Perfil bloqueado | Usa `WebView2_Recuperacion_yyyyMMdd_HHmmss` |
-| Fallo de proceso Edge/WebView2 | Registra detalle en `%LocalAppData%\LanzadorScripts\Logs\arranque-yyyyMMdd.jsonl` |
+| Fallo de proceso Edge/WebView2 | Registra detalle en `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs\arranque-yyyyMMdd.jsonl` |
 
 Solo se conservan las ultimas 3 copias de diagnostico de perfiles dañados o de recuperacion.
 

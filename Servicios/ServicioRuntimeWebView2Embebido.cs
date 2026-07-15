@@ -35,7 +35,7 @@ public sealed class ServicioRuntimeWebView2Embebido
     public ServicioRuntimeWebView2Embebido()
         : this(
             AbrirRecursoEnsamblado,
-            [RutasAplicacion.RutaRuntimesWebView2, RutasAplicacion.RutaRuntimesWebView2Temporal],
+            [RutasAplicacion.RutaRuntimesWebView2],
             HashZipRuntimeFijado,
             HashContenidoRuntimeFijado,
             HashEjecutableRuntimeFijado,
@@ -66,16 +66,67 @@ public sealed class ServicioRuntimeWebView2Embebido
 
     public ResultadoRuntimeWebView2Embebido Preparar()
     {
+        return PrepararEnRaices(_raicesExtraccion);
+    }
+
+    private ResultadoRuntimeWebView2Embebido PrepararEnRaices(IEnumerable<string> raices)
+    {
+        using (var recurso = _abrirRecurso())
+        {
+            if (recurso is null)
+            {
+                return ResultadoRuntimeWebView2Embebido.NoDisponible("No se encontro WebView2 Fixed Runtime embebido.");
+            }
+        }
+
+        var errores = new List<string>();
+        foreach (var raizCandidata in raices.Where(raiz => !string.IsNullOrWhiteSpace(raiz)))
+        {
+            var resultado = PrepararEnRaiz(raizCandidata);
+            if (resultado.Exito)
+            {
+                return resultado;
+            }
+
+            errores.Add(resultado.Mensaje);
+        }
+
+        var detalle = errores.Count == 0
+            ? "No hay una carpeta segura para extraer WebView2 Fixed Runtime."
+            : string.Join(" ", errores.Distinct(StringComparer.Ordinal));
+        return ResultadoRuntimeWebView2Embebido.Error(detalle);
+    }
+
+    private ResultadoRuntimeWebView2Embebido PrepararEnRaiz(string raizCandidata)
+    {
+        string raiz;
+        try
+        {
+            raiz = Path.GetFullPath(raizCandidata);
+            ServicioDirectoriosAplicacion.PrepararDirectorioRuntime(raiz);
+            ProbarEscrituraDirectorio(raiz);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return ResultadoRuntimeWebView2Embebido.Error($"No se puede usar {raizCandidata} para WebView2: {ex.Message}");
+        }
+
+        FileStream bloqueoRaiz;
+        try
+        {
+            bloqueoRaiz = AdquirirBloqueoRaiz(raiz);
+        }
+        catch (IOException ex)
+        {
+            return ResultadoRuntimeWebView2Embebido.Error($"No se pudo bloquear la extraccion de WebView2 en {raiz}: {ex.Message}");
+        }
+
+        using var bloqueo = bloqueoRaiz;
+
         using var recurso = _abrirRecurso();
         if (recurso is null)
         {
             return ResultadoRuntimeWebView2Embebido.NoDisponible("No se encontro WebView2 Fixed Runtime embebido.");
-        }
-
-        var raiz = ResolverRaizEscribible();
-        if (string.IsNullOrWhiteSpace(raiz))
-        {
-            return ResultadoRuntimeWebView2Embebido.Error("No hay una carpeta escribible para extraer WebView2 Fixed Runtime.");
         }
 
         string hash;
@@ -83,6 +134,11 @@ public sealed class ServicioRuntimeWebView2Embebido
         {
             hash = _hashZipEsperado;
             var carpetaExistente = Path.Combine(raiz, PrefijoCarpetaRuntime + hash[..16]);
+            if (!IntentarAplicarPermisosRuntime(carpetaExistente, out var errorPermisosExistente))
+            {
+                return ResultadoRuntimeWebView2Embebido.Error(errorPermisosExistente);
+            }
+
             if (ValidarRuntimeExtraido(carpetaExistente, hash, out var rutaRuntimeExistente))
             {
                 LimpiarVersionesAntiguas(raiz, carpetaExistente);
@@ -106,6 +162,11 @@ public sealed class ServicioRuntimeWebView2Embebido
 
             hash = hashCalculado;
             var carpetaDestino = Path.Combine(raiz, PrefijoCarpetaRuntime + hash[..16]);
+            if (!IntentarAplicarPermisosRuntime(carpetaDestino, out var errorPermisosDestino))
+            {
+                return ResultadoRuntimeWebView2Embebido.Error(errorPermisosDestino);
+            }
+
             if (ValidarRuntimeExtraido(carpetaDestino, hash, out var rutaRuntimeExistente))
             {
                 LimpiarVersionesAntiguas(raiz, carpetaDestino);
@@ -129,6 +190,11 @@ public sealed class ServicioRuntimeWebView2Embebido
                     return ResultadoRuntimeWebView2Embebido.Error("El runtime WebView2 extraido no supero la validacion.");
                 }
 
+                if (!IntentarAplicarPermisosRuntime(carpetaDestino, out var errorPermisosFinales))
+                {
+                    return ResultadoRuntimeWebView2Embebido.Error(errorPermisosFinales);
+                }
+
                 LimpiarVersionesAntiguas(raiz, carpetaDestino);
                 return ResultadoRuntimeWebView2Embebido.Correcto(rutaRuntimeExtraido, hash, extraidoAhora: true);
             }
@@ -141,9 +207,13 @@ public sealed class ServicioRuntimeWebView2Embebido
                 EliminarDirectorioSiExiste(carpetaTemporal);
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or System.Security.SecurityException
+            or InvalidOperationException)
         {
-            return ResultadoRuntimeWebView2Embebido.Error($"No se pudo preparar WebView2 Fixed Runtime embebido: {ex.Message}");
+            return ResultadoRuntimeWebView2Embebido.Error($"No se pudo preparar WebView2 en {raiz}: {ex.Message}");
         }
         finally
         {
@@ -154,25 +224,6 @@ public sealed class ServicioRuntimeWebView2Embebido
     private static Stream? AbrirRecursoEnsamblado()
     {
         return Assembly.GetExecutingAssembly().GetManifestResourceStream(NombreRecursoZip);
-    }
-
-    private string? ResolverRaizEscribible()
-    {
-        foreach (var raiz in _raicesExtraccion.Where(raiz => !string.IsNullOrWhiteSpace(raiz)))
-        {
-            try
-            {
-                var ruta = Path.GetFullPath(raiz);
-                Directory.CreateDirectory(ruta);
-                ProbarEscrituraDirectorio(ruta);
-                return ruta;
-            }
-            catch
-            {
-            }
-        }
-
-        return null;
     }
 
     private static string CopiarRecursoYCalcularHash(Stream origen, string destino)
@@ -334,6 +385,42 @@ public sealed class ServicioRuntimeWebView2Embebido
         }
         catch
         {
+        }
+    }
+
+    private static bool IntentarAplicarPermisosRuntime(string carpeta, out string error)
+    {
+        try
+        {
+            ServicioDirectoriosAplicacion.PrepararDirectorioRuntime(carpeta);
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException
+            or InvalidOperationException)
+        {
+            error = $"No se pudieron aplicar los permisos de WebView2 en {carpeta}: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static FileStream AdquirirBloqueoRaiz(string raiz)
+    {
+        // Evita que dos procesos sustituyan la misma extraccion.
+        var rutaBloqueo = Path.Combine(raiz, ".lanzador-webview2.lock");
+        var limite = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            try
+            {
+                return new FileStream(rutaBloqueo, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException) when (DateTime.UtcNow < limite)
+            {
+                Thread.Sleep(100);
+            }
         }
     }
 
