@@ -10,6 +10,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using LanzadorScripts.Modelos;
 
 namespace LanzadorScripts.Servicios;
@@ -22,6 +23,9 @@ public sealed class ServidorLocalWeb : IDisposable
     internal const string MensajeCarpetaScriptsNoDisponible = "La carpeta remota de scripts no esta disponible.";
 
     private static readonly Lazy<IReadOnlyDictionary<string, string>> IndiceRecursosCliente = new(CrearIndiceRecursosCliente);
+    private static readonly Regex EtiquetaVersionCliente = new(
+        "children:\"v[0-9]+[.][0-9]+[.][0-9]+(?:[.][0-9]+)?\"",
+        RegexOptions.CultureInvariant);
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -931,7 +935,32 @@ public sealed class ServidorLocalWeb : IDisposable
         contexto.Response.ContentType = ObtenerTipoContenido(recurso);
         contexto.Response.StatusCode = 200;
         EstablecerCookieSesion(contexto.Response);
+
+        if (recurso.StartsWith("assets/index-", StringComparison.OrdinalIgnoreCase)
+            && recurso.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+        {
+            // Sincroniza la version visible con la version real del ejecutable.
+            using var lector = new StreamReader(flujo, Encoding.UTF8, true, 4096, leaveOpen: true);
+            var contenido = await lector.ReadToEndAsync();
+            var versionado = AplicarVersionVisualCliente(
+                contenido,
+                Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0));
+            var datos = Encoding.UTF8.GetBytes(versionado);
+            contexto.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+            contexto.Response.ContentLength64 = datos.Length;
+            await contexto.Response.OutputStream.WriteAsync(datos);
+            return;
+        }
+
         await flujo.CopyToAsync(contexto.Response.OutputStream);
+    }
+
+    internal static string AplicarVersionVisualCliente(string contenido, Version version)
+    {
+        // Sustituye la etiqueta fija del cliente por la version del ensamblado.
+        var compilacion = Math.Max(version.Build, 0);
+        var versionVisual = $"{version.Major}.{version.Minor}.{compilacion}";
+        return EtiquetaVersionCliente.Replace(contenido, $"children:\"v{versionVisual}\"", 1);
     }
 
     private static Stream? AbrirRecursoCliente(string recurso)
