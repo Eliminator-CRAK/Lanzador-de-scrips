@@ -33,11 +33,16 @@ public sealed class GestorEjecucionesWeb : IDisposable
     private readonly ServicioAuditoria _servicioAuditoria;
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts;
     private readonly ServicioBrokerElevado _servicioBrokerElevado = new();
+    private readonly string _rutaStaging;
 
-    public GestorEjecucionesWeb(ServicioAuditoria servicioAuditoria, ServicioSeguridadScripts servicioSeguridadScripts)
+    public GestorEjecucionesWeb(
+        ServicioAuditoria servicioAuditoria,
+        ServicioSeguridadScripts servicioSeguridadScripts,
+        string? rutaStaging = null)
     {
         _servicioAuditoria = servicioAuditoria;
         _servicioSeguridadScripts = servicioSeguridadScripts;
+        _rutaStaging = rutaStaging ?? RutasAplicacion.RutaStaging;
     }
 
     public int RecuentoActivas
@@ -471,12 +476,11 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    private static ScriptPreparado CrearCopiaTemporalValidada(EjecucionWeb ejecucion)
+    private ScriptPreparado CrearCopiaTemporalValidada(EjecucionWeb ejecucion)
     {
-        var raizStaging = Path.Combine(RutasAplicacion.RaizLocalAppData, "Staging");
-        Directory.CreateDirectory(raizStaging);
+        Directory.CreateDirectory(_rutaStaging);
 
-        var directorio = Path.Combine(raizStaging, ejecucion.Id.ToString("N"));
+        var directorio = Path.Combine(_rutaStaging, ejecucion.Id.ToString("N"));
         Directory.CreateDirectory(directorio);
         AplicarAclDirectorioStaging(directorio);
 

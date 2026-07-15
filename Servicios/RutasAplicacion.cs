@@ -7,39 +7,70 @@ namespace LanzadorScripts.Servicios;
 
 public static class RutasAplicacion
 {
-    public static string RaizAppData => Path.Combine(
+    public static string RaizProgramData => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "LanzadorScripts");
+
+    public static string RaizProgramFiles => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        "LanzadorScripts");
+
+    public static string RaizAppDataLegada => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "LanzadorScripts");
 
-    public static string RaizLocalAppData => Path.Combine(
+    public static string RaizLocalAppDataLegada => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LanzadorScripts");
 
-    public static string RutaConfiguracionUsuario => Path.Combine(RaizAppData, "configuracion.dat");
+    public static string RaizDatosUsuario => Path.Combine(
+        RutaUsuarios,
+        PerfilAplicacion.ObtenerIdentificadorUsuarioActual());
 
-    public static string RutaConfiguracionUsuarioLegadaJson => Path.Combine(RaizAppData, "configuracion.json");
+    public static string RutaUsuarios => Path.Combine(RaizProgramData, "Usuarios");
+
+    public static string RutaConfiguracionUsuario => Path.Combine(RaizDatosUsuario, "configuracion.dat");
+
+    public static string RutaConfiguracionUsuarioLegadaDat => Path.Combine(RaizAppDataLegada, "configuracion.dat");
+
+    public static string RutaConfiguracionUsuarioLegadaJson => Path.Combine(RaizAppDataLegada, "configuracion.json");
 
     public static string RutaConfiguracionLegada => Path.Combine(AppContext.BaseDirectory, "configuracion.json");
 
-    public static string RutaLogsUsuario => Path.Combine(RaizLocalAppData, "Logs");
+    public static string RutaLogsUsuario => Path.Combine(RaizDatosUsuario, "Logs");
 
-    public static string RutaAuditoria => Path.Combine(RaizLocalAppData, "Auditoria");
+    public static string RutaAuditoria => Path.Combine(RaizDatosUsuario, "Auditoria");
 
-    public static string RutaTokensUsuario => Path.Combine(RaizAppData, "Tokens");
+    public static string RutaTokensUsuario => Path.Combine(RaizDatosUsuario, "Tokens");
+
+    public static string RutaImportacionesTemporales => Path.Combine(RaizDatosUsuario, "Temporales", "Importaciones");
+
+    public static string RutaTokensUsuarioLegada => Path.Combine(RaizAppDataLegada, "Tokens");
+
+    public static string RutaStaging => Path.Combine(RaizProgramFiles, "Staging");
+
+    public static string RutaRaizWebView2Usuario => Path.Combine(RaizDatosUsuario, "WebView2");
 
     public static string RutaPerfilWebView2 => Path.Combine(
-        RaizLocalAppData,
-        "WebView2",
-        PerfilAplicacion.ObtenerPerfilUsuarioActual());
+        RutaRaizWebView2Usuario,
+        "Perfil");
 
-    public static string RutaRuntimesWebView2 => Path.Combine(
-        RaizLocalAppData,
-        "Runtimes",
+    public static string RutaPerfilesWebView2Recuperacion => Path.Combine(
+        RutaRaizWebView2Usuario,
+        "Recuperacion");
+
+    public static string RutaBaseWebView2RecuperacionSistema => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+        "Temp",
+        "LanzadorScripts",
         "WebView2");
 
-    public static string RutaRuntimesWebView2Temporal => Path.Combine(
-        Path.GetTempPath(),
-        "LanzadorScripts",
+    public static string RutaRaizWebView2RecuperacionSistema => Path.Combine(
+        RutaBaseWebView2RecuperacionSistema,
+        PerfilAplicacion.ObtenerIdentificadorUsuarioActual());
+
+    public static string RutaRuntimesWebView2 => Path.Combine(
+        RaizProgramFiles,
         "Runtimes",
         "WebView2");
 

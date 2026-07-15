@@ -20,14 +20,13 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 | Recurso | Ruta |
 |---|---|
-| Configuracion usuario | `%AppData%\LanzadorScripts\configuracion.dat` |
-| Tokens de administrador | `%AppData%\LanzadorScripts\Tokens` |
-| Logs de ejecucion | `%LocalAppData%\LanzadorScripts\Logs` |
-| Auditoria | `%LocalAppData%\LanzadorScripts\Auditoria` |
-| Perfil WebView2 | `%LocalAppData%\LanzadorScripts\WebView2\<perfil>` |
-| Runtime WebView2 extraido | `%LocalAppData%\LanzadorScripts\Runtimes\WebView2\<hash-version>` |
-| Runtime WebView2 temporal | `%TEMP%\LanzadorScripts\Runtimes\WebView2\<hash-version>` |
-| Staging TOCTOU | `%LocalAppData%\LanzadorScripts\Staging` |
+| Configuracion usuario | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\configuracion.dat` |
+| Tokens de administrador | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Tokens` |
+| Logs de ejecucion | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
+| Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
+| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
+| Runtime WebView2 principal | `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2\<hash-version>` |
+| Staging TOCTOU | `%ProgramFiles%\LanzadorScripts\Staging` |
 
 ## Permisos
 
@@ -149,7 +148,7 @@ pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
 
 La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
 
-Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida y se reemplaza si fue alterada. La publicacion exige `pwsh 7.6.x`; la cache queda en `Recursos\WebView2` y no se versiona.
+Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida, se reemplaza si fue alterada y se conceden los permisos de lectura y ejecucion requeridos por AppContainer. El runtime se ejecuta solo desde `Program Files`; un bloqueo explicito de WDAC o AppLocker requiere una regla corporativa. La publicacion exige `pwsh 7.6.x`; la cache queda en `Recursos\WebView2` y no se versiona.
 
 Para inicializarlos expresamente:
 
@@ -164,6 +163,7 @@ No se instala ningun servicio, certificado, cuenta, tarea ni puerto. Las claves 
 El workflow de GitHub ejecuta:
 
 - Restore.
+- Instalacion y validacion de PowerShell 7.6.0.
 - Build Release.
 - Tests xUnit.
 - Publicacion x64 por `PublicarPortable.ps1`.

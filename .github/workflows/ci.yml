@@ -24,6 +24,23 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Setup PowerShell 7.6
+        shell: powershell
+        run: |
+          $version = '7.6.0'
+          $hashEsperado = '9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322'
+          $zip = Join-Path $env:RUNNER_TEMP "PowerShell-$version-win-x64.zip"
+          $destino = Join-Path $env:RUNNER_TEMP "PowerShell-$version"
+          $url = "https://github.com/PowerShell/PowerShell/releases/download/v$version/PowerShell-$version-win-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $hashReal = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($hashReal -ne $hashEsperado) {
+            throw "Hash de PowerShell inesperado: $hashReal"
+          }
+          Expand-Archive -LiteralPath $zip -DestinationPath $destino -Force
+          & (Join-Path $destino 'pwsh.exe') -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          [IO.File]::AppendAllText($env:GITHUB_PATH, "$destino`r`n", [Text.UTF8Encoding]::new($false))
+
       - name: Restore
         run: dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
 
@@ -40,6 +57,9 @@ jobs:
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
+          if ($PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
+            throw "La publicacion exige PowerShell 7.6.x. Version activa: $($PSVersionTable.PSVersion)"
+          }
           if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
             $certPath = Join-Path $env:RUNNER_TEMP 'lanzador-signing.pfx'
             [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))

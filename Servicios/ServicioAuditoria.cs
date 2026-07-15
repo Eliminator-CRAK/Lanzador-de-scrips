@@ -95,6 +95,7 @@ public sealed class ServicioAuditoria
     {
         try
         {
+            ServicioDirectoriosAplicacion.PrepararDatosUsuario();
             Directory.CreateDirectory(RutasAplicacion.RutaAuditoria);
             var ruta = Path.Combine(RutasAplicacion.RutaAuditoria, $"{DateTime.UtcNow:yyyyMMdd}.jsonl");
             var json = JsonSerializer.Serialize(Sanitizar(evento), OpcionesJson);

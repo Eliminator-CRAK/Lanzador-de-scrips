@@ -104,7 +104,23 @@ public sealed class ServicioArranqueWebView2
                     duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
         }
 
-        var rutaPerfilPrincipal = await PrepararPerfilPrincipalAsync(runtimeFijo, versionRuntime);
+        string rutaPerfilPrincipal;
+        try
+        {
+            rutaPerfilPrincipal = await PrepararPerfilPrincipalAsync(runtimeFijo, versionRuntime);
+        }
+        catch (Exception ex)
+        {
+            await _logInicio.RegistrarExcepcionAsync(
+                "webview2.perfil.local.error",
+                "preparar-perfil-local",
+                RutasAplicacion.RutaPerfilWebView2,
+                ex,
+                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime));
+            return ResultadoArranqueWebView2.Error(
+                "No se pudo preparar una carpeta local segura para el perfil de WebView2.");
+        }
+
         await _logInicio.RegistrarAsync(
             "webview2.inicio",
             "Preparando WebView2.",
@@ -141,13 +157,21 @@ public sealed class ServicioArranqueWebView2
             return ResultadoArranqueWebView2.Error($"No se pudo preparar el perfil de WebView2. Revisa permisos sobre {RutasAplicacion.RutaPerfilWebView2}.");
         }
 
-        var tercerIntento = await IntentarPrepararAsync(recrearVista(), runtimeFijo, rutaPerfilRecuperado, versionRuntime, "perfil-recuperado");
+        var tercerIntento = await IntentarPrepararAsync(
+            recrearVista(),
+            runtimeFijo,
+            rutaPerfilRecuperado,
+            versionRuntime,
+            "perfil-recuperado");
         if (tercerIntento.Exito)
         {
             var mensaje = rutaPerfilRecuperado == RutasAplicacion.RutaPerfilWebView2
                 ? "WebView2 se recupero creando un perfil local limpio."
-                : "WebView2 se inicio con un perfil temporal de recuperacion.";
-            await _logInicio.RegistrarAsync("webview2.recuperado", mensaje, CrearDatosBase(runtimeFijo, rutaPerfilRecuperado, versionRuntime));
+                : "WebView2 se inicio con un perfil alternativo de recuperacion.";
+            await _logInicio.RegistrarAsync(
+                "webview2.recuperado",
+                mensaje,
+                CrearDatosBase(runtimeFijo, rutaPerfilRecuperado, versionRuntime));
             return tercerIntento;
         }
 
@@ -197,27 +221,28 @@ public sealed class ServicioArranqueWebView2
     {
         try
         {
+            ServicioDirectoriosAplicacion.PrepararDatosUsuario();
             Directory.CreateDirectory(RutasAplicacion.RutaPerfilWebView2);
             ProbarEscrituraDirectorio(RutasAplicacion.RutaPerfilWebView2);
             return RutasAplicacion.RutaPerfilWebView2;
         }
         catch (Exception ex)
         {
-            var rutaTemporal = CrearPerfilTemporal();
+            var rutaRecuperacion = CrearPerfilRecuperacion();
             await _logInicio.RegistrarExcepcionAsync(
                 "webview2.perfil.no_escribible",
                 "preparar-perfil-principal",
                 RutasAplicacion.RutaPerfilWebView2,
                 ex,
-                CrearDatosBase(runtimeFijo, rutaTemporal, versionRuntime));
+                CrearDatosBase(runtimeFijo, rutaRecuperacion, versionRuntime));
 
-            return rutaTemporal;
+            return rutaRecuperacion;
         }
     }
 
     private async Task<string> PrepararPerfilRecuperadoAsync(string rutaPerfil)
     {
-        var raiz = Path.GetDirectoryName(rutaPerfil) ?? RutasAplicacion.RaizLocalAppData;
+        var raiz = Path.GetDirectoryName(rutaPerfil) ?? RutasAplicacion.RutaPerfilesWebView2Recuperacion;
         Directory.CreateDirectory(raiz);
 
         if (!Directory.Exists(rutaPerfil))
@@ -226,7 +251,7 @@ public sealed class ServicioArranqueWebView2
             return rutaPerfil;
         }
 
-        var marcaTiempo = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var marcaTiempo = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
         var rutaDanada = Path.Combine(raiz, $"WebView2_Danado_{marcaTiempo}");
 
         try
@@ -259,12 +284,40 @@ public sealed class ServicioArranqueWebView2
         }
     }
 
-    private static string CrearPerfilTemporal()
+    private static string CrearPerfilRecuperacion()
     {
-        var ruta = Path.Combine(Path.GetTempPath(), "LanzadorScripts", "WebView2", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(ruta);
-        ProbarEscrituraDirectorio(ruta);
-        return ruta;
+        var errores = new List<string>();
+        foreach (var candidato in new[]
+        {
+            (Raiz: RutasAplicacion.RutaPerfilesWebView2Recuperacion, EsSistema: false),
+            (Raiz: RutasAplicacion.RutaRaizWebView2RecuperacionSistema, EsSistema: true)
+        })
+        {
+            try
+            {
+                if (candidato.EsSistema)
+                {
+                    ServicioDirectoriosAplicacion.PrepararRecuperacionWebView2Sistema();
+                }
+                else
+                {
+                    ServicioDirectoriosAplicacion.PrepararDatosUsuario();
+                }
+
+                var ruta = Path.Combine(candidato.Raiz, Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(ruta);
+                ProbarEscrituraDirectorio(ruta);
+                return ruta;
+            }
+            catch (Exception ex) when (ex is IOException
+                or UnauthorizedAccessException
+                or System.Security.SecurityException)
+            {
+                errores.Add(ex.Message);
+            }
+        }
+
+        throw new IOException("No se pudo crear el perfil de recuperacion de WebView2. " + string.Join(" ", errores));
     }
 
     internal static string? ResolverRuntimeFijoPortable()

@@ -17,9 +17,10 @@ public sealed class ServicioTokensAdmin
 
     public TokenAdmin ObtenerOCrear(string usuarioWindows)
     {
+        ServicioDirectoriosAplicacion.PrepararDatosUsuario();
         Directory.CreateDirectory(RutasAplicacion.RutaTokensUsuario);
 
-        var ruta = ObtenerRutaToken(usuarioWindows);
+        var ruta = ResolverRutaToken(usuarioWindows);
         var tokenExistente = LeerToken(ruta);
         if (tokenExistente is not null)
         {
@@ -38,7 +39,9 @@ public sealed class ServicioTokensAdmin
             return false;
         }
 
-        var tokenGuardado = LeerToken(ObtenerRutaToken(usuarioWindows));
+        ServicioDirectoriosAplicacion.PrepararDatosUsuario();
+        Directory.CreateDirectory(RutasAplicacion.RutaTokensUsuario);
+        var tokenGuardado = LeerToken(ResolverRutaToken(usuarioWindows));
         return tokenGuardado is not null
             && string.Equals(tokenGuardado.UsuarioWindows, usuarioWindows, StringComparison.OrdinalIgnoreCase)
             && CryptographicOperations.FixedTimeEquals(
@@ -78,6 +81,33 @@ public sealed class ServicioTokensAdmin
             Path.GetInvalidFileNameChars().Contains(caracter) || caracter is '\\' or '/' ? '_' : caracter));
 
         return Path.Combine(RutasAplicacion.RutaTokensUsuario, $"{nombreSeguro}.token");
+    }
+
+    private static string ResolverRutaToken(string usuarioWindows)
+    {
+        // Copia el token anterior a la carpeta local segura.
+        var rutaNueva = ObtenerRutaToken(usuarioWindows);
+        if (File.Exists(rutaNueva))
+        {
+            return rutaNueva;
+        }
+
+        var nombre = Path.GetFileName(rutaNueva);
+        var rutaLegada = Path.Combine(RutasAplicacion.RutaTokensUsuarioLegada, nombre);
+        if (!File.Exists(rutaLegada))
+        {
+            return rutaNueva;
+        }
+
+        try
+        {
+            File.Copy(rutaLegada, rutaNueva, overwrite: false);
+            return rutaNueva;
+        }
+        catch
+        {
+            return rutaNueva;
+        }
     }
 }
 

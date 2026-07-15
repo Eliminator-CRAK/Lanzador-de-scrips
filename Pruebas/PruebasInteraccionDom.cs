@@ -22,6 +22,21 @@ public sealed class PruebasInteraccionDom
     }
 
     [Fact]
+    public void ContenedorScriptsSeLocalizaDesdeElBuscadorSinDependerDeTarjetas()
+    {
+        var codigo = LeerVentanaPrincipal();
+        var script = ExtraerSeccion(codigo, "function obtenerContenedorScripts()", "function obtenerTituloTarjeta(tarjeta)");
+
+        Assert.Contains("input[placeholder=\"Buscar scripts...\"]", script, StringComparison.Ordinal);
+        Assert.Contains("buscador?.closest('aside')", script, StringComparison.Ordinal);
+        Assert.Contains("Array.from(panelScripts.children)", script, StringComparison.Ordinal);
+        Assert.Contains("hijo.classList.contains('custom-scrollbar')", script, StringComparison.Ordinal);
+        Assert.Contains("hijo.classList.contains('flex-1')", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("ejecutar script", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("abrir carpeta", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void NavegacionCarpetasSeCreaUnaVezYActualizaSoloValores()
     {
         var codigo = LeerVentanaPrincipal();
@@ -29,9 +44,21 @@ public sealed class PruebasInteraccionDom
 
         Assert.Contains("if (!panel)", script, StringComparison.Ordinal);
         Assert.Contains("document.createElement('button')", script, StringComparison.Ordinal);
+        Assert.Contains("botonVolver.textContent = '← Volver'", script, StringComparison.Ordinal);
+        Assert.Contains("botonRaiz.textContent = 'Principal'", script, StringComparison.Ordinal);
         Assert.Contains("panel.dataset.lsCarpetaActual !== carpeta", script, StringComparison.Ordinal);
         Assert.Contains("ruta.textContent !== textoRuta", script, StringComparison.Ordinal);
         Assert.DoesNotContain("innerHTML", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PanelNavegacionNoSeComprimeDentroDelLateral()
+    {
+        var codigo = LeerVentanaPrincipal();
+        var script = ExtraerSeccion(codigo, "private static string ObtenerMejorasInterfazScripts()", "private static string ObtenerPanelPermisosSubcarpetas()");
+
+        Assert.Contains(".ls-navegacion-carpetas {", script, StringComparison.Ordinal);
+        Assert.Contains("flex: 0 0 auto;", script, StringComparison.Ordinal);
     }
 
     [Fact]

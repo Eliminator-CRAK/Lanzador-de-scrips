@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.IO.Compression;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
@@ -122,6 +123,9 @@ public sealed class PruebasLanzadorScripts
         Assert.Equal("aroperez", PerfilAplicacion.Normalizar("AROPEREZ"));
         Assert.Equal("usuario_micro", PerfilAplicacion.Normalizar("usuario micro"));
         Assert.Equal("default", PerfilAplicacion.Normalizar(null));
+        Assert.NotEqual(
+            PerfilAplicacion.CrearIdentificadorSid("S-1-5-21-4294967295-4294967295-4294967295-1234567890"),
+            PerfilAplicacion.CrearIdentificadorSid("S-1-5-21-4294967295-4294967295-4294967295-1234567899"));
     }
 
     [Fact]
@@ -206,19 +210,97 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PerfilWebView2PrincipalUsaLocalAppData()
+    public void PerfilWebView2PrincipalUsaProgramDataYSeparaUsuariosPorSid()
     {
         var raizProgramData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "LanzadorScripts",
-            "WebView2");
+            "Usuarios",
+            PerfilAplicacion.ObtenerIdentificadorUsuarioActual(),
+            "WebView2",
+            "Perfil");
         var raizLocalAppData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "LanzadorScripts",
             "WebView2");
 
-        Assert.StartsWith(raizLocalAppData, RutasAplicacion.RutaPerfilWebView2, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(raizProgramData, RutasAplicacion.RutaPerfilWebView2, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(raizProgramData, RutasAplicacion.RutaPerfilWebView2, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(raizLocalAppData, RutasAplicacion.RutaPerfilWebView2, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(raizProgramData, RutasAplicacion.RutaPerfilWebView2, ignoreCase: true);
+    }
+
+    [Fact]
+    public void RutasActivasNoUsanAppDataDelPerfilWindows()
+    {
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var rutasDatos = new[]
+        {
+            RutasAplicacion.RutaConfiguracionUsuario,
+            RutasAplicacion.RutaLogsUsuario,
+            RutasAplicacion.RutaAuditoria,
+            RutasAplicacion.RutaTokensUsuario,
+            RutasAplicacion.RutaPerfilWebView2
+        };
+
+        Assert.All(rutasDatos, ruta => Assert.StartsWith(programData, ruta, StringComparison.OrdinalIgnoreCase));
+        Assert.StartsWith(programFiles, RutasAplicacion.RutaRuntimesWebView2, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(programFiles, RutasAplicacion.RutaStaging, StringComparison.OrdinalIgnoreCase);
+        Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
+        Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizLocalAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DirectorioPrivadoSoloConcedeModificacionAlUsuarioActual()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var carpeta = Path.Combine(entorno.Raiz, "privado");
+
+        ServicioDirectoriosAplicacion.PrepararDirectorioPrivado(carpeta);
+
+        var reglas = new DirectoryInfo(carpeta)
+            .GetAccessControl(AccessControlSections.Access)
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
+            .ToList();
+        var usuario = WindowsIdentity.GetCurrent().User?.Value;
+        Assert.Contains(reglas, regla =>
+            string.Equals(regla.IdentityReference.Value, usuario, StringComparison.Ordinal)
+            && regla.FileSystemRights.HasFlag(FileSystemRights.Modify));
+        Assert.DoesNotContain(reglas, regla =>
+            string.Equals(regla.IdentityReference.Value, "S-1-5-32-545", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DirectorioBaseImpideEscrituraAUsuariosNormales()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var carpeta = Path.Combine(entorno.Raiz, "base-segura");
+
+        ServicioDirectoriosAplicacion.PrepararDirectorioBase(carpeta);
+
+        var reglas = new DirectoryInfo(carpeta)
+            .GetAccessControl(AccessControlSections.Access)
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
+            .ToList();
+        var reglaUsuarios = Assert.Single(reglas, regla =>
+            string.Equals(regla.IdentityReference.Value, "S-1-5-32-545", StringComparison.Ordinal));
+        Assert.True(reglaUsuarios.FileSystemRights.HasFlag(FileSystemRights.ReadAndExecute));
+        Assert.False(reglaUsuarios.FileSystemRights.HasFlag(FileSystemRights.Write));
+    }
+
+    [Fact]
+    public void TokenAdministradorSePuedeLeerDesdeProgramData()
+    {
+        var servicio = new ServicioTokensAdmin();
+
+        var token = servicio.ObtenerOCrear(WindowsIdentity.GetCurrent().Name);
+
+        Assert.False(string.IsNullOrWhiteSpace(token.Valor));
+        Assert.True(servicio.Validar(token.UsuarioWindows, token.Valor));
     }
 
     [Fact]
@@ -232,7 +314,11 @@ public sealed class PruebasLanzadorScripts
         Assert.Contains("ResolverRuntimeFijoPortable", codigo, StringComparison.Ordinal);
         Assert.Contains("Runtimes", RutasAplicacion.RutaRuntimesWebView2, StringComparison.Ordinal);
         Assert.Contains("msedgewebview2.exe", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("ProgramData", codigo, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            RutasAplicacion.RutaRuntimesWebView2,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PrepararAlternativo", codigo, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -278,7 +364,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void RuntimeEmbebidoUsaTemporalSiPrimeraRutaNoEsEscribible()
+    public void RuntimeEmbebidoUsaSiguienteRutaSiPrimeraNoEsEscribible()
     {
         using var entorno = EntornoPruebas.Crear();
         var rutaBloqueada = Path.Combine(entorno.Raiz, "bloqueada");
@@ -292,6 +378,58 @@ public sealed class PruebasLanzadorScripts
 
         Assert.True(resultado.Exito, resultado.Mensaje);
         Assert.StartsWith(rutaFallback, resultado.RutaRuntime!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RuntimeEmbebidoSerializaDosExtraccionesSimultaneas()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var raiz = Path.Combine(entorno.Raiz, "compartida");
+        var servicio = new ServicioRuntimeWebView2Embebido(
+            () => new MemoryStream(CrearZipRuntimeWebView2()),
+            [raiz]);
+
+        var resultados = await Task.WhenAll(
+            Task.Run(servicio.Preparar),
+            Task.Run(servicio.Preparar));
+
+        Assert.All(resultados, resultado => Assert.True(resultado.Exito, resultado.Mensaje));
+        Assert.Equal(resultados[0].RutaRuntime, resultados[1].RutaRuntime);
+        Assert.Equal(new byte[] { 5, 6, 7, 8 }, File.ReadAllBytes(Path.Combine(resultados[0].RutaRuntime!, "resources.pak")));
+    }
+
+    [Fact]
+    public void RuntimeEmbebidoConcedeLecturaYEjecucionAAppContainer()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var carpeta = Path.Combine(entorno.Raiz, "acl-runtime");
+        Directory.CreateDirectory(carpeta);
+        var ejecutable = Path.Combine(carpeta, "msedgewebview2.exe");
+        File.WriteAllBytes(ejecutable, [1, 2, 3]);
+
+        ServicioDirectoriosAplicacion.PrepararDirectorioRuntime(carpeta);
+
+        var reglasCarpeta = new DirectoryInfo(carpeta)
+            .GetAccessControl(AccessControlSections.Access)
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
+            .ToList();
+        var reglasEjecutable = new FileInfo(ejecutable)
+            .GetAccessControl(AccessControlSections.Access)
+            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
+            .ToList();
+        foreach (var sid in new[] { "S-1-15-2-1", "S-1-15-2-2" })
+        {
+            Assert.Contains(reglasCarpeta, regla =>
+                string.Equals(regla.IdentityReference.Value, sid, StringComparison.Ordinal)
+                && regla.FileSystemRights.HasFlag(FileSystemRights.ReadAndExecute));
+            Assert.Contains(reglasEjecutable, regla =>
+                string.Equals(regla.IdentityReference.Value, sid, StringComparison.Ordinal)
+                && regla.FileSystemRights.HasFlag(FileSystemRights.ReadAndExecute));
+        }
     }
 
     [Fact]
@@ -361,6 +499,19 @@ public sealed class PruebasLanzadorScripts
         configuracion.RutaPermisos = Path.Combine(AppContext.BaseDirectory, "permisos.json");
         configuracion.Normalizar();
         Assert.Equal(RutasArtefactosProtegidos.CarpetaPredeterminada, configuracion.RutaPermisos);
+    }
+
+    [Fact]
+    public void ConfiguracionMigraLogsDeLocalAppDataAProgramData()
+    {
+        var configuracion = new ConfiguracionLanzador
+        {
+            RutaLogs = Path.Combine(RutasAplicacion.RaizLocalAppDataLegada, "Logs")
+        };
+
+        ServicioConfiguracion.MigrarRutaLogsLegada(configuracion);
+
+        Assert.Equal(RutasAplicacion.RutaLogsUsuario, configuracion.RutaLogs);
     }
 
     [Fact]

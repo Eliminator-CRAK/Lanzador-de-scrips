@@ -57,14 +57,26 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion141()
+    public void ProyectoPublicaVersion142()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
 
-        Assert.Contains("<Version>1.4.1</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.4.1.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.4.1.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.4.2</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.4.2.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.4.2.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
+    }
+
+    // Comprueba que la publicacion automatica usa PowerShell reproducible.
+    [Fact]
+    public void CiFijaPowerShell760()
+    {
+        var ci = File.ReadAllText(ObtenerRutaProyecto(".github", "workflows", "ci.yml"));
+
+        Assert.Contains("$version = '7.6.0'", ci, StringComparison.Ordinal);
+        Assert.Contains("9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322", ci, StringComparison.Ordinal);
+        Assert.Contains("PowerShell-$version-win-x64.zip", ci, StringComparison.Ordinal);
+        Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", ci, StringComparison.Ordinal);
     }
 
     // Localiza archivos desde la raiz del proyecto.
