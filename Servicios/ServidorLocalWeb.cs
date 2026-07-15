@@ -17,7 +17,9 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServidorLocalWeb : IDisposable
 {
     private const string NombreCookieSesion = "LanzadorScriptsSesion";
-    private const string MensajeServidorNoDisponible = "No se puede conectar al servidor.";
+    internal const string MensajeBackendLocalNoDisponible = "El backend local no pudo procesar la solicitud.";
+    internal const string MensajeCarpetaPermisosNoDisponible = "La carpeta remota de permisos no esta disponible.";
+    internal const string MensajeCarpetaScriptsNoDisponible = "La carpeta remota de scripts no esta disponible.";
 
     private static readonly Lazy<IReadOnlyDictionary<string, string>> IndiceRecursosCliente = new(CrearIndiceRecursosCliente);
 
@@ -41,9 +43,14 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
     private readonly object _bloqueoEmergencia = new();
+    private readonly object _bloqueoDiagnosticoAjustes = new();
     private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly string _tokenApiInterno = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private SesionEmergencia? _sesionEmergencia;
+    private Task<DiagnosticoPermisos>? _tareaDiagnosticoAjustes;
+    private DiagnosticoPermisos? _diagnosticoAjustesReciente;
+    private DateTimeOffset _diagnosticoAjustesValidoHasta;
+    private bool _diagnosticoAjustesAgotoEspera;
     private volatile bool _modoDesarrolloFirmas;
 
     private ServidorLocalWeb(int puerto)
@@ -159,11 +166,11 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (contexto.Response.OutputStream.CanWrite)
             {
-                await _servicioAuditoria.RegistrarErrorInternoAsync("api.error", ex.GetType().Name);
+                await _servicioAuditoria.RegistrarErrorInternoAsync("api.backend_local.error", ex.GetType().Name);
                 await EscribirJsonAsync(contexto, 503, new
                 {
-                    error = MensajeServidorNoDisponible,
-                    avisoConexion = MensajeServidorNoDisponible
+                    error = MensajeBackendLocalNoDisponible,
+                    avisoConexion = MensajeBackendLocalNoDisponible
                 });
             }
         }
@@ -272,10 +279,24 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/usuario", StringComparison.OrdinalIgnoreCase))
         {
-            var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+            var configuracion = CargarConfiguracion();
+            var tareaPermisos = ObtenerDiagnosticoAjustesAsync();
+            var tareaScripts = RutaScriptsInaccesibleAsync(configuracion.RutaScripts);
+            await Task.WhenAll(tareaPermisos, tareaScripts);
+            var diagnosticoPermisos = await tareaPermisos;
             var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
             var tokenAdmin = AsegurarTokenAdmin(usuario);
-            await EscribirJsonAsync(contexto, 200, CrearUsuarioClienteSesion(usuario, diagnosticoPermisos, tokenAdmin));
+            var scriptsInaccesibles = await tareaScripts;
+            var avisoConexion = CrearAvisoConexion(diagnosticoPermisos.ModoOffline, scriptsInaccesibles);
+            await EscribirJsonAsync(
+                contexto,
+                200,
+                CrearUsuarioClienteSesion(
+                    usuario,
+                    diagnosticoPermisos,
+                    tokenAdmin,
+                    avisoConexion,
+                    diagnosticoPermisos.ModoOffline || scriptsInaccesibles));
             return;
         }
 
@@ -293,7 +314,13 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/token-maestro/desbloquear", StringComparison.OrdinalIgnoreCase))
         {
-            var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+            if (ObtenerEmergenciaActiva() is not null)
+            {
+                await EscribirJsonAsync(contexto, 409, new { error = "Ya existe una sesion de emergencia activa." });
+                return;
+            }
+
+            var diagnosticoPermisos = await ObtenerDiagnosticoAjustesAsync();
             if (diagnosticoPermisos.EstaDisponible)
             {
                 await EscribirJsonAsync(contexto, 403, new { error = "El token maestro solo esta disponible si no se puede leer el archivo de permisos." });
@@ -316,7 +343,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            var emergencia = ActivarEmergencia(payload!, usuarioActual);
+            var emergencia = ActivarEmergencia(payload!, usuarioActual, diagnosticoPermisos.Estado);
 
             await _servicioAuditoria.RegistrarEventoSeguridadAsync(
                 "seguridad.emergencia",
@@ -358,12 +385,20 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/ajustes", StringComparison.OrdinalIgnoreCase))
         {
-            if (!await RequerirAdministradorAsync(contexto))
+            var diagnosticoAjustes = await ObtenerDiagnosticoAjustesAsync();
+            if (!await RequerirAdministradorAsync(contexto, diagnosticoAjustes))
             {
                 return;
             }
 
-            await EscribirJsonAsync(contexto, 200, new { permisos = ObtenerPermisos(), mensaje = "Datos de ajustes cargados exitosamente." });
+            await EscribirJsonAsync(contexto, 200, new
+            {
+                permisos = diagnosticoAjustes.Permisos,
+                mensaje = diagnosticoAjustes.EstaDisponible
+                    ? "Datos de ajustes cargados exitosamente."
+                    : diagnosticoAjustes.Mensaje,
+                avisoConexion = diagnosticoAjustes.EstaDisponible ? string.Empty : diagnosticoAjustes.Mensaje
+            });
             return;
         }
 
@@ -374,14 +409,28 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "La sesion de emergencia se activo con la carpeta de permisos inaccesible. Reinicia la aplicacion cuando la carpeta vuelva a estar disponible antes de guardar permisos."
+                });
+                return;
+            }
+
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var resultado = GuardarPermisos(cuerpo ?? new JsonObject());
+            if (resultado.PermisosGuardados)
+            {
+                InvalidarDiagnosticoAjustes();
+            }
+
             await EscribirJsonAsync(contexto, 200, new
             {
                 exito = true,
                 mensaje = resultado.PermisosGuardados
                     ? "Ajustes guardados exitosamente."
-                    : "La configuracion se guardo, pero no se pudo conectar al servidor de permisos.",
+                    : "Los permisos no se pudieron publicar en la carpeta configurada.",
                 avisoConexion = resultado.AvisoConexion
             });
             return;
@@ -389,7 +438,8 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/configuracion-app", StringComparison.OrdinalIgnoreCase))
         {
-            if (!await RequerirAdministradorAsync(contexto))
+            var diagnosticoAjustes = await ObtenerDiagnosticoAjustesAsync();
+            if (!await RequerirAdministradorAsync(contexto, diagnosticoAjustes))
             {
                 return;
             }
@@ -410,6 +460,15 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "La sesion de emergencia se activo con la carpeta de permisos inaccesible. Reinicia la aplicacion cuando la carpeta vuelva a estar disponible antes de cambiar las rutas."
+                });
+                return;
+            }
+
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var configuracion = CargarConfiguracion();
             var nuevaRutaPermisos = LeerTexto(cuerpo, "rutaPermisos", configuracion.RutaPermisos).Trim();
@@ -424,6 +483,7 @@ public sealed class ServidorLocalWeb : IDisposable
             configuracion.RutaPermisos = nuevaRutaPermisos;
             configuracion.RutaScripts = nuevaRutaScripts;
             _servicioConfiguracion.Guardar(configuracion);
+            InvalidarDiagnosticoAjustes();
             var avisoConfiguracion = _servicioValidacionScripts.CrearAvisoConfiguracionNoDisponible(nuevaRutaScripts, nuevaRutaPermisos);
             await EscribirJsonAsync(contexto, 200, new
             {
@@ -440,6 +500,15 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (!await RequerirAdministradorAsync(contexto))
             {
+                return;
+            }
+
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "No se puede exportar configuracion desde una sesion de emergencia iniciada con la carpeta de permisos inaccesible."
+                });
                 return;
             }
 
@@ -462,6 +531,20 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/configuracion-paquete/importar", StringComparison.OrdinalIgnoreCase))
         {
+            if (!await RequerirAdministradorAsync(contexto))
+            {
+                return;
+            }
+
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "No se puede importar configuracion desde una sesion de emergencia iniciada con la carpeta de permisos inaccesible."
+                });
+                return;
+            }
+
             await ProcesarImportacionPaqueteConfiguracionAsync(contexto);
             return;
         }
@@ -473,6 +556,15 @@ public sealed class ServidorLocalWeb : IDisposable
                 return;
             }
 
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "No se pueden leer las subcarpetas desde una sesion de emergencia iniciada sin acceso remoto."
+                });
+                return;
+            }
+
             await EscribirJsonAsync(contexto, 200, ObtenerSubcarpetasScripts());
             return;
         }
@@ -481,6 +573,15 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (!await RequerirAdministradorAsync(contexto))
             {
+                return;
+            }
+
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "No se puede leer el catalogo desde una sesion de emergencia iniciada sin acceso remoto."
+                });
                 return;
             }
 
@@ -502,6 +603,15 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (!await RequerirAdministradorAsync(contexto))
             {
+                return;
+            }
+
+            if (SesionEmergenciaSinAccesoRemoto())
+            {
+                await EscribirJsonAsync(contexto, 409, new
+                {
+                    error = "No se puede publicar el catalogo desde una sesion de emergencia iniciada con la carpeta de permisos inaccesible."
+                });
                 return;
             }
 
@@ -604,6 +714,7 @@ public sealed class ServidorLocalWeb : IDisposable
             var configuracion = CargarConfiguracion();
             var importacion = _servicioPaquetesConfiguracion.Importar(rutaTemporal, configuracion);
             _servicioConfiguracion.Guardar(importacion.Configuracion);
+            InvalidarDiagnosticoAjustes();
             if (importacion.Permisos is not null)
             {
                 _servicioPaquetesConfiguracion.GuardarPermisosImportados(importacion.Configuracion, importacion.Permisos);
@@ -640,9 +751,12 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (!validacion.EsValido)
         {
+            var mensajeValidacion = validacion.Codigo == CodigoValidacionScript.RutaScriptsNoDisponible
+                ? MensajeCarpetaScriptsNoDisponible
+                : validacion.Mensaje;
             var usuarioDenegado = WindowsIdentity.GetCurrent().Name;
-            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.validacion", usuarioDenegado, scriptId, validacion.Mensaje);
-            await EscribirJsonAsync(contexto, ServicioValidacionScripts.ObtenerCodigoHttp(validacion.Codigo), new { error = validacion.Mensaje });
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.validacion", usuarioDenegado, scriptId, mensajeValidacion);
+            await EscribirJsonAsync(contexto, ServicioValidacionScripts.ObtenerCodigoHttp(validacion.Codigo), new { error = mensajeValidacion });
             return;
         }
 
@@ -650,8 +764,9 @@ public sealed class ServidorLocalWeb : IDisposable
         var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
         if (PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
         {
-            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos_offline", WindowsIdentity.GetCurrent().Name, script.Id, MensajeServidorNoDisponible);
-            await EscribirJsonAsync(contexto, 403, new { error = MensajeServidorNoDisponible, avisoConexion = MensajeServidorNoDisponible });
+            var mensajePermisos = ObtenerMensajePermisosNoDisponibles(diagnosticoPermisos);
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos_no_disponibles", WindowsIdentity.GetCurrent().Name, script.Id, mensajePermisos);
+            await EscribirJsonAsync(contexto, 403, new { error = mensajePermisos, avisoConexion = mensajePermisos });
             return;
         }
 
@@ -852,6 +967,13 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private UsuarioCliente ObtenerUsuarioActual()
     {
+        // Evita consultar la red durante una sesion de emergencia activa.
+        if (ObtenerEmergenciaActiva() is not null)
+        {
+            var identidad = WindowsIdentity.GetCurrent().Name;
+            return new UsuarioCliente(identidad, "admin", 50, true, string.Empty, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        }
+
         return ObtenerUsuarioActual(ObtenerDiagnosticoPermisos());
     }
 
@@ -904,7 +1026,12 @@ public sealed class ServidorLocalWeb : IDisposable
             carpetasPermitidas);
     }
 
-    private object CrearUsuarioClienteSesion(UsuarioCliente usuario, DiagnosticoPermisos diagnosticoPermisos, TokenAdmin? tokenAdmin)
+    private object CrearUsuarioClienteSesion(
+        UsuarioCliente usuario,
+        DiagnosticoPermisos diagnosticoPermisos,
+        TokenAdmin? tokenAdmin,
+        string avisoConexion,
+        bool modoOffline)
     {
         // Aplica el desbloqueo maestro solo a la sesion actual.
         var emergencia = ObtenerEmergenciaActiva();
@@ -927,8 +1054,8 @@ public sealed class ServidorLocalWeb : IDisposable
                 TokenAdmin = tokenAdmin?.Valor,
                 CarpetasPermitidas = Array.Empty<string>(),
                 ModoDesarrolloFirmas = _modoDesarrolloFirmas,
-                ModoOffline = diagnosticoPermisos.ModoOffline,
-                AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
+                ModoOffline = modoOffline,
+                AvisoConexion = avisoConexion
             };
         }
 
@@ -949,8 +1076,8 @@ public sealed class ServidorLocalWeb : IDisposable
             TokenAdmin = tokenAdmin?.Valor,
             CarpetasPermitidas = usuario.CarpetasPermitidas ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             ModoDesarrolloFirmas = _modoDesarrolloFirmas,
-            ModoOffline = diagnosticoPermisos.ModoOffline,
-            AvisoConexion = diagnosticoPermisos.ModoOffline ? diagnosticoPermisos.Mensaje : string.Empty
+            ModoOffline = modoOffline,
+            AvisoConexion = avisoConexion
         };
     }
 
@@ -965,9 +1092,11 @@ public sealed class ServidorLocalWeb : IDisposable
         return null;
     }
 
-    private async Task<bool> RequerirAdministradorAsync(HttpListenerContext contexto)
+    private async Task<bool> RequerirAdministradorAsync(
+        HttpListenerContext contexto,
+        DiagnosticoPermisos? diagnosticoPermisos = null)
     {
-        var autorizacion = ValidarAdministrador(contexto.Request);
+        var autorizacion = ValidarAdministrador(contexto.Request, diagnosticoPermisos);
         if (autorizacion.Autorizado)
         {
             return true;
@@ -978,7 +1107,9 @@ public sealed class ServidorLocalWeb : IDisposable
         return false;
     }
 
-    private ResultadoAutorizacionAdmin ValidarAdministrador(HttpListenerRequest peticion)
+    private ResultadoAutorizacionAdmin ValidarAdministrador(
+        HttpListenerRequest peticion,
+        DiagnosticoPermisos? diagnosticoPermisos = null)
     {
         var token = LeerTokenAutorizacion(peticion);
         if (string.IsNullOrWhiteSpace(token))
@@ -986,7 +1117,9 @@ public sealed class ServidorLocalWeb : IDisposable
             return ResultadoAutorizacionAdmin.FaltaBearer();
         }
 
-        var usuario = ObtenerUsuarioActual();
+        var usuario = diagnosticoPermisos is null
+            ? ObtenerUsuarioActual()
+            : ObtenerUsuarioActual(diagnosticoPermisos);
         if (!usuario.EstaAutorizado)
         {
             return ResultadoAutorizacionAdmin.Denegado("Acceso denegado. El usuario no esta autorizado.");
@@ -1025,6 +1158,94 @@ public sealed class ServidorLocalWeb : IDisposable
         return ObtenerDiagnosticoPermisos().Permisos;
     }
 
+    private async Task<DiagnosticoPermisos> ObtenerDiagnosticoAjustesAsync()
+    {
+        // Limita y agrupa las lecturas remotas usadas al abrir Ajustes.
+        if (ObtenerEmergenciaActiva() is not null)
+        {
+            return CrearDiagnosticoPermisosNoDisponible();
+        }
+
+        Task<DiagnosticoPermisos> tarea;
+        lock (_bloqueoDiagnosticoAjustes)
+        {
+            if (_diagnosticoAjustesReciente is not null
+                && _diagnosticoAjustesValidoHasta > DateTimeOffset.UtcNow)
+            {
+                return _diagnosticoAjustesReciente;
+            }
+
+            if (_tareaDiagnosticoAjustes is { IsCompleted: false }
+                && _diagnosticoAjustesAgotoEspera)
+            {
+                return CrearDiagnosticoPermisosNoDisponible();
+            }
+
+            _tareaDiagnosticoAjustes ??= Task.Run(ObtenerDiagnosticoPermisos);
+            tarea = _tareaDiagnosticoAjustes;
+        }
+
+        var completada = await Task.WhenAny(tarea, Task.Delay(TimeSpan.FromSeconds(2)));
+        if (completada != tarea)
+        {
+            lock (_bloqueoDiagnosticoAjustes)
+            {
+                if (ReferenceEquals(_tareaDiagnosticoAjustes, tarea))
+                {
+                    _diagnosticoAjustesAgotoEspera = true;
+                }
+            }
+
+            return CrearDiagnosticoPermisosNoDisponible();
+        }
+
+        DiagnosticoPermisos resultado;
+        try
+        {
+            resultado = await tarea;
+        }
+        catch
+        {
+            resultado = CrearDiagnosticoPermisosNoDisponible();
+        }
+
+        lock (_bloqueoDiagnosticoAjustes)
+        {
+            if (ReferenceEquals(_tareaDiagnosticoAjustes, tarea))
+            {
+                _tareaDiagnosticoAjustes = null;
+                _diagnosticoAjustesAgotoEspera = false;
+                _diagnosticoAjustesReciente = resultado;
+                _diagnosticoAjustesValidoHasta = DateTimeOffset.UtcNow.AddSeconds(2);
+            }
+        }
+
+        return resultado;
+    }
+
+    private DiagnosticoPermisos CrearDiagnosticoPermisosNoDisponible()
+    {
+        // Devuelve un estado seguro cuando la ruta remota no responde a tiempo.
+        var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
+        return new DiagnosticoPermisos(
+            EstadoPermisos.Inaccesible,
+            ruta,
+            CrearPermisosPorDefecto(),
+            MensajeCarpetaPermisosNoDisponible);
+    }
+
+    private void InvalidarDiagnosticoAjustes()
+    {
+        // Descarta lecturas anteriores despues de publicar o cambiar rutas.
+        lock (_bloqueoDiagnosticoAjustes)
+        {
+            _tareaDiagnosticoAjustes = null;
+            _diagnosticoAjustesAgotoEspera = false;
+            _diagnosticoAjustesReciente = null;
+            _diagnosticoAjustesValidoHasta = DateTimeOffset.MinValue;
+        }
+    }
+
     private DiagnosticoPermisos ObtenerDiagnosticoPermisos()
     {
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
@@ -1037,7 +1258,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     EstadoPermisos.Inaccesible,
                     ruta,
                     CrearPermisosPorDefecto(),
-                    MensajeServidorNoDisponible);
+                    MensajeCarpetaPermisosNoDisponible);
             }
 
             return new DiagnosticoPermisos(
@@ -1096,7 +1317,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 EstadoCatalogo.Inaccesible,
                 rutaCatalogo,
                 null,
-                MensajeServidorNoDisponible);
+                MensajeCarpetaPermisosNoDisponible);
         }
 
         if (!_servicioCatalogoScripts.IntentarCargar(
@@ -1127,6 +1348,58 @@ public sealed class ServidorLocalWeb : IDisposable
         return string.IsNullOrWhiteSpace(carpeta) || !Directory.Exists(carpeta);
     }
 
+    internal static bool RutaScriptsInaccesible(string ruta)
+    {
+        // Comprueba la carpeta de scripts sin crearla.
+        if (string.IsNullOrWhiteSpace(ruta))
+        {
+            return true;
+        }
+
+        try
+        {
+            var completa = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ruta.Trim()));
+            return !Directory.Exists(completa);
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    internal static async Task<bool> RutaScriptsInaccesibleAsync(string ruta)
+    {
+        // Limita la comprobacion remota para mantener la interfaz disponible.
+        var comprobacion = Task.Run(() => RutaScriptsInaccesible(ruta));
+        var completada = await Task.WhenAny(comprobacion, Task.Delay(TimeSpan.FromSeconds(2)));
+        return completada != comprobacion || await comprobacion;
+    }
+
+    internal static string CrearAvisoConexion(bool permisosInaccesibles, bool scriptsInaccesibles)
+    {
+        // Diferencia las rutas remotas que no responden.
+        var avisos = new List<string>();
+        if (permisosInaccesibles)
+        {
+            avisos.Add(MensajeCarpetaPermisosNoDisponible);
+        }
+
+        if (scriptsInaccesibles)
+        {
+            avisos.Add(MensajeCarpetaScriptsNoDisponible);
+        }
+
+        return string.Join(" ", avisos);
+    }
+
+    private static string ObtenerMensajePermisosNoDisponibles(DiagnosticoPermisos diagnostico)
+    {
+        // Conserva la causa concreta de la denegacion por permisos.
+        return string.IsNullOrWhiteSpace(diagnostico.Mensaje)
+            ? "Los permisos no estan disponibles."
+            : diagnostico.Mensaje;
+    }
+
     private bool PermisosInaccesiblesSinDesbloqueo(DiagnosticoPermisos diagnosticoPermisos)
     {
         // Bloquea ejecucion si no se puede validar permisos.
@@ -1139,7 +1412,7 @@ public sealed class ServidorLocalWeb : IDisposable
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
         if (RutaPermisosInaccesible(ruta))
         {
-            return new ResultadoGuardarPermisos(false, MensajeServidorNoDisponible);
+            return new ResultadoGuardarPermisos(false, MensajeCarpetaPermisosNoDisponible);
         }
 
         var carpeta = Path.GetDirectoryName(ruta);
@@ -1263,8 +1536,9 @@ public sealed class ServidorLocalWeb : IDisposable
         var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo();
         if (PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
         {
+            var mensajePermisos = ObtenerMensajePermisosNoDisponibles(diagnosticoPermisos);
             return scripts
-                .Select(script => new ScriptCliente(script.Id, script.Nombre, script.Tipo, true, MensajeServidorNoDisponible))
+                .Select(script => new ScriptCliente(script.Id, script.Nombre, script.Tipo, true, mensajePermisos))
                 .ToList();
         }
 
@@ -1514,14 +1788,28 @@ public sealed class ServidorLocalWeb : IDisposable
         return _configuracionFija ?? _servicioConfiguracion.Cargar();
     }
 
-    private SesionEmergencia ActivarEmergencia(TokenMaestroPayload payload, string usuario)
+    private SesionEmergencia ActivarEmergencia(
+        TokenMaestroPayload payload,
+        string usuario,
+        EstadoPermisos estadoInicial)
     {
         lock (_bloqueoEmergencia)
         {
-            var emergencia = new SesionEmergencia(usuario, string.Empty, DateTimeOffset.UtcNow.AddMinutes(10), payload.Id);
+            var emergencia = new SesionEmergencia(
+                usuario,
+                string.Empty,
+                DateTimeOffset.UtcNow.AddMinutes(10),
+                payload.Id,
+                estadoInicial);
             _sesionEmergencia = emergencia;
             return emergencia;
         }
+    }
+
+    private bool SesionEmergenciaSinAccesoRemoto()
+    {
+        // Evita lecturas y escrituras remotas tras una apertura sin acceso a permisos.
+        return ObtenerEmergenciaActiva()?.EstadoInicial == EstadoPermisos.Inaccesible;
     }
 
     private SesionEmergencia? ObtenerEmergenciaActiva()
@@ -1739,7 +2027,12 @@ public sealed class ServidorLocalWeb : IDisposable
         public bool EstaDisponible => Estado == EstadoCatalogo.Disponible;
     }
 
-    private sealed record SesionEmergencia(string Usuario, string Motivo, DateTimeOffset VenceUtc, string TokenId);
+    private sealed record SesionEmergencia(
+        string Usuario,
+        string Motivo,
+        DateTimeOffset VenceUtc,
+        string TokenId,
+        EstadoPermisos EstadoInicial);
 
     private sealed record ResultadoAutorizacionAdmin(CodigoAutorizacionAdmin Codigo, string Mensaje)
     {

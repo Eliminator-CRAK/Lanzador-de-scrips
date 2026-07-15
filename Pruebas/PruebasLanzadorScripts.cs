@@ -240,9 +240,10 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         var zip = CrearZipRuntimeWebView2();
-        var servicio = new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(zip),
-            [Path.Combine(entorno.Raiz, "Runtime")]);
+        var servicio = CrearServicioRuntimeSeguro(
+            zip,
+            Path.Combine(entorno.Raiz, "Runtime"),
+            Path.Combine(entorno.Raiz, "RuntimeEsperado"));
 
         var primerResultado = servicio.Preparar();
         var segundoResultado = servicio.Preparar();
@@ -253,6 +254,27 @@ public sealed class PruebasLanzadorScripts
         Assert.True(segundoResultado.Exito, segundoResultado.Mensaje);
         Assert.False(segundoResultado.ExtraidoAhora);
         Assert.Equal(primerResultado.RutaRuntime, segundoResultado.RutaRuntime);
+    }
+
+    [Fact]
+    public void RuntimeEmbebidoReextraeSiLaCopiaLocalFueManipulada()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var zip = CrearZipRuntimeWebView2();
+        var servicio = CrearServicioRuntimeSeguro(
+            zip,
+            Path.Combine(entorno.Raiz, "Runtime"),
+            Path.Combine(entorno.Raiz, "RuntimeEsperado"));
+        var primerResultado = servicio.Preparar();
+        Assert.True(primerResultado.Exito, primerResultado.Mensaje);
+        var recurso = Path.Combine(primerResultado.RutaRuntime!, "resources.pak");
+        File.WriteAllBytes(recurso, [9, 9, 9, 9]);
+
+        var segundoResultado = servicio.Preparar();
+
+        Assert.True(segundoResultado.Exito, segundoResultado.Mensaje);
+        Assert.True(segundoResultado.ExtraidoAhora);
+        Assert.Equal(new byte[] { 5, 6, 7, 8 }, File.ReadAllBytes(recurso));
     }
 
     [Fact]
@@ -702,7 +724,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public async Task ApiDesbloqueaConTokenReutilizableSinMotivo()
+    public async Task ApiDesbloqueaConTokenYNoRenuevaUnaSesionActiva()
     {
         using var entorno = EntornoPruebas.Crear();
         using var rsaToken = RSA.Create(3072);
@@ -718,11 +740,66 @@ public sealed class PruebasLanzadorScripts
 
         var usuario = await LeerJsonAsync(await cliente.GetAsync("/api/usuario"));
         Assert.Equal("admin", usuario?["rol"]?.GetValue<string>());
-        Assert.False(string.IsNullOrWhiteSpace(usuario?["tokenAdmin"]?.GetValue<string>()));
+        var tokenAdmin = usuario?["tokenAdmin"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(tokenAdmin));
+
+        using var ajustes = new HttpRequestMessage(HttpMethod.Get, "/api/ajustes");
+        ajustes.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        var respuestaAjustes = await cliente.SendAsync(ajustes);
+        Assert.Equal(HttpStatusCode.OK, respuestaAjustes.StatusCode);
+        var jsonAjustes = await LeerJsonAsync(respuestaAjustes);
+        Assert.Equal(ServidorLocalWeb.MensajeCarpetaPermisosNoDisponible, jsonAjustes?["avisoConexion"]?.GetValue<string>());
 
         var cuerpoReutilizado = new StringContent($"{{\"token\":\"{token}\"}}", Encoding.UTF8, "application/json");
         var segundaRespuesta = await cliente.PostAsync("/api/token-maestro/desbloquear", cuerpoReutilizado);
-        Assert.Equal(HttpStatusCode.OK, segundaRespuesta.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, segundaRespuesta.StatusCode);
+    }
+
+    [Fact]
+    public async Task ApiEmergenciaSinAccesoRemotoBloqueaLecturasYEscrituras()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        using var rsaToken = RSA.Create(3072);
+        var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
+        var configuracion = entorno.CrearConfiguracionPermisosInaccesibles();
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(configuracion, servicioToken);
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+
+        var token = servicioToken.Generar();
+        using var desbloqueo = new StringContent($"{{\"token\":\"{token}\"}}", Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.OK, (await cliente.PostAsync("/api/token-maestro/desbloquear", desbloqueo)).StatusCode);
+
+        var usuario = await LeerJsonAsync(await cliente.GetAsync("/api/usuario"));
+        var tokenAdmin = usuario?["tokenAdmin"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(tokenAdmin));
+
+        using var guardar = new HttpRequestMessage(HttpMethod.Post, "/api/ajustes")
+        {
+            Content = new StringContent(CrearPermisosAdmin().ToJsonString(), Encoding.UTF8, "application/json")
+        };
+        guardar.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        Assert.Equal(HttpStatusCode.Conflict, (await cliente.SendAsync(guardar)).StatusCode);
+        Assert.False(Directory.Exists(configuracion.RutaPermisos));
+
+        using var catalogo = new HttpRequestMessage(HttpMethod.Post, "/api/catalogo-scripts")
+        {
+            Content = new StringContent("{\"scriptIds\":[]}", Encoding.UTF8, "application/json")
+        };
+        catalogo.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        Assert.Equal(HttpStatusCode.Conflict, (await cliente.SendAsync(catalogo)).StatusCode);
+
+        using var exportar = new HttpRequestMessage(HttpMethod.Get, "/api/configuracion-paquete/exportar");
+        exportar.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        Assert.Equal(HttpStatusCode.Conflict, (await cliente.SendAsync(exportar)).StatusCode);
+
+        using var subcarpetas = new HttpRequestMessage(HttpMethod.Get, "/api/subcarpetas-scripts");
+        subcarpetas.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        Assert.Equal(HttpStatusCode.Conflict, (await cliente.SendAsync(subcarpetas)).StatusCode);
+
+        using var leerCatalogo = new HttpRequestMessage(HttpMethod.Get, "/api/catalogo-scripts");
+        leerCatalogo.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        Assert.Equal(HttpStatusCode.Conflict, (await cliente.SendAsync(leerCatalogo)).StatusCode);
     }
 
     [Fact]
@@ -756,6 +833,10 @@ public sealed class PruebasLanzadorScripts
 
         var sinBearer = await cliente.GetAsync("/api/ajustes");
         Assert.Equal(HttpStatusCode.Unauthorized, sinBearer.StatusCode);
+
+        using var importarSinBearer = new StringContent("{}", Encoding.UTF8, "application/json");
+        var respuestaImportarSinBearer = await cliente.PostAsync("/api/configuracion-paquete/importar", importarSinBearer);
+        Assert.Equal(HttpStatusCode.Unauthorized, respuestaImportarSinBearer.StatusCode);
 
         using var bearerInvalido = new HttpRequestMessage(HttpMethod.Get, "/api/ajustes");
         bearerInvalido.Headers.TryAddWithoutValidation("Authorization", "Bearer invalido");
@@ -961,6 +1042,30 @@ public sealed class PruebasLanzadorScripts
         return eventos;
     }
 
+    private static ServicioRuntimeWebView2Embebido CrearServicioRuntimeSeguro(
+        byte[] zip,
+        string raizRuntime,
+        string carpetaEsperada)
+    {
+        // Prepara las huellas esperadas de un runtime pequeno de pruebas.
+        Directory.CreateDirectory(carpetaEsperada);
+        using (var memoria = new MemoryStream(zip))
+        {
+            ZipFile.ExtractToDirectory(memoria, carpetaEsperada);
+        }
+
+        var ejecutable = Directory
+            .EnumerateFiles(carpetaEsperada, "msedgewebview2.exe", SearchOption.AllDirectories)
+            .Single();
+        return new ServicioRuntimeWebView2Embebido(
+            () => new MemoryStream(zip),
+            [raizRuntime],
+            Convert.ToHexString(SHA256.HashData(zip)),
+            ServicioRuntimeWebView2Embebido.CalcularHashContenidoRuntime(carpetaEsperada),
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ejecutable))),
+            null);
+    }
+
     private static byte[] CrearZipRuntimeWebView2(bool incluirEjecutable = true)
     {
         using var memoria = new MemoryStream();
@@ -1065,6 +1170,16 @@ internal sealed class EntornoPruebas : IDisposable
         {
             RutaScripts = Raiz,
             RutaPermisos = carpetaPermisosAusentes,
+            RutaLogs = Path.Combine(Raiz, "Logs")
+        };
+    }
+
+    public ConfiguracionLanzador CrearConfiguracionPermisosInaccesibles()
+    {
+        return new ConfiguracionLanzador
+        {
+            RutaScripts = Raiz,
+            RutaPermisos = Path.Combine(Raiz, "PERMISOS-INACCESIBLES"),
             RutaLogs = Path.Combine(Raiz, "Logs")
         };
     }

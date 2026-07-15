@@ -3,6 +3,8 @@
 
 using System.IO;
 using System.IO.Compression;
+using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,6 +14,10 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServicioRuntimeWebView2Embebido
 {
     internal const string NombreRecursoZip = "Recursos.WebView2Runtime.zip";
+    internal const string VersionRuntimeFijada = "150.0.4078.48";
+    internal const string HashZipRuntimeFijado = "80C46993E2D5922EFDF6463ACDA737BA0525993D4D7757D377C38F50D8BB417B";
+    internal const string HashEjecutableRuntimeFijado = "30428A9075E5706B5E4A77E324B4331326566CDA027F49A8922089733C728859";
+    internal const string HashContenidoRuntimeFijado = "3345CEC7106D6A8EB3A5770DFF97DF36CB0750DF005331B54AB551CDF11E3DFB";
 
     private const int TamanoBuffer = 1048576;
     private const int MaximoVersionesConservadas = 2;
@@ -21,16 +27,41 @@ public sealed class ServicioRuntimeWebView2Embebido
 
     private readonly Func<Stream?> _abrirRecurso;
     private readonly IReadOnlyList<string> _raicesExtraccion;
+    private readonly string? _hashZipEsperado;
+    private readonly string? _hashContenidoEsperado;
+    private readonly string? _hashEjecutableEsperado;
+    private readonly string? _versionEsperada;
 
     public ServicioRuntimeWebView2Embebido()
-        : this(AbrirRecursoEnsamblado, [RutasAplicacion.RutaRuntimesWebView2, RutasAplicacion.RutaRuntimesWebView2Temporal])
+        : this(
+            AbrirRecursoEnsamblado,
+            [RutasAplicacion.RutaRuntimesWebView2, RutasAplicacion.RutaRuntimesWebView2Temporal],
+            HashZipRuntimeFijado,
+            HashContenidoRuntimeFijado,
+            HashEjecutableRuntimeFijado,
+            VersionRuntimeFijada)
     {
     }
 
     internal ServicioRuntimeWebView2Embebido(Func<Stream?> abrirRecurso, IReadOnlyList<string> raicesExtraccion)
+        : this(abrirRecurso, raicesExtraccion, null, null, null, null)
+    {
+    }
+
+    internal ServicioRuntimeWebView2Embebido(
+        Func<Stream?> abrirRecurso,
+        IReadOnlyList<string> raicesExtraccion,
+        string? hashZipEsperado,
+        string? hashContenidoEsperado,
+        string? hashEjecutableEsperado,
+        string? versionEsperada)
     {
         _abrirRecurso = abrirRecurso;
         _raicesExtraccion = raicesExtraccion;
+        _hashZipEsperado = hashZipEsperado;
+        _hashContenidoEsperado = hashContenidoEsperado;
+        _hashEjecutableEsperado = hashEjecutableEsperado;
+        _versionEsperada = versionEsperada;
     }
 
     public ResultadoRuntimeWebView2Embebido Preparar()
@@ -47,10 +78,33 @@ public sealed class ServicioRuntimeWebView2Embebido
             return ResultadoRuntimeWebView2Embebido.Error("No hay una carpeta escribible para extraer WebView2 Fixed Runtime.");
         }
 
+        string hash;
+        if (!string.IsNullOrWhiteSpace(_hashZipEsperado))
+        {
+            hash = _hashZipEsperado;
+            var carpetaExistente = Path.Combine(raiz, PrefijoCarpetaRuntime + hash[..16]);
+            if (ValidarRuntimeExtraido(carpetaExistente, hash, out var rutaRuntimeExistente))
+            {
+                LimpiarVersionesAntiguas(raiz, carpetaExistente);
+                return ResultadoRuntimeWebView2Embebido.Correcto(rutaRuntimeExistente, hash, extraidoAhora: false);
+            }
+        }
+        else
+        {
+            hash = string.Empty;
+        }
+
         var zipTemporal = Path.Combine(raiz, $".webview2-{Guid.NewGuid():N}.zip");
         try
         {
-            var hash = CopiarRecursoYCalcularHash(recurso, zipTemporal);
+            var hashCalculado = CopiarRecursoYCalcularHash(recurso, zipTemporal);
+            if (!string.IsNullOrWhiteSpace(_hashZipEsperado)
+                && !string.Equals(hashCalculado, _hashZipEsperado, StringComparison.OrdinalIgnoreCase))
+            {
+                return ResultadoRuntimeWebView2Embebido.Error("El ZIP embebido de WebView2 no coincide con la version fijada.");
+            }
+
+            hash = hashCalculado;
             var carpetaDestino = Path.Combine(raiz, PrefijoCarpetaRuntime + hash[..16]);
             if (ValidarRuntimeExtraido(carpetaDestino, hash, out var rutaRuntimeExistente))
             {
@@ -137,32 +191,104 @@ public sealed class ServicioRuntimeWebView2Embebido
         return Convert.ToHexString(sha256.Hash!);
     }
 
-    private static bool ValidarRuntimeExtraido(string carpeta, string? hashEsperado, out string rutaRuntime)
+    private bool ValidarRuntimeExtraido(string carpeta, string? hashEsperado, out string rutaRuntime)
     {
         rutaRuntime = string.Empty;
-        if (!Directory.Exists(carpeta))
+        try
         {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(hashEsperado))
-        {
-            var rutaHash = Path.Combine(carpeta, NombreArchivoHash);
-            if (!File.Exists(rutaHash)
-                || !string.Equals(File.ReadAllText(rutaHash, Encoding.ASCII).Trim(), hashEsperado, StringComparison.OrdinalIgnoreCase))
+            if (!Directory.Exists(carpeta))
             {
                 return false;
             }
-        }
 
-        var ejecutable = BuscarEjecutableWebView2(carpeta);
-        if (string.IsNullOrWhiteSpace(ejecutable))
+            if (!string.IsNullOrWhiteSpace(hashEsperado))
+            {
+                var rutaHash = Path.Combine(carpeta, NombreArchivoHash);
+                if (!File.Exists(rutaHash)
+                    || !string.Equals(File.ReadAllText(rutaHash, Encoding.ASCII).Trim(), hashEsperado, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            var ejecutable = BuscarEjecutableWebView2(carpeta);
+            if (string.IsNullOrWhiteSpace(ejecutable))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_hashEjecutableEsperado))
+            {
+                using var flujoEjecutable = File.OpenRead(ejecutable);
+                var hashEjecutable = Convert.ToHexString(SHA256.HashData(flujoEjecutable));
+                if (!string.Equals(hashEjecutable, _hashEjecutableEsperado, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(_versionEsperada))
+            {
+                var version = FileVersionInfo.GetVersionInfo(ejecutable);
+                if (!string.Equals(version.FileVersion, _versionEsperada, StringComparison.Ordinal)
+                    || !string.Equals(version.ProductVersion, _versionEsperada, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(_hashContenidoEsperado)
+                && !string.Equals(
+                    CalcularHashContenidoRuntime(carpeta),
+                    _hashContenidoEsperado,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            rutaRuntime = Path.GetDirectoryName(ejecutable) ?? carpeta;
+            return true;
+        }
+        catch
         {
             return false;
         }
+    }
 
-        rutaRuntime = Path.GetDirectoryName(ejecutable) ?? carpeta;
-        return true;
+    internal static string CalcularHashContenidoRuntime(string carpeta)
+    {
+        // Calcula la huella de rutas, tamanos y contenido de toda la extraccion.
+        var raiz = Path.GetFullPath(carpeta).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var rutaMarcador = Path.GetFullPath(Path.Combine(raiz, NombreArchivoHash));
+        var archivos = Directory
+            .EnumerateFiles(raiz, "*", SearchOption.AllDirectories)
+            .Where(ruta => !string.Equals(Path.GetFullPath(ruta), rutaMarcador, StringComparison.OrdinalIgnoreCase))
+            .Select(ruta => new
+            {
+                Ruta = ruta,
+                Relativa = Path.GetRelativePath(raiz, ruta).Replace('\\', '/')
+            })
+            .OrderBy(archivo => archivo.Relativa, StringComparer.Ordinal)
+            .ToList();
+
+        using var integridad = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var archivo in archivos)
+        {
+            AgregarLineaHash(integridad, archivo.Relativa);
+            AgregarLineaHash(
+                integridad,
+                new FileInfo(archivo.Ruta).Length.ToString(CultureInfo.InvariantCulture));
+            using var flujo = File.OpenRead(archivo.Ruta);
+            AgregarLineaHash(integridad, Convert.ToHexString(SHA256.HashData(flujo)));
+        }
+
+        return Convert.ToHexString(integridad.GetHashAndReset());
+    }
+
+    private static void AgregarLineaHash(IncrementalHash integridad, string valor)
+    {
+        // Separa cada valor para producir una huella determinista.
+        integridad.AppendData(Encoding.UTF8.GetBytes(valor + "\n"));
     }
 
     private static string? BuscarEjecutableWebView2(string carpeta)

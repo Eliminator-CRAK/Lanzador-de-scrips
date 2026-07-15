@@ -2,6 +2,8 @@
 // Descripcion: Prepara WebView2 y recupera perfiles locales dañados.
 
 using System.IO;
+using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -18,13 +20,37 @@ public sealed class ServicioArranqueWebView2
 
     public async Task<ResultadoArranqueWebView2> PrepararAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
     {
-        var runtimeEmbebido = _servicioRuntimeEmbebido.Preparar();
+        var cronometroRuntime = Stopwatch.StartNew();
+        ResultadoRuntimeWebView2Embebido runtimeEmbebido;
+        try
+        {
+            runtimeEmbebido = await PrepararRuntimeEnSegundoPlanoAsync(_servicioRuntimeEmbebido.Preparar);
+        }
+        catch (Exception ex)
+        {
+            cronometroRuntime.Stop();
+            await _logInicio.RegistrarExcepcionAsync(
+                "webview2.runtime.embebido.error",
+                "preparar-runtime-embebido",
+                RutasAplicacion.RutaRuntimesWebView2,
+                ex,
+                CrearDatosBase(
+                    null,
+                    RutasAplicacion.RutaPerfilWebView2,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
+            return ResultadoArranqueWebView2.Error("No se pudo preparar WebView2 Fixed Runtime embebido.");
+        }
+
+        cronometroRuntime.Stop();
         if (!runtimeEmbebido.Exito && runtimeEmbebido.RecursoEncontrado)
         {
             await _logInicio.RegistrarAsync(
                 "webview2.runtime.embebido.error",
                 runtimeEmbebido.Mensaje,
-                CrearDatosBase(null, RutasAplicacion.RutaPerfilWebView2));
+                CrearDatosBase(
+                    null,
+                    RutasAplicacion.RutaPerfilWebView2,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
             return ResultadoArranqueWebView2.Error(runtimeEmbebido.Mensaje);
         }
 
@@ -35,7 +61,10 @@ public sealed class ServicioArranqueWebView2
             await _logInicio.RegistrarAsync(
                 "webview2.runtime.error",
                 disponibilidad.Mensaje,
-                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2));
+                CrearDatosBase(
+                    runtimeFijo,
+                    RutasAplicacion.RutaPerfilWebView2,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
             return ResultadoArranqueWebView2.Error(disponibilidad.Mensaje);
         }
 
@@ -45,14 +74,34 @@ public sealed class ServicioArranqueWebView2
             await _logInicio.RegistrarAsync(
                 runtimeEmbebido.ExtraidoAhora ? "webview2.runtime.embebido.extraido" : "webview2.runtime.embebido.reutilizado",
                 "WebView2 usara el runtime embebido autoextraido.",
-                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime, null, null, runtimeEmbebido.Hash));
+                CrearDatosBase(
+                    runtimeFijo,
+                    RutasAplicacion.RutaPerfilWebView2,
+                    versionRuntime,
+                    hashRuntime: runtimeEmbebido.Hash,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
         }
         else if (!string.IsNullOrWhiteSpace(runtimeFijo))
         {
             await _logInicio.RegistrarAsync(
                 "webview2.runtime.portable",
                 "WebView2 usara el runtime portable.",
-                CrearDatosBase(runtimeFijo, RutasAplicacion.RutaPerfilWebView2, versionRuntime));
+                CrearDatosBase(
+                    runtimeFijo,
+                    RutasAplicacion.RutaPerfilWebView2,
+                    versionRuntime,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
+        }
+        else
+        {
+            await _logInicio.RegistrarAsync(
+                "webview2.runtime.instalado",
+                "WebView2 usara el runtime instalado del sistema.",
+                CrearDatosBase(
+                    runtimeFijo,
+                    RutasAplicacion.RutaPerfilWebView2,
+                    versionRuntime,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
         }
 
         var rutaPerfilPrincipal = await PrepararPerfilPrincipalAsync(runtimeFijo, versionRuntime);
@@ -104,6 +153,13 @@ public sealed class ServicioArranqueWebView2
 
         return ResultadoArranqueWebView2.Error(
             "No se pudo iniciar Microsoft Edge WebView2. Revisa las politicas corporativas de Edge/WebView2 o el log de arranque de LanzadorScripts.");
+    }
+
+    internal static Task<ResultadoRuntimeWebView2Embebido> PrepararRuntimeEnSegundoPlanoAsync(
+        Func<ResultadoRuntimeWebView2Embebido> preparar)
+    {
+        // Ejecuta la extraccion sin bloquear el hilo de interfaz.
+        return Task.Run(preparar);
     }
 
     private async Task<ResultadoArranqueWebView2> IntentarPrepararAsync(WebView2 vista, string? runtimeFijo, string rutaPerfil, string? versionRuntime, string fase)
@@ -345,7 +401,14 @@ public sealed class ServicioArranqueWebView2
         });
     }
 
-    private static Dictionary<string, string?> CrearDatosBase(string? runtimeFijo, string rutaPerfil, string? versionRuntime = null, string? carpetaInformes = null, string? fase = null, string? hashRuntime = null)
+    private static Dictionary<string, string?> CrearDatosBase(
+        string? runtimeFijo,
+        string rutaPerfil,
+        string? versionRuntime = null,
+        string? carpetaInformes = null,
+        string? fase = null,
+        string? hashRuntime = null,
+        long? duracionRuntimeMs = null)
     {
         return new Dictionary<string, string?>
         {
@@ -354,7 +417,8 @@ public sealed class ServicioArranqueWebView2
             ["versionRuntime"] = versionRuntime,
             ["carpetaInformes"] = carpetaInformes,
             ["fase"] = fase,
-            ["hashRuntime"] = hashRuntime
+            ["hashRuntime"] = hashRuntime,
+            ["duracionRuntimeMs"] = duracionRuntimeMs?.ToString(CultureInfo.InvariantCulture)
         };
     }
 }
