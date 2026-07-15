@@ -36,8 +36,10 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 |---|---|
 | Script bloqueado por permisos | Solicitar autorizacion al administrador. |
 | Script bloqueado por firma/hash | No ejecutar. El administrador debe revisar integridad. |
-| No se puede conectar al servidor | Esperar recuperacion de red o avisar a soporte. |
-| Permisos no disponibles | No ejecutar. Solo administracion puede activar emergencia temporal. |
+| Backend local no disponible | Reiniciar la app y avisar a soporte si se repite. |
+| Carpeta remota de scripts no disponible | Esperar recuperacion de red; la interfaz seguira visible pero los scripts quedan bloqueados. |
+| Carpeta remota de permisos no disponible | No ejecutar. Solo administracion puede activar emergencia temporal; los cambios de permisos quedan bloqueados mientras la carpeta siga inaccesible. |
+| Permisos ausentes o no validos | No ejecutar y comunicar el mensaje exacto al administrador. |
 | WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
 
 ## Logs

@@ -71,6 +71,7 @@ El token maestro esta firmado por el certificado privado autorizado de Alex Roma
 - TTL del token: sin caducidad operativa en la aplicacion.
 - Uso: reutilizable mientras se conserve protegido y la firma sea valida.
 - Alcance: sesion de emergencia con rol administrador para poder abrir Ajustes.
+- Proteccion: si la sesion se abrio porque la carpeta remota era inaccesible, Ajustes permite diagnosticar pero bloquea guardar permisos y cambiar rutas hasta reiniciar con la carpeta disponible.
 - Auditoria: intento, resultado, emisor, usuario y equipo.
 
 ## Broker Elevado
@@ -137,23 +138,23 @@ Cobertura actual:
 La publicacion final se hace con:
 
 ```powershell
-.\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
+pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
 Para pruebas locales sin firma:
 
 ```powershell
-.\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
+pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
 ```
 
 La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
 
-Durante la publicacion se descarga o reutiliza el WebView2 Fixed Version Runtime x64 oficial, se valida que contiene `msedgewebview2.exe`, se genera un ZIP reproducible y se embebe en el EXE como recurso. La cache queda en `Recursos\WebView2` y no se versiona.
+Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida y se reemplaza si fue alterada. La publicacion exige `pwsh 7.6.x`; la cache queda en `Recursos\WebView2` y no se versiona.
 
 Para inicializarlos expresamente:
 
 ```powershell
-.\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
+pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
 No se instala ningun servicio, certificado, cuenta, tarea ni puerto. Las claves integradas permiten portabilidad completa, con el riesgo aceptado de extraccion mediante ingenieria inversa.

@@ -5,6 +5,7 @@
 
 | Campo | Valor |
 |---|---|
+| Version | 1.4.1 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -53,22 +54,22 @@ Las rutas antiguas que apuntaban directamente a `permisos.json` se migran a la c
 ## Publicacion
 
 ```powershell
-.\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
+pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
-El proceso descarga o reutiliza el WebView2 Fixed Version Runtime x64 oficial, genera un ZIP reproducible y lo embebe como recurso dentro del EXE. No instala runtime, servicios, certificados, cuentas, tareas ni puertos en los equipos cliente.
+El proceso usa WebView2 Fixed Version Runtime x64 `150.0.4078.48`, valida su version, arquitectura, firma y hashes, genera un ZIP reproducible y lo embebe como recurso dentro del EXE. La publicacion exige `pwsh 7.6.x`. No instala runtime, servicios, certificados, cuentas, tareas ni puertos en los equipos cliente.
 
 Para firmar el EXE final, usar:
 
 ```powershell
-.\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
+pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
 Tambien se puede usar `-CertPath` y `-CertPassword` con un certificado PFX. Si no se indica certificado, el script bloquea la publicacion salvo que se use `-AllowUnsignedForDev` para pruebas locales.
 
 La carpeta `publicacion` contiene unicamente `LanzadorScripts.exe`. `permisos.json` y `catalogo-scripts.json` permanecen siempre en `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`.
 
-El parametro `-RutaRuntimeWebView2Portable` permite usar una carpeta de Fixed Runtime ya descargada como origen local. Si no se indica, la publicacion usa la pagina oficial de WebView2, guarda la cache en `Recursos\WebView2` y deja esa cache fuera de Git.
+El parametro `-RutaRuntimeWebView2Portable` permite usar una carpeta de Fixed Runtime ya descargada como origen local. Si no se indica, la publicacion descarga la URL oficial fijada de `150.0.4078.48`, guarda la cache en `Recursos\WebView2` y deja esa cache fuera de Git.
 
 La inicializacion explicita de ambos archivos operativos se realiza con:
 
@@ -82,7 +83,7 @@ El pipeline de GitHub exige firma Authenticode en `main` mediante los secretos `
 
 ## Recuperacion WebView2
 
-La aplicacion extrae el WebView2 Fixed Runtime embebido en `%LocalAppData%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. Si esa ruta no es escribible, usa `%TEMP%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. La extraccion se reutiliza cuando el hash coincide y se conservan solo la version actual y una anterior.
+La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%LocalAppData%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. Si esa ruta no es escribible, usa `%TEMP%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. La extraccion solo se reutiliza cuando coinciden el hash del ZIP, el ejecutable y la huella completa de sus 260 archivos; una copia local alterada se sustituye automaticamente. Se conservan solo la version actual y una anterior.
 
 La aplicacion usa `%LocalAppData%\LanzadorScripts\WebView2` como perfil local de WebView2. Si el perfil falla durante el arranque, la aplicacion intenta recuperarlo automaticamente.
 

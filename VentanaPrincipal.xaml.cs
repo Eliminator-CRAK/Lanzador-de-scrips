@@ -2,6 +2,7 @@
 // Descripcion: Inicializa el cliente web y su backend local.
 
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -34,8 +35,12 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioArranqueWebView2 _servicioArranqueWebView2 = new();
     private readonly ServicioLogInicio _servicioLogInicio = new();
     private readonly ServicioExecutionPolicy _servicioExecutionPolicy = new();
+    private readonly Stopwatch _cronometroNavegacion = new();
     private ServidorLocalWeb? _servidorLocalIntegrado;
     private EndpointServicioLanzador? _endpointServicio;
+    private CoreWebView2? _webViewConfigurada;
+    private ulong _idNavegacionActual;
+    private string _origenNavegacionActual = string.Empty;
 
     public VentanaPrincipal()
     {
@@ -62,6 +67,7 @@ public partial class VentanaPrincipal : Window
         try
         {
             PanelArranque.Visibility = Visibility.Visible;
+            PanelArranque.IsHitTestVisible = true;
             BotonReintentarArranque.Visibility = Visibility.Collapsed;
             TextoArranque.Text = "Iniciando backend local...";
             var endpoint = await ObtenerEndpointBackendAsync();
@@ -71,6 +77,7 @@ public partial class VentanaPrincipal : Window
             var arranque = await _servicioArranqueWebView2.PrepararAsync(() => VistaCliente, RecrearVistaCliente);
             if (!arranque.Exito)
             {
+                PanelArranque.IsHitTestVisible = true;
                 TextoArranque.Text = arranque.Mensaje;
                 BotonReintentarArranque.Visibility = Visibility.Visible;
                 MessageBox.Show(
@@ -82,29 +89,42 @@ public partial class VentanaPrincipal : Window
             }
 
             TextoArranque.Text = "Aplicando protecciones del cliente local...";
-            VistaCliente.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-            VistaCliente.CoreWebView2.Settings.AreDevToolsEnabled = false;
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(endpoint.TokenApiInterno));
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelDiagnosticoEjecucion());
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerMejorasInterfazScripts());
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelPermisosSubcarpetas());
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAvisosConfiguracionApp());
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerExportacionConfiguracionGestionada());
-            await VistaCliente.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
-            VistaCliente.CoreWebView2.WebMessageReceived -= VistaCliente_WebMessageReceived;
-            VistaCliente.CoreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
+            var coreWebView2 = VistaCliente.CoreWebView2
+                ?? throw new InvalidOperationException("WebView2 no termino de inicializarse.");
+            if (!ReferenceEquals(_webViewConfigurada, coreWebView2))
+            {
+                coreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                coreWebView2.Settings.AreDevToolsEnabled = false;
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerDiagnosticoErroresCliente());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(endpoint.TokenApiInterno));
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelDiagnosticoEjecucion());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerMejorasInterfazScripts());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelPermisosSubcarpetas());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAvisosConfiguracionApp());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerExportacionConfiguracionGestionada());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerEstadoCargaAjustes());
+                _webViewConfigurada = coreWebView2;
+            }
+
+            coreWebView2.WebMessageReceived -= VistaCliente_WebMessageReceived;
+            coreWebView2.WebMessageReceived += VistaCliente_WebMessageReceived;
             TextoArranque.Text = "Cargando cliente web local...";
+            VistaCliente.NavigationStarting -= VistaCliente_NavigationStarting;
+            VistaCliente.NavigationStarting += VistaCliente_NavigationStarting;
             VistaCliente.NavigationCompleted -= VistaCliente_NavigationCompleted;
             VistaCliente.NavigationCompleted += VistaCliente_NavigationCompleted;
             VistaCliente.Source = new Uri(endpoint.UrlBase);
         }
         catch (Exception ex)
         {
-            TextoArranque.Text = $"Backend LanzadorScripts no disponible. Logs: {RutasAplicacion.RutaLogsUsuario}";
+            PanelArranque.Visibility = Visibility.Visible;
+            PanelArranque.IsHitTestVisible = true;
+            TextoArranque.Text = $"No se pudo iniciar el cliente local. Logs: {RutasAplicacion.RutaLogsUsuario}";
             BotonReintentarArranque.Visibility = Visibility.Visible;
             await _servicioLogInicio.RegistrarAsync(
-                "cliente.backend_no_disponible",
+                "cliente.arranque_error",
                 ServicioRedaccionSecretos.Sanitizar(ex.Message),
                 new Dictionary<string, string?>
                 {
@@ -128,17 +148,83 @@ public partial class VentanaPrincipal : Window
             _servidorLocalIntegrado.TokenApiInterno);
     }
 
-    private void VistaCliente_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    private void VistaCliente_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
-        if (e.IsSuccess)
+        // Registra la navegacion principal que debe habilitar la interfaz.
+        _idNavegacionActual = e.NavigationId;
+        _origenNavegacionActual = e.Uri ?? string.Empty;
+        _cronometroNavegacion.Restart();
+        PanelArranque.Visibility = Visibility.Visible;
+        PanelArranque.IsHitTestVisible = true;
+        _ = _servicioLogInicio.RegistrarAsync(
+            "cliente.navegacion.inicio",
+            "WebView2 inicio la navegacion del cliente local.",
+            new Dictionary<string, string?>
+            {
+                ["navigationId"] = e.NavigationId.ToString(),
+                ["origen"] = _origenNavegacionActual
+            });
+    }
+
+    private async void VistaCliente_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        _cronometroNavegacion.Stop();
+        var navegacionActual = e.NavigationId == _idNavegacionActual;
+        var origenEsperado = EsOrigenBackendEsperado(_origenNavegacionActual);
+        var datos = new Dictionary<string, string?>
         {
+            ["navigationId"] = e.NavigationId.ToString(),
+            ["navegacionActual"] = navegacionActual.ToString(),
+            ["origenEsperado"] = origenEsperado.ToString(),
+            ["origen"] = _origenNavegacionActual,
+            ["webErrorStatus"] = e.WebErrorStatus.ToString(),
+            ["duracionMs"] = _cronometroNavegacion.ElapsedMilliseconds.ToString()
+        };
+
+        if (e.IsSuccess && navegacionActual && origenEsperado)
+        {
+            PanelArranque.IsHitTestVisible = false;
             PanelArranque.Visibility = Visibility.Collapsed;
             BotonReintentarArranque.Visibility = Visibility.Collapsed;
+            await _servicioLogInicio.RegistrarAsync(
+                "cliente.navegacion.correcta",
+                "El cliente local quedo disponible.",
+                datos);
             return;
         }
 
+        if (!navegacionActual)
+        {
+            await _servicioLogInicio.RegistrarAsync(
+                "cliente.navegacion.obsoleta",
+                "Se ignoro el resultado de una navegacion anterior.",
+                datos);
+            return;
+        }
+
+        PanelArranque.Visibility = Visibility.Visible;
+        PanelArranque.IsHitTestVisible = true;
         TextoArranque.Text = $"No se pudo cargar el cliente local. Logs: {RutasAplicacion.RutaLogsUsuario}";
         BotonReintentarArranque.Visibility = Visibility.Visible;
+        await _servicioLogInicio.RegistrarAsync(
+            "cliente.navegacion.error",
+            "WebView2 no pudo cargar el cliente local.",
+            datos);
+    }
+
+    private bool EsOrigenBackendEsperado(string origen)
+    {
+        // Verifica que la navegacion pertenece al backend local activo.
+        if (_endpointServicio is null
+            || !Uri.TryCreate(_endpointServicio.UrlBase, UriKind.Absolute, out var esperado)
+            || !Uri.TryCreate(origen, UriKind.Absolute, out var actual))
+        {
+            return false;
+        }
+
+        return esperado.Scheme.Equals(actual.Scheme, StringComparison.OrdinalIgnoreCase)
+            && esperado.Host.Equals(actual.Host, StringComparison.OrdinalIgnoreCase)
+            && esperado.Port == actual.Port;
     }
 
     private void BotonReintentarArranque_Click(object sender, RoutedEventArgs e)
@@ -284,6 +370,18 @@ public partial class VentanaPrincipal : Window
 
     private async void VistaCliente_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        if (IntentarLeerErrorCliente(e, out var categoriaError, out var detalleError))
+        {
+            await _servicioLogInicio.RegistrarAsync(
+                "cliente.javascript_error",
+                detalleError,
+                new Dictionary<string, string?>
+                {
+                    ["categoria"] = categoriaError
+                });
+            return;
+        }
+
         var mensaje = LeerMensajeWeb(e);
         if (mensaje == "generarTokenMaestro")
         {
@@ -301,6 +399,44 @@ public partial class VentanaPrincipal : Window
         {
             await AplicarExecutionPolicyUnrestrictedAsync();
             return;
+        }
+    }
+
+    private static bool IntentarLeerErrorCliente(
+        CoreWebView2WebMessageReceivedEventArgs evento,
+        out string categoria,
+        out string detalle)
+    {
+        // Extrae errores controlados enviados por el cliente web.
+        categoria = string.Empty;
+        detalle = string.Empty;
+        try
+        {
+            using var documento = JsonDocument.Parse(evento.WebMessageAsJson);
+            var raiz = documento.RootElement;
+            if (raiz.ValueKind != JsonValueKind.Object
+                || !raiz.TryGetProperty("tipo", out var tipo)
+                || !string.Equals(tipo.GetString(), "clienteError", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            categoria = raiz.TryGetProperty("categoria", out var valorCategoria)
+                ? valorCategoria.GetString() ?? "desconocido"
+                : "desconocido";
+            detalle = raiz.TryGetProperty("detalle", out var valorDetalle)
+                ? valorDetalle.GetString() ?? "Error JavaScript sin detalle."
+                : "Error JavaScript sin detalle.";
+            if (detalle.Length > 500)
+            {
+                detalle = detalle[..500];
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -359,13 +495,18 @@ public partial class VentanaPrincipal : Window
             _endpointServicio = endpoint;
             var contenidoBase64 = Convert.ToBase64String(await File.ReadAllBytesAsync(rutaArchivo));
             using var cliente = await CrearClienteServicioAsync(endpoint);
+            var tokenAdmin = await ObtenerTokenAdminAsync(cliente);
             var cuerpo = JsonSerializer.Serialize(new
             {
                 nombreArchivo = Path.GetFileName(rutaArchivo),
                 contenidoBase64
             });
-            using var contenido = new StringContent(cuerpo, Encoding.UTF8, "application/json");
-            var respuesta = await cliente.PostAsync("/api/configuracion-paquete/importar", contenido);
+            using var peticion = new HttpRequestMessage(HttpMethod.Post, "/api/configuracion-paquete/importar")
+            {
+                Content = new StringContent(cuerpo, Encoding.UTF8, "application/json")
+            };
+            peticion.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+            var respuesta = await cliente.SendAsync(peticion);
             var respuestaJson = await respuesta.Content.ReadAsStringAsync();
             if (!respuesta.IsSuccessStatusCode)
             {
@@ -562,6 +703,38 @@ public partial class VentanaPrincipal : Window
                 Storage.prototype.removeItem = function(clave) {
                     return removeItemOriginal.call(this, clave);
                 };
+            })();
+            """;
+    }
+
+    private static string ObtenerDiagnosticoErroresCliente()
+    {
+        // Envia errores JavaScript limitados al log local de arranque.
+        return """
+            (() => {
+                let erroresEnviados = 0;
+                const maximoErrores = 10;
+
+                function enviarError(categoria, valor) {
+                    if (erroresEnviados >= maximoErrores) {
+                        return;
+                    }
+
+                    erroresEnviados += 1;
+                    const detalle = String(valor || 'Error JavaScript sin detalle.').slice(0, 500);
+                    window.chrome?.webview?.postMessage({
+                        tipo: 'clienteError',
+                        categoria,
+                        detalle
+                    });
+                }
+
+                window.addEventListener('error', evento => {
+                    enviarError('error', evento.message || evento.error?.message);
+                });
+                window.addEventListener('unhandledrejection', evento => {
+                    enviarError('promesa', evento.reason?.message || evento.reason);
+                });
             })();
             """;
     }
@@ -829,8 +1002,11 @@ public partial class VentanaPrincipal : Window
                 const idBotonRefresco = 'ls-boton-refrescar-scripts';
                 const idBotonExecutionPolicyPrincipal = 'ls-boton-execution-policy-principal';
                 const claveCarpetaScripts = 'ls-carpeta-scripts-activa';
+                const opcionesObservadorInterfaz = { childList: true, subtree: true };
                 let scriptsClienteActuales = [];
                 let wrapperAjustesActivo = false;
+                let observadorInterfaz = null;
+                let frameActualizacionInterfaz = null;
 
                 function instalarEstilosVisuales() {
                     if (document.getElementById(idEstilosVisuales)) {
@@ -927,7 +1103,7 @@ public partial class VentanaPrincipal : Window
                 function recordarScriptsCliente(respuesta) {
                     respuesta.clone().json().then(datos => {
                         scriptsClienteActuales = Array.isArray(datos) ? datos : [];
-                        window.setTimeout(aplicarVistaCarpetasScripts, 0);
+                        window.setTimeout(programarActualizacionInterfaz, 0);
                     }).catch(() => {
                         scriptsClienteActuales = [];
                     });
@@ -1015,7 +1191,13 @@ public partial class VentanaPrincipal : Window
                         return;
                     }
 
-                    boton.classList.add('ls-accion-principal', clase);
+                    if (!boton.classList.contains('ls-accion-principal')) {
+                        boton.classList.add('ls-accion-principal');
+                    }
+
+                    if (!boton.classList.contains(clase)) {
+                        boton.classList.add(clase);
+                    }
                 }
 
                 function encontrarBotonPorTexto(texto) {
@@ -1042,7 +1224,9 @@ public partial class VentanaPrincipal : Window
                         return;
                     }
 
-                    barra.dataset.lsBarraAcciones = '1';
+                    if (barra.dataset.lsBarraAcciones !== '1') {
+                        barra.dataset.lsBarraAcciones = '1';
+                    }
                     const botonDetener = encontrarBotonDetenerTodo();
                     const botonRefresco = document.getElementById(idBotonRefresco);
                     const botonExecutionPolicy = document.getElementById(idBotonExecutionPolicyPrincipal);
@@ -1427,30 +1611,61 @@ public partial class VentanaPrincipal : Window
 
                 function crearNavegacionCarpetas(contenedor) {
                     const carpeta = obtenerCarpetaActiva();
-                    const existente = document.getElementById('ls-navegacion-carpetas');
+                    let panel = document.getElementById('ls-navegacion-carpetas');
                     if (!carpeta) {
-                        existente?.remove();
+                        if (panel && !panel.hidden) {
+                            panel.hidden = true;
+                        }
+
                         return;
                     }
 
-                    let panel = existente;
                     if (!panel) {
                         panel = document.createElement('div');
                         panel.id = 'ls-navegacion-carpetas';
                         panel.className = 'ls-navegacion-carpetas';
+                        const botonVolver = document.createElement('button');
+                        botonVolver.type = 'button';
+                        botonVolver.textContent = 'Volver';
+                        botonVolver.setAttribute('data-ls-volver-carpetas', '');
+                        const ruta = document.createElement('span');
+                        ruta.setAttribute('data-ls-ruta-carpetas', '');
+                        const botonRaiz = document.createElement('button');
+                        botonRaiz.type = 'button';
+                        botonRaiz.textContent = 'Raiz';
+                        botonRaiz.setAttribute('data-ls-raiz-carpetas', '');
+                        panel.append(botonVolver, ruta, botonRaiz);
+                        botonVolver.addEventListener('click', () => {
+                            const partes = String(panel.dataset.lsCarpetaActual || '').split('/').filter(Boolean);
+                            partes.pop();
+                            cambiarCarpetaActiva(partes.join('/'));
+                        });
+                        botonRaiz.addEventListener('click', () => cambiarCarpetaActiva(''));
                         contenedor.parentElement?.insertBefore(panel, contenedor);
                     }
 
-                    panel.innerHTML = `
-                        <button type="button" data-ls-volver-carpetas>Volver</button>
-                        <span title="${escapeHtml(carpeta)}">Carpeta: ${escapeHtml(carpeta)}</span>
-                        <button type="button" data-ls-raiz-carpetas>Raiz</button>`;
-                    panel.querySelector('[data-ls-volver-carpetas]')?.addEventListener('click', () => {
-                        const partes = carpeta.split('/').filter(Boolean);
-                        partes.pop();
-                        cambiarCarpetaActiva(partes.join('/'));
-                    });
-                    panel.querySelector('[data-ls-raiz-carpetas]')?.addEventListener('click', () => cambiarCarpetaActiva(''));
+                    const padreEsperado = contenedor.parentElement;
+                    if (padreEsperado && panel.parentElement !== padreEsperado) {
+                        padreEsperado.insertBefore(panel, contenedor);
+                    }
+
+                    if (panel.hidden) {
+                        panel.hidden = false;
+                    }
+
+                    if (panel.dataset.lsCarpetaActual !== carpeta) {
+                        panel.dataset.lsCarpetaActual = carpeta;
+                    }
+
+                    const ruta = panel.querySelector('[data-ls-ruta-carpetas]');
+                    const textoRuta = `Carpeta: ${carpeta}`;
+                    if (ruta && ruta.textContent !== textoRuta) {
+                        ruta.textContent = textoRuta;
+                    }
+
+                    if (ruta && ruta.title !== carpeta) {
+                        ruta.title = carpeta;
+                    }
                 }
 
                 function aplicarVistaCarpetasScripts() {
@@ -1476,20 +1691,40 @@ public partial class VentanaPrincipal : Window
                             return;
                         }
 
-                        tarjeta.classList.add('ls-tarjeta-carpeta');
-                        tarjeta.dataset.lsCarpetaId = carpeta.carpeta || String(carpeta.id || '').replace(/^carpeta:/, '');
-                        const boton = tarjeta.querySelector('button');
-                        if (boton) {
-                            boton.disabled = false;
-                            boton.textContent = 'Abrir carpeta';
-                            boton.title = `Abrir ${tarjeta.dataset.lsCarpetaId}`;
+                        const tarjetaPreparada = tarjeta.dataset.lsCarpetaPreparada === '1';
+                        if (!tarjetaPreparada) {
+                            tarjeta.dataset.lsCarpetaPreparada = '1';
                         }
 
-                        if (tarjeta.dataset.lsCapturaCarpeta === '1') {
+                        const destino = carpeta.carpeta || String(carpeta.id || '').replace(/^carpeta:/, '');
+                        if (!tarjeta.classList.contains('ls-tarjeta-carpeta')) {
+                            tarjeta.classList.add('ls-tarjeta-carpeta');
+                        }
+
+                        if (tarjeta.dataset.lsCarpetaId !== destino) {
+                            tarjeta.dataset.lsCarpetaId = destino;
+                        }
+
+                        const boton = tarjeta.querySelector('button');
+                        if (boton) {
+                            if (boton.disabled) {
+                                boton.disabled = false;
+                            }
+
+                            if (boton.textContent !== 'Abrir carpeta') {
+                                boton.textContent = 'Abrir carpeta';
+                            }
+
+                            const tituloBoton = `Abrir ${destino}`;
+                            if (boton.title !== tituloBoton) {
+                                boton.title = tituloBoton;
+                            }
+                        }
+
+                        if (tarjetaPreparada) {
                             return;
                         }
 
-                        tarjeta.dataset.lsCapturaCarpeta = '1';
                         tarjeta.addEventListener('click', evento => {
                             if (!evento.target?.closest?.('button')) {
                                 return;
@@ -1508,6 +1743,35 @@ public partial class VentanaPrincipal : Window
                     });
                 }
 
+                function observarCambiosInterfaz() {
+                    if (observadorInterfaz && document.body) {
+                        observadorInterfaz.observe(document.body, opcionesObservadorInterfaz);
+                    }
+                }
+
+                function aplicarActualizacionInterfaz() {
+                    frameActualizacionInterfaz = null;
+                    observadorInterfaz?.disconnect();
+                    try {
+                        crearPanelFirmas();
+                        crearBotonRefresco();
+                        crearBotonExecutionPolicyPrincipal();
+                        organizarAccionesPrincipales();
+                        protegerDetenerTodo();
+                        aplicarVistaCarpetasScripts();
+                    } finally {
+                        observarCambiosInterfaz();
+                    }
+                }
+
+                function programarActualizacionInterfaz() {
+                    if (frameActualizacionInterfaz !== null) {
+                        return;
+                    }
+
+                    frameActualizacionInterfaz = window.requestAnimationFrame(aplicarActualizacionInterfaz);
+                }
+
                 function iniciar() {
                     instalarEstilosVisuales();
                     instalarWrapperAjustes();
@@ -1519,29 +1783,13 @@ public partial class VentanaPrincipal : Window
                         }
                     }, true);
 
-                    const observador = new MutationObserver(() => {
-                        crearPanelFirmas();
-                        crearBotonRefresco();
-                        crearBotonExecutionPolicyPrincipal();
-                        organizarAccionesPrincipales();
-                        protegerDetenerTodo();
-                        aplicarVistaCarpetasScripts();
-                    });
-                    observador.observe(document.body, { childList: true, subtree: true });
-                    crearPanelFirmas();
-                    crearBotonRefresco();
-                    crearBotonExecutionPolicyPrincipal();
-                    organizarAccionesPrincipales();
-                    protegerDetenerTodo();
-                    aplicarVistaCarpetasScripts();
+                    observadorInterfaz = new MutationObserver(programarActualizacionInterfaz);
+                    observarCambiosInterfaz();
+                    programarActualizacionInterfaz();
                     sincronizarModoDesarrollo();
                     window.setTimeout(sincronizarModoDesarrollo, 800);
                     window.setTimeout(sincronizarModoDesarrollo, 2500);
-                    window.setTimeout(crearBotonRefresco, 800);
-                    window.setTimeout(crearBotonExecutionPolicyPrincipal, 800);
-                    window.setTimeout(organizarAccionesPrincipales, 800);
-                    window.setTimeout(protegerDetenerTodo, 800);
-                    window.setTimeout(aplicarVistaCarpetasScripts, 800);
+                    window.setTimeout(programarActualizacionInterfaz, 800);
                 }
 
                 if (document.readyState === 'loading') {
@@ -1559,7 +1807,10 @@ public partial class VentanaPrincipal : Window
         return """
             (() => {
                 const idPanel = 'ls-ajustes-subcarpetas';
+                const opcionesObservadorSubcarpetas = { childList: true, subtree: true };
                 let wrapperInstalado = false;
+                let observadorSubcarpetas = null;
+                let frameActualizacionSubcarpetas = null;
 
                 function esApiAjustes(url, opciones) {
                     const metodo = (opciones && opciones.method ? opciones.method : 'GET').toUpperCase();
@@ -1805,11 +2056,35 @@ public partial class VentanaPrincipal : Window
                     cargarPanel(panel);
                 }
 
+                function observarCambiosSubcarpetas() {
+                    if (observadorSubcarpetas && document.body) {
+                        observadorSubcarpetas.observe(document.body, opcionesObservadorSubcarpetas);
+                    }
+                }
+
+                function aplicarActualizacionSubcarpetas() {
+                    frameActualizacionSubcarpetas = null;
+                    observadorSubcarpetas?.disconnect();
+                    try {
+                        crearPanel();
+                    } finally {
+                        observarCambiosSubcarpetas();
+                    }
+                }
+
+                function programarActualizacionSubcarpetas() {
+                    if (frameActualizacionSubcarpetas !== null) {
+                        return;
+                    }
+
+                    frameActualizacionSubcarpetas = window.requestAnimationFrame(aplicarActualizacionSubcarpetas);
+                }
+
                 function iniciar() {
                     instalarWrapperAjustes();
-                    const observador = new MutationObserver(crearPanel);
-                    observador.observe(document.body, { childList: true, subtree: true });
-                    crearPanel();
+                    observadorSubcarpetas = new MutationObserver(programarActualizacionSubcarpetas);
+                    observarCambiosSubcarpetas();
+                    programarActualizacionSubcarpetas();
                 }
 
                 if (document.readyState === 'loading') {
@@ -1826,7 +2101,11 @@ public partial class VentanaPrincipal : Window
         // Muestra avisos cuando se guardan rutas no disponibles.
         return """
             (() => {
+                const opcionesObservadorConfiguracion = { childList: true, subtree: true };
                 let wrapperInstalado = false;
+                let observadorConfiguracion = null;
+                let frameActualizacionConfiguracion = null;
+                let ultimoAvisoConexion = '';
 
                 function esApiConfiguracionApp(url, opciones) {
                     const metodo = (opciones && opciones.method ? opciones.method : 'GET').toUpperCase();
@@ -1842,6 +2121,20 @@ public partial class VentanaPrincipal : Window
                     }
                 }
 
+                function esApiUsuario(url, opciones) {
+                    const metodo = (opciones && opciones.method ? opciones.method : 'GET').toUpperCase();
+                    if (metodo !== 'GET') {
+                        return false;
+                    }
+
+                    try {
+                        const final = new URL(typeof url === 'string' ? url : url.url, window.location.href);
+                        return final.origin === window.location.origin && final.pathname === '/api/usuario';
+                    } catch {
+                        return false;
+                    }
+                }
+
                 function mostrarAviso(mensaje) {
                     if (!mensaje) {
                         return;
@@ -1852,22 +2145,80 @@ public partial class VentanaPrincipal : Window
 
                 function actualizarCampoRutaPermisos() {
                     const etiqueta = Array.from(document.querySelectorAll('label'))
-                        .find(elemento => (elemento.textContent || '').includes('Ruta del archivo de Permisos'));
+                        .find(elemento => elemento.dataset.lsRutaPermisos === '1'
+                            || (elemento.textContent || '').includes('Ruta del archivo de Permisos'));
                     if (!etiqueta) {
                         return;
                     }
 
-                    etiqueta.textContent = 'Ruta de la carpeta de permisos';
+                    if (etiqueta.dataset.lsRutaPermisos !== '1') {
+                        etiqueta.dataset.lsRutaPermisos = '1';
+                    }
+
+                    const textoEtiqueta = 'Ruta de la carpeta de permisos';
+                    if (etiqueta.textContent !== textoEtiqueta) {
+                        etiqueta.textContent = textoEtiqueta;
+                    }
+
                     const contenedor = etiqueta.parentElement;
                     const entrada = contenedor?.querySelector('input');
                     const ayuda = contenedor?.querySelector('p');
-                    if (entrada) {
-                        entrada.placeholder = '\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS';
+                    const placeholder = '\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS';
+                    if (entrada && entrada.placeholder !== placeholder) {
+                        entrada.placeholder = placeholder;
                     }
 
-                    if (ayuda) {
-                        ayuda.textContent = 'La aplicación busca permisos.json y catalogo-scripts.json únicamente dentro de esta carpeta.';
+                    const textoAyuda = 'La aplicación busca permisos.json y catalogo-scripts.json únicamente dentro de esta carpeta.';
+                    if (ayuda && ayuda.textContent !== textoAyuda) {
+                        ayuda.textContent = textoAyuda;
                     }
+                }
+
+                function actualizarAvisoConexion() {
+                    if (!ultimoAvisoConexion) {
+                        return;
+                    }
+
+                    const textoGenerico = 'No se puede conectar al servidor.';
+                    const aviso = Array.from(document.querySelectorAll('span'))
+                        .find(elemento => elemento.dataset.lsAvisoConexion === '1'
+                            || (elemento.textContent || '').trim() === textoGenerico);
+                    if (!aviso) {
+                        return;
+                    }
+
+                    if (aviso.dataset.lsAvisoConexion !== '1') {
+                        aviso.dataset.lsAvisoConexion = '1';
+                    }
+
+                    if (aviso.textContent !== ultimoAvisoConexion) {
+                        aviso.textContent = ultimoAvisoConexion;
+                    }
+                }
+
+                function observarCambiosConfiguracion() {
+                    if (observadorConfiguracion && document.body) {
+                        observadorConfiguracion.observe(document.body, opcionesObservadorConfiguracion);
+                    }
+                }
+
+                function aplicarActualizacionConfiguracion() {
+                    frameActualizacionConfiguracion = null;
+                    observadorConfiguracion?.disconnect();
+                    try {
+                        actualizarCampoRutaPermisos();
+                        actualizarAvisoConexion();
+                    } finally {
+                        observarCambiosConfiguracion();
+                    }
+                }
+
+                function programarActualizacionConfiguracion() {
+                    if (frameActualizacionConfiguracion !== null) {
+                        return;
+                    }
+
+                    frameActualizacionConfiguracion = window.requestAnimationFrame(aplicarActualizacionConfiguracion);
                 }
 
                 function iniciar() {
@@ -1878,24 +2229,168 @@ public partial class VentanaPrincipal : Window
                     wrapperInstalado = true;
                     const fetchAnterior = window.fetch.bind(window);
                     window.fetch = async (entrada, opciones = {}) => {
-                        const respuesta = await fetchAnterior(entrada, opciones);
-                        if (esApiConfiguracionApp(entrada, opciones)) {
-                            try {
+                        const peticionConfiguracion = esApiConfiguracionApp(entrada, opciones);
+                        const peticionUsuario = esApiUsuario(entrada, opciones);
+                        try {
+                            const respuesta = await fetchAnterior(entrada, opciones);
+                            if (peticionConfiguracion || peticionUsuario) {
                                 const datos = await respuesta.clone().json();
-                                mostrarAviso(datos.avisoConfiguracion || datos.avisoConexion || '');
-                            } catch {
+                                ultimoAvisoConexion = datos.avisoConexion
+                                    || (datos.modoOffline ? 'Los recursos remotos no estan disponibles.' : '');
+                                if (peticionConfiguracion) {
+                                    mostrarAviso(datos.avisoConfiguracion || datos.avisoConexion || '');
+                                }
+
+                                programarActualizacionConfiguracion();
+                            }
+
+                            return respuesta;
+                        } catch (error) {
+                            if (peticionConfiguracion || peticionUsuario) {
+                                ultimoAvisoConexion = 'El backend local no pudo procesar la solicitud.';
+                                programarActualizacionConfiguracion();
+                            }
+
+                            throw error;
+                        }
+                    };
+
+                    observadorConfiguracion = new MutationObserver(programarActualizacionConfiguracion);
+                    observarCambiosConfiguracion();
+                    programarActualizacionConfiguracion();
+                }
+
+                iniciar();
+            })();
+            """;
+    }
+
+    private static string ObtenerEstadoCargaAjustes()
+    {
+        // Muestra el estado de carga de Ajustes aunque la vista aun no haya cambiado.
+        return """
+            (() => {
+                const idEstado = 'ls-estado-carga-ajustes';
+                const rutasEsperadas = new Set(['/api/ajustes', '/api/configuracion-app']);
+                let cicloCarga = 0;
+                let rutasPendientes = new Set();
+                let temporizadorLento = null;
+                let temporizadorLimite = null;
+
+                function obtenerRutaApi(entrada, opciones) {
+                    const metodo = (opciones && opciones.method ? opciones.method : 'GET').toUpperCase();
+                    if (metodo !== 'GET') {
+                        return '';
+                    }
+
+                    try {
+                        const url = new URL(typeof entrada === 'string' ? entrada : entrada.url, window.location.href);
+                        return url.origin === window.location.origin && rutasEsperadas.has(url.pathname)
+                            ? url.pathname
+                            : '';
+                    } catch {
+                        return '';
+                    }
+                }
+
+                function asegurarEstado() {
+                    let estado = document.getElementById(idEstado);
+                    if (estado) {
+                        return estado;
+                    }
+
+                    estado = document.createElement('div');
+                    estado.id = idEstado;
+                    estado.setAttribute('role', 'status');
+                    estado.setAttribute('aria-live', 'polite');
+                    estado.style.cssText = 'position:fixed;top:5rem;left:50%;transform:translateX(-50%);z-index:150;max-width:min(42rem,calc(100vw - 2rem));padding:.65rem .9rem;border:1px solid rgba(56,189,248,.3);border-radius:.65rem;background:rgba(15,23,42,.96);color:#bae6fd;font:600 .78rem/1.35 system-ui,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,.35);pointer-events:none;display:none;';
+                    document.body.appendChild(estado);
+                    return estado;
+                }
+
+                function limpiarTemporizadores() {
+                    if (temporizadorLento !== null) {
+                        window.clearTimeout(temporizadorLento);
+                        temporizadorLento = null;
+                    }
+
+                    if (temporizadorLimite !== null) {
+                        window.clearTimeout(temporizadorLimite);
+                        temporizadorLimite = null;
+                    }
+                }
+
+                function mostrarEstado(mensaje, esError = false) {
+                    const estado = asegurarEstado();
+                    estado.textContent = mensaje;
+                    estado.style.display = 'block';
+                    estado.style.color = esError ? '#fecaca' : '#bae6fd';
+                    estado.style.borderColor = esError ? 'rgba(248,113,113,.4)' : 'rgba(56,189,248,.3)';
+                    estado.style.background = esError ? 'rgba(69,10,10,.96)' : 'rgba(15,23,42,.96)';
+                }
+
+                function ocultarEstado() {
+                    limpiarTemporizadores();
+                    const estado = document.getElementById(idEstado);
+                    if (estado) {
+                        estado.style.display = 'none';
+                    }
+                }
+
+                function iniciarCarga() {
+                    cicloCarga += 1;
+                    rutasPendientes = new Set(rutasEsperadas);
+                    limpiarTemporizadores();
+                    mostrarEstado('Abriendo Configuración Avanzada...');
+                    const cicloActual = cicloCarga;
+                    temporizadorLento = window.setTimeout(() => {
+                        if (cicloCarga === cicloActual && rutasPendientes.size > 0) {
+                            mostrarEstado('Comprobando permisos y rutas remotas. La interfaz sigue disponible.');
+                        }
+                    }, 900);
+                    temporizadorLimite = window.setTimeout(() => {
+                        if (cicloCarga === cicloActual && rutasPendientes.size > 0) {
+                            mostrarEstado('No se pudo abrir Ajustes a tiempo. Revisa la carpeta remota de permisos o usa el token de emergencia.', true);
+                        }
+                    }, 5000);
+                }
+
+                document.addEventListener('click', evento => {
+                    const boton = evento.target?.closest?.('button');
+                    if ((boton?.textContent || '').trim() === 'Configuración Avanzada') {
+                        iniciarCarga();
+                    }
+                }, true);
+
+                const fetchAnterior = window.fetch.bind(window);
+                window.fetch = async (entrada, opciones = {}) => {
+                    const ruta = obtenerRutaApi(entrada, opciones);
+                    const cicloPeticion = cicloCarga;
+                    try {
+                        const respuesta = await fetchAnterior(entrada, opciones);
+                        if (ruta && rutasPendientes.has(ruta) && cicloPeticion === cicloCarga) {
+                            const datos = await respuesta.clone().json().catch(() => ({}));
+                            if (!respuesta.ok || datos.error) {
+                                limpiarTemporizadores();
+                                mostrarEstado(datos.error || 'El backend local no pudo cargar la configuración.', true);
+                            } else {
+                                rutasPendientes.delete(ruta);
+                                if (rutasPendientes.size === 0) {
+                                    ocultarEstado();
+                                }
                             }
                         }
 
                         return respuesta;
-                    };
+                    } catch (error) {
+                        if (ruta && cicloPeticion === cicloCarga) {
+                            limpiarTemporizadores();
+                            mostrarEstado('El backend local no pudo procesar la solicitud de Ajustes.', true);
+                        }
 
-                    const observador = new MutationObserver(actualizarCampoRutaPermisos);
-                    observador.observe(document.body, { childList: true, subtree: true });
-                    actualizarCampoRutaPermisos();
-                }
-
-                iniciar();
+                        throw error;
+                    }
+                };
             })();
             """;
     }
