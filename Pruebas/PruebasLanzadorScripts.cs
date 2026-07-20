@@ -410,8 +410,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         var raiz = Path.Combine(entorno.Raiz, "compartida");
+        var zip = CrearZipRuntimeWebView2();
         var servicio = new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(CrearZipRuntimeWebView2()),
+            () => new MemoryStream(zip, writable: false),
             [raiz]);
 
         var resultados = await Task.WhenAll(
