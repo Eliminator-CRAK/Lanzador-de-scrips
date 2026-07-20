@@ -377,16 +377,24 @@ function New-NativeLauncher {
     $objetoCompilado = Join-Path $lanzadorNativoCompleta 'LanzadorNativo.obj'
     $comandoCompilacion = Join-Path $lanzadorNativoCompleta 'CompilarLanzador.cmd'
     $vsDevCmd = Get-VisualStudioDeveloperCommand
+    $lineaCompilacion = @(
+        'cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf',
+        '/DUNICODE /D_UNICODE',
+        "/Fo:`"$objetoCompilado`"",
+        "/Fe:`"$RutaSalida`"",
+        "`"$fuente`"",
+        "`"$recursoCompilado`"",
+        '/link /WX /SUBSYSTEM:WINDOWS /MACHINE:X64',
+        '/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT',
+        '/INCREMENTAL:NO /MANIFEST:NO /Brepro'
+    ) -join ' '
     $lineas = @(
         '@echo off',
         "call `"$vsDevCmd`" -no_logo -arch=x64 -host_arch=x64",
         'if errorlevel 1 exit /b %errorlevel%',
         "rc.exe /nologo /I `"$carpetaFuentes`" /fo `"$recursoCompilado`" `"$archivoRecursos`"",
         'if errorlevel 1 exit /b %errorlevel%',
-        "cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf " +
-            "/DUNICODE /D_UNICODE /Fo:`"$objetoCompilado`" /Fe:`"$RutaSalida`" " +
-            "`"$fuente`" `"$recursoCompilado`" /link /SUBSYSTEM:WINDOWS /MACHINE:X64 " +
-            '/WX /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT /INCREMENTAL:NO /MANIFEST:NO /Brepro',
+        $lineaCompilacion,
         'exit /b %errorlevel%'
     )
     [System.IO.File]::WriteAllLines(
