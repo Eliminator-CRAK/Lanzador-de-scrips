@@ -50,6 +50,15 @@ jobs:
       - name: Test
         run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
 
+      - name: Verify Visual C++ x64
+        shell: powershell
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $instalacion = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($instalacion)) {
+            throw 'La imagen no contiene las herramientas C++ x64 requeridas.'
+          }
+
       - name: Publish x64
         shell: pwsh
         env:
@@ -62,9 +71,13 @@ jobs:
           }
           if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
             $certPath = Join-Path $env:RUNNER_TEMP 'lanzador-signing.pfx'
-            [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
-            $securePassword = ConvertTo-SecureString $env:WINDOWS_SIGNING_CERT_PASSWORD -AsPlainText -Force
-            .\Herramientas\PublicarPortable.ps1 -CertPath $certPath -CertPassword $securePassword
+            try {
+              [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+              $securePassword = ConvertTo-SecureString $env:WINDOWS_SIGNING_CERT_PASSWORD -AsPlainText -Force
+              .\Herramientas\PublicarPortable.ps1 -CertPath $certPath -CertPassword $securePassword
+            } finally {
+              Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue
+            }
           } elseif ($env:EVENT_NAME -eq 'pull_request') {
             .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
           } else {

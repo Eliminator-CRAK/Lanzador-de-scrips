@@ -43,6 +43,7 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 | Carpeta remota de permisos no disponible | No ejecutar. Solo administracion puede activar emergencia temporal; los cambios de permisos quedan bloqueados mientras la carpeta siga inaccesible. |
 | Permisos ausentes o no validos | No ejecutar y comunicar el mensaje exacto al administrador. |
 | WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
+| El error muestra una ruta dentro de AppData | El EXE no corresponde a la version 1.4.3 o se ha abierto el componente interno. Cierre la app y use el `LanzadorScripts.exe` distribuido. |
 
 ## Logs
 

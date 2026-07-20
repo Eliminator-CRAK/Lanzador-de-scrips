@@ -9,7 +9,8 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 ## Arquitectura
 
-- WPF ejecuta la ventana principal con elevacion UAC mediante `requireAdministrator`.
+- Un lanzador nativo x64 solicita elevacion UAC mediante `requireAdministrator` y prepara las rutas antes de iniciar .NET.
+- WPF se ejecuta desde el componente .NET firmado que lleva embebido el EXE distribuido.
 - WebView2 muestra el cliente embebido y se comunica con el backend integrado.
 - El backend se aloja en el mismo proceso y no requiere instalar servicios.
 - El servidor local exige cookie de sesion y token interno por arranque para `/api/*`.
@@ -25,6 +26,9 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Logs de ejecucion | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
+| Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
+| Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
+| Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
 | Runtime WebView2 principal | `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2\<hash-version>` |
 | Staging TOCTOU | `%ProgramFiles%\LanzadorScripts\Staging` |
 
@@ -148,7 +152,11 @@ pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
 
 La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
 
-Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida, se reemplaza si fue alterada y se conceden los permisos de lectura y ejecucion requeridos por AppContainer. El runtime se ejecuta solo desde `Program Files`; un bloqueo explicito de WDAC o AppLocker requiere una regla corporativa. La publicacion exige `pwsh 7.6.x`; la cache queda en `Recursos\WebView2` y no se versiona.
+Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida, se reemplaza si fue alterada y se conceden los permisos de lectura y ejecucion requeridos por AppContainer. El runtime se ejecuta solo desde `Program Files`; un bloqueo explicito de WDAC o AppLocker requiere una regla corporativa.
+
+El publicador firma primero el runtime .NET interno y despues lo incluye como recurso de un lanzador nativo x64. El EXE exterior valida la huella SHA-256 del recurso y establece `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de que .NET pueda extraer archivos. La aplicacion interna y la extraccion nativa quedan en `Program Files`; los temporales privados quedan en `ProgramData`. No se utiliza AppData.
+
+La publicacion exige `pwsh 7.6.x` y las herramientas C++ x64 de Visual Studio; la cache de WebView2 queda en `Recursos\WebView2` y no se versiona.
 
 Para inicializarlos expresamente:
 
