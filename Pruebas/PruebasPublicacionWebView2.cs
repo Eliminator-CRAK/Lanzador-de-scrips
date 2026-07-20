@@ -83,6 +83,9 @@ public sealed class PruebasPublicacionWebView2
         Assert.True(creacionNativa > firmaRuntime);
         Assert.True(firmaFinal > creacionNativa);
         Assert.Contains("Assert-NativeLauncherPayload", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$lineaCompilacion = @(", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$lineaCompilacion,", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"cl.exe /nologo /std:c++20", publicacion, StringComparison.Ordinal);
         Assert.Contains("IDR_APLICACION_DOTNET RCDATA", plantillaRecursos, StringComparison.Ordinal);
         Assert.Contains("SetEnvironmentVariableW(L\"DOTNET_BUNDLE_EXTRACT_BASE_DIR\"", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("SetEnvironmentVariableW(L\"TEMP\"", codigoNativo, StringComparison.Ordinal);
