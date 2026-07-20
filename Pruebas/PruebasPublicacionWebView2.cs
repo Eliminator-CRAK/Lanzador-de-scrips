@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Pruebas del runtime WebView2 fijado y de la version publicada.
+// Descripcion: Pruebas del runtime WebView2 y del ejecutable portable publicado.
 
 using Xunit;
 
@@ -57,14 +57,43 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion142()
+    public void ProyectoPublicaVersion143()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
 
-        Assert.Contains("<Version>1.4.2</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.4.2.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.4.2.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.4.3</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.4.3.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.4.3.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
+    }
+
+    // Comprueba que el lanzador prepara .NET antes del codigo administrado.
+    [Fact]
+    public void PublicacionEnvuelveRuntimeDotNetEnLanzadorNativo()
+    {
+        var publicacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PublicarPortable.ps1"));
+        var codigoNativo = File.ReadAllText(ObtenerRutaProyecto("LanzadorNativo", "LanzadorNativo.cpp"));
+        var plantillaRecursos = File.ReadAllText(ObtenerRutaProyecto("LanzadorNativo", "LanzadorNativo.rc.in"));
+
+        var firmaRuntime = publicacion.IndexOf("Write-Host 'Firmando runtime .NET interno...'", StringComparison.Ordinal);
+        var creacionNativa = publicacion.IndexOf("Write-Host 'Creando lanzador nativo sin AppData...'", StringComparison.Ordinal);
+        var firmaFinal = publicacion.IndexOf("Write-Host 'Firmando lanzador portable final...'", StringComparison.Ordinal);
+
+        Assert.True(firmaRuntime >= 0);
+        Assert.True(creacionNativa > firmaRuntime);
+        Assert.True(firmaFinal > creacionNativa);
+        Assert.Contains("Assert-NativeLauncherPayload", publicacion, StringComparison.Ordinal);
+        Assert.Contains("IDR_APLICACION_DOTNET RCDATA", plantillaRecursos, StringComparison.Ordinal);
+        Assert.Contains("SetEnvironmentVariableW(L\"DOTNET_BUNDLE_EXTRACT_BASE_DIR\"", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("SetEnvironmentVariableW(L\"TEMP\"", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("SetEnvironmentVariableW(L\"TMP\"", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("SetEnvironmentVariableW(L\"WEBVIEW2_USER_DATA_FOLDER\"", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("FOLDERID_ProgramFiles", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("FOLDERID_ProgramData", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts.Runtime.exe", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("LANZADOR_DISTRIBUTION_EXE", codigoNativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("FOLDERID_LocalAppData", codigoNativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("LocalApplicationData", codigoNativo, StringComparison.Ordinal);
     }
 
     // Comprueba que la publicacion automatica usa PowerShell reproducible.
@@ -77,6 +106,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322", ci, StringComparison.Ordinal);
         Assert.Contains("PowerShell-$version-win-x64.zip", ci, StringComparison.Ordinal);
         Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", ci, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.VisualStudio.Component.VC.Tools.x86.x64", ci, StringComparison.Ordinal);
+        Assert.Contains("Remove-Item -LiteralPath $certPath", ci, StringComparison.Ordinal);
     }
 
     // Localiza archivos desde la raiz del proyecto.

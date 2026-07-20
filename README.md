@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.2 |
+| Version | 1.4.3 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -14,15 +14,17 @@
 
 ```mermaid
 flowchart TD
-    A[Aplicacion WPF con elevacion UAC] --> B[WebView2]
-    B --> C[ClienteWeb embebido]
-    C --> D[Backend integrado]
-    D --> E[Descubrimiento scripts]
-    D --> F[Gestor ejecucion]
-    D --> G[Permisos]
-    F --> H[PowerShell]
-    G --> I[permisos.json cifrado]
-    G --> J[catalogo-scripts.json cifrado]
+    A[Lanzador nativo con elevacion UAC] --> B[Runtime .NET embebido]
+    B --> C[Aplicacion WPF]
+    C --> D[WebView2]
+    D --> E[ClienteWeb embebido]
+    E --> F[Backend integrado]
+    F --> G[Descubrimiento scripts]
+    F --> H[Gestor ejecucion]
+    F --> I[Permisos]
+    H --> J[PowerShell]
+    I --> K[permisos.json cifrado]
+    I --> L[catalogo-scripts.json cifrado]
 ```
 
 ## Rutas
@@ -34,6 +36,9 @@ flowchart TD
 | Logs | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
+| Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
+| Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
+| Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
 | Runtime WebView2 principal | `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2` |
 | Staging ejecucion | `%ProgramFiles%\LanzadorScripts\Staging` |
 
@@ -56,7 +61,7 @@ Las rutas antiguas que apuntaban directamente a `permisos.json` se migran a la c
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
-El proceso usa WebView2 Fixed Version Runtime x64 `150.0.4078.48`, valida su version, arquitectura, firma y hashes, genera un ZIP reproducible y lo embebe como recurso dentro del EXE. La publicacion exige `pwsh 7.6.x`. No instala runtime, servicios, certificados, cuentas, tareas ni puertos en los equipos cliente.
+El proceso usa WebView2 Fixed Version Runtime x64 `150.0.4078.48`, valida su version, arquitectura, firma y hashes, genera un ZIP reproducible y lo embebe como recurso dentro del EXE. Tambien crea un lanzador nativo x64 que contiene el runtime .NET firmado. Ese lanzador fija `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de iniciar .NET, por lo que el proceso no depende de `%LocalAppData%\Temp\.net`. La publicacion exige `pwsh 7.6.x` y las herramientas C++ x64 de Visual Studio. No instala servicios, certificados, cuentas, tareas ni puertos en los equipos cliente.
 
 Para firmar el EXE final, usar:
 
@@ -76,7 +81,7 @@ La inicializacion explicita de ambos archivos operativos se realiza con:
 .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
-La publicacion final debe ser self-contained, single-file y x64. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
+La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
 El pipeline de GitHub instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
 
@@ -87,6 +92,8 @@ La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%ProgramFile
 Cada extraccion concede lectura y ejecucion a `ALL APPLICATION PACKAGES` y `ALL RESTRICTED APPLICATION PACKAGES`, requeridos por el aislamiento de WebView2 Fixed Runtime. Los usuarios normales no reciben permisos de escritura sobre los binarios.
 
 La aplicacion usa `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` como perfil local de WebView2. El identificador se obtiene del hash completo del SID; las raices impiden que otro usuario precree carpetas y la carpeta privada solo concede escritura a ese usuario, administradores y sistema. Si el perfil falla, la aplicacion intenta recuperarlo dentro de su zona privada y, como ultimo recurso, en `C:\Windows\Temp\LanzadorScripts` sin ejecutar binarios desde esa ruta.
+
+Antes de arrancar .NET, el lanzador nativo dirige la extraccion del bundle a `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet` y los temporales a la carpeta privada del usuario en `%ProgramData%`. Ninguna de esas rutas utiliza AppData.
 
 | Caso | Accion |
 |---|---|

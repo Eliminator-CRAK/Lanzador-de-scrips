@@ -11,7 +11,7 @@ public static class ServicioAsociacionArchivos
 
     public static void Registrar()
     {
-        var rutaEjecutable = Environment.ProcessPath;
+        var rutaEjecutable = ServicioEjecutableAplicacion.ResolverRutaRelanzable();
         if (string.IsNullOrWhiteSpace(rutaEjecutable))
         {
             return;

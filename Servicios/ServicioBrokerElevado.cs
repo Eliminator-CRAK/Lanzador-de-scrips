@@ -24,7 +24,8 @@ public sealed class ServicioBrokerElevado
 
     public static bool EstaDisponible()
     {
-        return OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(Environment.ProcessPath);
+        return OperatingSystem.IsWindows() &&
+            !string.IsNullOrWhiteSpace(ServicioEjecutableAplicacion.ResolverRutaRelanzable());
     }
 
     public static bool EsSolicitudBroker(string[] argumentos)
@@ -230,7 +231,8 @@ public sealed class ServicioBrokerElevado
 
     private static Process IniciarBroker(string nombrePipe, string token)
     {
-        var rutaExe = Environment.ProcessPath ?? throw new InvalidOperationException("No se pudo resolver la ruta del ejecutable.");
+        var rutaExe = ServicioEjecutableAplicacion.ResolverRutaRelanzable() ??
+            throw new InvalidOperationException("No se pudo resolver la ruta del ejecutable.");
         var inicio = new ProcessStartInfo
         {
             FileName = rutaExe,

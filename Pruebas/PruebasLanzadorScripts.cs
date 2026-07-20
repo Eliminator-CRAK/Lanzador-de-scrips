@@ -89,6 +89,31 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void AsociacionPriorizaElExeUnicoDistribuido()
+    {
+        const string distribuido = @"C:\Distribucion\LanzadorScripts.exe";
+        const string interno = @"C:\Program Files\LanzadorScripts\Aplicacion\LanzadorScripts.Runtime.exe";
+        var broker = File.ReadAllText(Path.Combine(
+            ObtenerRaizProyecto(),
+            "Servicios",
+            "ServicioBrokerElevado.cs"));
+
+        var seleccionado = ServicioEjecutableAplicacion.SeleccionarRutaEjecutable(
+            distribuido,
+            interno,
+            ruta => string.Equals(ruta, distribuido, StringComparison.OrdinalIgnoreCase));
+        var alternativo = ServicioEjecutableAplicacion.SeleccionarRutaEjecutable(
+            @"LanzadorScripts.exe",
+            interno,
+            _ => true);
+
+        Assert.Equal(distribuido, seleccionado, ignoreCase: true);
+        Assert.Equal(interno, alternativo, ignoreCase: true);
+        Assert.Contains("ServicioEjecutableAplicacion.ResolverRutaRelanzable()", broker, StringComparison.Ordinal);
+        Assert.DoesNotContain("Environment.ProcessPath", broker, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AplicacionNoIncluyeModoServicio()
     {
         var raiz = ObtenerRaizProyecto();

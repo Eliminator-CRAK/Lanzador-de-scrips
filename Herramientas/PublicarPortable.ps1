@@ -26,6 +26,8 @@ $raiz = Split-Path -Parent $PSScriptRoot
 $proyecto = Join-Path $raiz 'LanzadorScripts.csproj'
 $salida = Join-Path $raiz 'publicacion'
 $salidaStaging = Join-Path $raiz 'obj\PublicacionStaging'
+$salidaRuntimeStaging = Join-Path $raiz 'obj\PublicacionRuntime'
+$salidaLanzadorNativo = Join-Path $raiz 'obj\LanzadorNativoBuild'
 $salidaAnterior = Join-Path $raiz "obj\PublicacionAnterior-$PID"
 $tamanoMinimoExe = 209715200
 $cacheWebView2 = Join-Path $raiz 'Recursos\WebView2'
@@ -44,6 +46,8 @@ $raizCompleta = [System.IO.Path]::GetFullPath($raiz).TrimEnd(
     [System.IO.Path]::AltDirectorySeparatorChar)
 $salidaCompleta = [System.IO.Path]::GetFullPath($salida)
 $stagingCompleta = [System.IO.Path]::GetFullPath($salidaStaging)
+$runtimeStagingCompleta = [System.IO.Path]::GetFullPath($salidaRuntimeStaging)
+$lanzadorNativoCompleta = [System.IO.Path]::GetFullPath($salidaLanzadorNativo)
 $salidaAnteriorCompleta = [System.IO.Path]::GetFullPath($salidaAnterior)
 $prefijoPermitido = $raizCompleta + [System.IO.Path]::DirectorySeparatorChar
 
@@ -56,6 +60,8 @@ $carpetaObjCompleta = [System.IO.Path]::GetFullPath((Join-Path $raiz 'obj')).Tri
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 if (-not $stagingCompleta.StartsWith($carpetaObjCompleta, [System.StringComparison]::OrdinalIgnoreCase) -or
+    -not $runtimeStagingCompleta.StartsWith($carpetaObjCompleta, [System.StringComparison]::OrdinalIgnoreCase) -or
+    -not $lanzadorNativoCompleta.StartsWith($carpetaObjCompleta, [System.StringComparison]::OrdinalIgnoreCase) -or
     -not $salidaAnteriorCompleta.StartsWith($carpetaObjCompleta, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw 'Las carpetas temporales de publicacion no estan dentro de obj.'
 }
@@ -119,6 +125,334 @@ function Invoke-NativeChecked {
     $codigoSalida = $LASTEXITCODE
     if ($codigoSalida -ne 0) {
         throw "$Descripcion fallo. Codigo de salida: $codigoSalida"
+    }
+}
+
+function Get-VisualStudioDeveloperCommand {
+    # Localiza las herramientas nativas x64 usadas para crear el EXE exterior.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+        throw 'No se encontro vswhere.exe para localizar las herramientas nativas de Visual Studio.'
+    }
+
+    $instalacion = (& $vswhere `
+        -latest `
+        -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($instalacion)) {
+        throw 'No se encontraron las herramientas C++ x64 de Visual Studio.'
+    }
+
+    $comando = Join-Path $instalacion 'Common7\Tools\VsDevCmd.bat'
+    if (-not (Test-Path -LiteralPath $comando -PathType Leaf)) {
+        throw "No se encontro VsDevCmd.bat en $instalacion."
+    }
+
+    return $comando
+}
+
+function ConvertTo-RcLiteral {
+    param(
+        [string]$Valor
+    )
+
+    return $Valor.Replace('\', '\\').Replace('"', '\"')
+}
+
+function Initialize-NativeResourceReader {
+    if ('LanzadorScripts.Publicacion.RecursosNativos' -as [type]) {
+        return
+    }
+
+    # Lee recursos PE sin ejecutar el archivo publicado.
+    Add-Type -TypeDefinition @'
+// (Autor: Alex Roman)
+// Descripcion: Lee recursos del lanzador nativo durante la publicacion.
+
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace LanzadorScripts.Publicacion
+{
+    public static class RecursosNativos
+    {
+        private const uint LoadLibraryAsDataFile = 0x00000002;
+        private const uint LoadLibraryAsImageResource = 0x00000020;
+        private static readonly IntPtr TipoRcData = new IntPtr(10);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr LoadLibraryEx(string fileName, IntPtr file, uint flags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr FindResource(IntPtr module, IntPtr name, IntPtr type);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint SizeofResource(IntPtr module, IntPtr resource);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LoadResource(IntPtr module, IntPtr resource);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LockResource(IntPtr resourceData);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool FreeLibrary(IntPtr module);
+
+        public static long ObtenerTamano(string fileName, int resourceId)
+        {
+            IntPtr module = Abrir(fileName);
+            try
+            {
+                IntPtr resource = Buscar(module, resourceId);
+                return SizeofResource(module, resource);
+            }
+            finally
+            {
+                FreeLibrary(module);
+            }
+        }
+
+        public static string LeerAscii(string fileName, int resourceId)
+        {
+            IntPtr module = Abrir(fileName);
+            try
+            {
+                IntPtr resource = Buscar(module, resourceId);
+                uint size = SizeofResource(module, resource);
+                IntPtr loaded = LoadResource(module, resource);
+                IntPtr data = loaded == IntPtr.Zero ? IntPtr.Zero : LockResource(loaded);
+                if (data == IntPtr.Zero || size == 0)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                int length = checked((int)size);
+                byte[] bytes = new byte[length];
+                Marshal.Copy(data, bytes, 0, bytes.Length);
+                return Encoding.ASCII.GetString(bytes);
+            }
+            finally
+            {
+                FreeLibrary(module);
+            }
+        }
+
+        public static string ObtenerSha256(string fileName, int resourceId)
+        {
+            IntPtr module = Abrir(fileName);
+            try
+            {
+                IntPtr resource = Buscar(module, resourceId);
+                uint size = SizeofResource(module, resource);
+                IntPtr loaded = LoadResource(module, resource);
+                IntPtr data = loaded == IntPtr.Zero ? IntPtr.Zero : LockResource(loaded);
+                if (data == IntPtr.Zero || size == 0 || size > int.MaxValue)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                byte[] buffer = new byte[1024 * 1024];
+                IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                try
+                {
+                    int offset = 0;
+                    int remaining = checked((int)size);
+                    while (remaining > 0)
+                    {
+                        int count = Math.Min(buffer.Length, remaining);
+                        Marshal.Copy(IntPtr.Add(data, offset), buffer, 0, count);
+                        hash.AppendData(buffer, 0, count);
+                        offset += count;
+                        remaining -= count;
+                    }
+
+                    return Convert.ToHexString(hash.GetHashAndReset());
+                }
+                finally
+                {
+                    hash.Dispose();
+                }
+            }
+            finally
+            {
+                FreeLibrary(module);
+            }
+        }
+
+        private static IntPtr Abrir(string fileName)
+        {
+            IntPtr module = LoadLibraryEx(
+                fileName,
+                IntPtr.Zero,
+                LoadLibraryAsDataFile | LoadLibraryAsImageResource);
+            if (module == IntPtr.Zero)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return module;
+        }
+
+        private static IntPtr Buscar(IntPtr module, int resourceId)
+        {
+            IntPtr resource = FindResource(module, new IntPtr(resourceId), TipoRcData);
+            if (resource == IntPtr.Zero)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return resource;
+        }
+    }
+}
+'@
+}
+
+function New-NativeLauncher {
+    param(
+        [string]$RutaPayload,
+        [string]$HashPayload,
+        [string]$RutaSalida
+    )
+
+    # Genera el lanzador que prepara las rutas antes de iniciar .NET.
+    $carpetaFuentes = Join-Path $raiz 'LanzadorNativo'
+    $fuente = Join-Path $carpetaFuentes 'LanzadorNativo.cpp'
+    $plantillaRecursos = Join-Path $carpetaFuentes 'LanzadorNativo.rc.in'
+    $cabeceraRecursos = Join-Path $carpetaFuentes 'RecursosLanzador.h'
+    foreach ($archivo in @($fuente, $plantillaRecursos, $cabeceraRecursos, (Join-Path $raiz 'manifiesto.manifest'))) {
+        if (-not (Test-Path -LiteralPath $archivo -PathType Leaf)) {
+            throw "No se encontro un archivo del lanzador nativo: $archivo"
+        }
+    }
+
+    if (Test-Path -LiteralPath $lanzadorNativoCompleta) {
+        Remove-Item -LiteralPath $lanzadorNativoCompleta -Recurse -Force
+    }
+
+    New-Item -ItemType Directory -Path $lanzadorNativoCompleta | Out-Null
+    $archivoHash = Join-Path $lanzadorNativoCompleta 'payload.sha256'
+    [System.IO.File]::WriteAllText(
+        $archivoHash,
+        $HashPayload,
+        [System.Text.Encoding]::ASCII)
+
+    $partesVersion = $versionArchivoEsperada.Split('.')
+    if ($partesVersion.Count -ne 4 -or
+        @($partesVersion | Where-Object { $_ -notmatch '^[0-9]+$' }).Count -gt 0) {
+        throw "La version de archivo no es valida para VERSIONINFO: $versionArchivoEsperada"
+    }
+
+    $producto = "$versionProductoEsperada+$revisionGitEsperada"
+    $contenidoRecursos = Get-Content -LiteralPath $plantillaRecursos -Raw
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__RUTA_MANIFIESTO__',
+        (ConvertTo-RcLiteral (Join-Path $raiz 'manifiesto.manifest')))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__RUTA_PAYLOAD__',
+        (ConvertTo-RcLiteral $RutaPayload))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__RUTA_HASH_PAYLOAD__',
+        (ConvertTo-RcLiteral $archivoHash))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__VERSION_ARCHIVO_COMAS__',
+        ($partesVersion -join ','))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__VERSION_ARCHIVO__',
+        $versionArchivoEsperada)
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__VERSION_PRODUCTO__',
+        $producto)
+    $archivoRecursos = Join-Path $lanzadorNativoCompleta 'LanzadorNativo.rc'
+    [System.IO.File]::WriteAllText(
+        $archivoRecursos,
+        $contenidoRecursos,
+        [System.Text.Encoding]::Unicode)
+
+    $recursoCompilado = Join-Path $lanzadorNativoCompleta 'LanzadorNativo.res'
+    $objetoCompilado = Join-Path $lanzadorNativoCompleta 'LanzadorNativo.obj'
+    $comandoCompilacion = Join-Path $lanzadorNativoCompleta 'CompilarLanzador.cmd'
+    $vsDevCmd = Get-VisualStudioDeveloperCommand
+    $lineas = @(
+        '@echo off',
+        "call `"$vsDevCmd`" -no_logo -arch=x64 -host_arch=x64",
+        'if errorlevel 1 exit /b %errorlevel%',
+        "rc.exe /nologo /I `"$carpetaFuentes`" /fo `"$recursoCompilado`" `"$archivoRecursos`"",
+        'if errorlevel 1 exit /b %errorlevel%',
+        "cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf " +
+            "/DUNICODE /D_UNICODE /Fo:`"$objetoCompilado`" /Fe:`"$RutaSalida`" " +
+            "`"$fuente`" `"$recursoCompilado`" /link /SUBSYSTEM:WINDOWS /MACHINE:X64 " +
+            '/WX /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT /INCREMENTAL:NO /MANIFEST:NO /Brepro',
+        'exit /b %errorlevel%'
+    )
+    [System.IO.File]::WriteAllLines(
+        $comandoCompilacion,
+        $lineas,
+        [System.Text.Encoding]::ASCII)
+
+    Invoke-NativeChecked -Descripcion 'compilacion del lanzador nativo' -Comando {
+        & $env:ComSpec /d /c $comandoCompilacion
+    }
+
+    if (-not (Test-Path -LiteralPath $RutaSalida -PathType Leaf)) {
+        throw 'La compilacion nativa no genero LanzadorScripts.exe.'
+    }
+
+    $arquitectura = Get-PortableExecutableMachine -Ruta $RutaSalida
+    if ($arquitectura -ne $arquitecturaPeX64) {
+        throw ('El lanzador nativo no es x64. Arquitectura PE: 0x{0:X4}.' -f $arquitectura)
+    }
+}
+
+function Assert-NativeLauncherPayload {
+    param(
+        [string]$RutaLanzador,
+        [string]$RutaPayload,
+        [string]$HashPayload
+    )
+
+    # Comprueba que el EXE exterior contiene el runtime firmado esperado.
+    Initialize-NativeResourceReader
+    $tamanoRecurso = [LanzadorScripts.Publicacion.RecursosNativos]::ObtenerTamano(
+        $RutaLanzador,
+        101)
+    $tamanoPayload = (Get-Item -LiteralPath $RutaPayload).Length
+    if ($tamanoRecurso -ne $tamanoPayload) {
+        throw "El recurso .NET embebido tiene un tamano inesperado: $tamanoRecurso."
+    }
+
+    $hashRecurso = [LanzadorScripts.Publicacion.RecursosNativos]::LeerAscii(
+        $RutaLanzador,
+        102).Trim()
+    if (-not $hashRecurso.Equals($HashPayload, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "El lanzador nativo contiene un hash .NET inesperado: $hashRecurso."
+    }
+
+    $hashPayloadEmbebido = [LanzadorScripts.Publicacion.RecursosNativos]::ObtenerSha256(
+        $RutaLanzador,
+        101)
+    if (-not $hashPayloadEmbebido.Equals($HashPayload, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "El recurso .NET embebido esta corrupto. Esperado: $HashPayload. Detectado: $hashPayloadEmbebido."
+    }
+}
+
+function Set-ExecutableSignature {
+    param(
+        [string]$RutaExe,
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificado,
+        [string]$Descripcion
+    )
+
+    $firma = Set-AuthenticodeSignature `
+        -FilePath $RutaExe `
+        -Certificate $Certificado `
+        -TimestampServer $TimestampServer
+    if ($firma.Status -ne 'Valid') {
+        throw "No se pudo firmar $Descripcion correctamente: $($firma.Status)."
     }
 }
 
@@ -491,9 +825,17 @@ Invoke-NativeChecked -Descripcion 'dotnet test' -Comando {
     dotnet test (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj') -c Release --no-restore
 }
 
-Write-Host 'Publicando ejecutable portable...'
+Write-Host 'Publicando runtime .NET interno...'
 if (Test-Path -LiteralPath $stagingCompleta) {
     Remove-Item -LiteralPath $stagingCompleta -Recurse -Force
+}
+
+if (Test-Path -LiteralPath $runtimeStagingCompleta) {
+    Remove-Item -LiteralPath $runtimeStagingCompleta -Recurse -Force
+}
+
+if (Test-Path -LiteralPath $salidaAnteriorCompleta) {
+    Remove-Item -LiteralPath $salidaAnteriorCompleta -Recurse -Force
 }
 
 Invoke-NativeChecked -Descripcion 'dotnet publish' -Comando {
@@ -510,12 +852,12 @@ Invoke-NativeChecked -Descripcion 'dotnet publish' -Comando {
         -p:UseAppHost=true `
         -p:DebugType=None `
         -p:DebugSymbols=false `
-        -o $stagingCompleta
+        -o $runtimeStagingCompleta
 }
 
-$exe = Join-Path $stagingCompleta 'LanzadorScripts.exe'
-if (-not (Test-Path -LiteralPath $exe)) {
-    throw 'No se genero LanzadorScripts.exe.'
+$runtimeExe = Join-Path $runtimeStagingCompleta 'LanzadorScripts.exe'
+if (-not (Test-Path -LiteralPath $runtimeExe)) {
+    throw 'No se genero el runtime .NET interno.'
 }
 
 $ensambladoPublicado = Join-Path $raiz 'bin\Release\net10.0-windows\win-x64\LanzadorScripts.dll'
@@ -523,17 +865,41 @@ Assert-WebView2EmbeddedResource -RutaEnsamblado $ensambladoPublicado
 
 $certificadoFirma = Get-SigningCertificate
 if ($null -ne $certificadoFirma) {
-    Write-Host 'Firmando ejecutable Authenticode...'
-    $firmaExe = Set-AuthenticodeSignature -FilePath $exe -Certificate $certificadoFirma -TimestampServer $TimestampServer
-    if ($firmaExe.Status -ne 'Valid') {
-        throw "No se pudo firmar el EXE correctamente: $($firmaExe.Status)."
-    }
+    Write-Host 'Firmando runtime .NET interno...'
+    Set-ExecutableSignature `
+        -RutaExe $runtimeExe `
+        -Certificado $certificadoFirma `
+        -Descripcion 'el runtime .NET interno'
 } else {
     if (-not $AllowUnsignedForDev) {
         throw 'No se indico certificado Authenticode. Use -AllowUnsignedForDev solo para pruebas locales.'
     }
 
     Write-Warning 'Publicacion local sin firma permitida explicitamente para desarrollo.'
+}
+
+$hashRuntimeExe = Assert-PublishedExecutable `
+    -RutaExe $runtimeExe `
+    -DebeEstarFirmado ($null -ne $certificadoFirma)
+
+Write-Host 'Creando lanzador nativo sin AppData...'
+New-Item -ItemType Directory -Path $stagingCompleta | Out-Null
+$exe = Join-Path $stagingCompleta 'LanzadorScripts.exe'
+New-NativeLauncher `
+    -RutaPayload $runtimeExe `
+    -HashPayload $hashRuntimeExe `
+    -RutaSalida $exe
+Assert-NativeLauncherPayload `
+    -RutaLanzador $exe `
+    -RutaPayload $runtimeExe `
+    -HashPayload $hashRuntimeExe
+
+if ($null -ne $certificadoFirma) {
+    Write-Host 'Firmando lanzador portable final...'
+    Set-ExecutableSignature `
+        -RutaExe $exe `
+        -Certificado $certificadoFirma `
+        -Descripcion 'el lanzador portable final'
 }
 
 if ($InicializarArtefactos) {
@@ -634,6 +1000,16 @@ if (Test-Path -LiteralPath $salidaAnteriorCompleta) {
         Remove-Item -LiteralPath $salidaAnteriorCompleta -Recurse -Force
     } catch {
         Write-Warning "La publicacion anterior quedo retenida temporalmente en $salidaAnteriorCompleta."
+    }
+}
+
+foreach ($temporalPublicacion in @($runtimeStagingCompleta, $lanzadorNativoCompleta)) {
+    try {
+        if (Test-Path -LiteralPath $temporalPublicacion) {
+            Remove-Item -LiteralPath $temporalPublicacion -Recurse -Force
+        }
+    } catch {
+        Write-Warning "No se pudo retirar la carpeta temporal $temporalPublicacion."
     }
 }
 
