@@ -491,14 +491,15 @@ public partial class VentanaPrincipal : Window
     {
         try
         {
+            var rutaSegura = ServicioPaquetesConfiguracion.ResolverRutaImportacion(rutaArchivo);
             var endpoint = _endpointServicio ?? await ObtenerEndpointBackendAsync();
             _endpointServicio = endpoint;
-            var contenidoBase64 = Convert.ToBase64String(await File.ReadAllBytesAsync(rutaArchivo));
+            var contenidoBase64 = Convert.ToBase64String(await File.ReadAllBytesAsync(rutaSegura));
             using var cliente = await CrearClienteServicioAsync(endpoint);
             var tokenAdmin = await ObtenerTokenAdminAsync(cliente);
             var cuerpo = JsonSerializer.Serialize(new
             {
-                nombreArchivo = Path.GetFileName(rutaArchivo),
+                nombreArchivo = Path.GetFileName(rutaSegura),
                 contenidoBase64
             });
             using var peticion = new HttpRequestMessage(HttpMethod.Post, "/api/configuracion-paquete/importar")

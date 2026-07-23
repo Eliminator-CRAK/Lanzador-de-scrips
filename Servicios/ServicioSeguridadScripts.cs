@@ -156,7 +156,13 @@ public sealed class ServicioSeguridadScripts
 
     public static string CalcularSha256(string ruta)
     {
-        using var flujo = File.OpenRead(ruta);
+        var rutaSegura = ServicioRutasSeguras.ResolverArchivoAbsoluto(
+            ruta,
+            "script",
+            ".ps1",
+            ".bat",
+            ".cmd");
+        using var flujo = File.OpenRead(rutaSegura);
         return Convert.ToHexString(SHA256.HashData(flujo));
     }
 

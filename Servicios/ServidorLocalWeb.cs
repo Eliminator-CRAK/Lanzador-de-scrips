@@ -18,6 +18,7 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServidorLocalWeb : IDisposable
 {
     private const string NombreCookieSesion = "LanzadorScriptsSesion";
+    private const int LongitudMaximaDetalleErrorBackend = 360;
     internal const string MensajeBackendLocalNoDisponible = "El backend local no pudo procesar la solicitud.";
     internal const string MensajeCarpetaPermisosNoDisponible = "La carpeta remota de permisos no esta disponible.";
     internal const string MensajeCarpetaScriptsNoDisponible = "La carpeta remota de scripts no esta disponible.";
@@ -54,7 +55,6 @@ public sealed class ServidorLocalWeb : IDisposable
     private Task<DiagnosticoPermisos>? _tareaDiagnosticoAjustes;
     private DiagnosticoPermisos? _diagnosticoAjustesReciente;
     private DateTimeOffset _diagnosticoAjustesValidoHasta;
-    private bool _diagnosticoAjustesAgotoEspera;
     private volatile bool _modoDesarrolloFirmas;
 
     private ServidorLocalWeb(int puerto)
@@ -182,11 +182,16 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (contexto.Response.OutputStream.CanWrite)
             {
-                await _servicioAuditoria.RegistrarErrorInternoAsync("api.backend_local.error", ex.GetType().Name);
+                var ruta = contexto.Request.Url?.AbsolutePath ?? "/";
+                var mensaje = CrearMensajeErrorBackend(ruta, ex);
+                var detalleAuditoria = $"{ex.GetType().Name}: {ServicioRedaccionSecretos.Sanitizar(ex.Message)}";
+                await _servicioAuditoria.RegistrarErrorInternoAsync("api.backend_local.error", detalleAuditoria);
                 await EscribirJsonAsync(contexto, 503, new
                 {
-                    error = MensajeBackendLocalNoDisponible,
-                    avisoConexion = MensajeBackendLocalNoDisponible
+                    error = mensaje,
+                    avisoConexion = mensaje,
+                    ruta,
+                    tipo = ex.GetType().Name
                 });
             }
         }
@@ -200,6 +205,27 @@ public sealed class ServidorLocalWeb : IDisposable
             {
             }
         }
+    }
+
+    internal static string CrearMensajeErrorBackend(string ruta, Exception ex)
+    {
+        var rutaSegura = string.IsNullOrWhiteSpace(ruta) ? "/" : ruta.Trim();
+        var detalle = CrearDetalleErrorBackend(ex);
+        return $"{MensajeBackendLocalNoDisponible} Ruta: {rutaSegura}. Detalle: {detalle}";
+    }
+
+    private static string CrearDetalleErrorBackend(Exception ex)
+    {
+        var mensaje = ServicioRedaccionSecretos.Sanitizar(ex.Message).Trim();
+        if (string.IsNullOrWhiteSpace(mensaje))
+        {
+            mensaje = ex.GetType().Name;
+        }
+
+        mensaje = Regex.Replace(mensaje, "\\s+", " ");
+        return mensaje.Length <= LongitudMaximaDetalleErrorBackend
+            ? mensaje
+            : mensaje[..LongitudMaximaDetalleErrorBackend] + "...";
     }
 
     private async Task ProcesarApiAsync(HttpListenerContext contexto, string ruta)
@@ -715,7 +741,6 @@ public sealed class ServidorLocalWeb : IDisposable
     private async Task ProcesarImportacionPaqueteConfiguracionAsync(HttpListenerContext contexto)
     {
         var cuerpo = await LeerJsonAsync(contexto.Request);
-        var nombreArchivo = Path.GetFileName(LeerTexto(cuerpo, "nombreArchivo", "configuracion.lanzadorconfig"));
         var contenidoBase64 = LeerTexto(cuerpo, "contenidoBase64", string.Empty);
         if (string.IsNullOrWhiteSpace(contenidoBase64))
         {
@@ -724,9 +749,11 @@ public sealed class ServidorLocalWeb : IDisposable
         }
 
         ServicioDirectoriosAplicacion.PrepararDirectorioPrivado(RutasAplicacion.RutaImportacionesTemporales);
-        var rutaTemporal = Path.Combine(
+        var rutaTemporal = ServicioRutasSeguras.ResolverArchivoEnCarpeta(
             RutasAplicacion.RutaImportacionesTemporales,
-            $"LanzadorScripts_{Guid.NewGuid():N}_{nombreArchivo}");
+            $"LanzadorScripts_{Guid.NewGuid():N}{ServicioPaquetesConfiguracion.ExtensionPaquete}",
+            "paquete de configuracion temporal",
+            ServicioPaquetesConfiguracion.ExtensionPaquete);
         try
         {
             File.WriteAllBytes(rutaTemporal, Convert.FromBase64String(contenidoBase64));
@@ -1219,12 +1246,6 @@ public sealed class ServidorLocalWeb : IDisposable
                 return _diagnosticoAjustesReciente;
             }
 
-            if (_tareaDiagnosticoAjustes is { IsCompleted: false }
-                && _diagnosticoAjustesAgotoEspera)
-            {
-                return CrearDiagnosticoPermisosNoDisponible();
-            }
-
             _tareaDiagnosticoAjustes ??= Task.Run(ObtenerDiagnosticoPermisos);
             tarea = _tareaDiagnosticoAjustes;
         }
@@ -1232,14 +1253,6 @@ public sealed class ServidorLocalWeb : IDisposable
         var completada = await Task.WhenAny(tarea, Task.Delay(TimeSpan.FromSeconds(2)));
         if (completada != tarea)
         {
-            lock (_bloqueoDiagnosticoAjustes)
-            {
-                if (ReferenceEquals(_tareaDiagnosticoAjustes, tarea))
-                {
-                    _diagnosticoAjustesAgotoEspera = true;
-                }
-            }
-
             return CrearDiagnosticoPermisosNoDisponible();
         }
 
@@ -1258,9 +1271,16 @@ public sealed class ServidorLocalWeb : IDisposable
             if (ReferenceEquals(_tareaDiagnosticoAjustes, tarea))
             {
                 _tareaDiagnosticoAjustes = null;
-                _diagnosticoAjustesAgotoEspera = false;
-                _diagnosticoAjustesReciente = resultado;
-                _diagnosticoAjustesValidoHasta = DateTimeOffset.UtcNow.AddSeconds(2);
+                if (resultado.EstaDisponible)
+                {
+                    _diagnosticoAjustesReciente = resultado;
+                    _diagnosticoAjustesValidoHasta = DateTimeOffset.UtcNow.AddSeconds(2);
+                }
+                else
+                {
+                    _diagnosticoAjustesReciente = null;
+                    _diagnosticoAjustesValidoHasta = DateTimeOffset.MinValue;
+                }
             }
         }
 
@@ -1284,7 +1304,6 @@ public sealed class ServidorLocalWeb : IDisposable
         lock (_bloqueoDiagnosticoAjustes)
         {
             _tareaDiagnosticoAjustes = null;
-            _diagnosticoAjustesAgotoEspera = false;
             _diagnosticoAjustesReciente = null;
             _diagnosticoAjustesValidoHasta = DateTimeOffset.MinValue;
         }
@@ -1293,24 +1312,6 @@ public sealed class ServidorLocalWeb : IDisposable
     private DiagnosticoPermisos ObtenerDiagnosticoPermisos()
     {
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
-
-        if (!File.Exists(ruta) && !File.Exists(ruta + ".bak"))
-        {
-            if (RutaPermisosInaccesible(ruta))
-            {
-                return new DiagnosticoPermisos(
-                    EstadoPermisos.Inaccesible,
-                    ruta,
-                    CrearPermisosPorDefecto(),
-                    MensajeCarpetaPermisosNoDisponible);
-            }
-
-            return new DiagnosticoPermisos(
-                EstadoPermisos.NoEncontrado,
-                ruta,
-                CrearPermisosPorDefecto(),
-                "No se encontro el archivo de permisos.");
-        }
 
         try
         {
@@ -1321,6 +1322,24 @@ public sealed class ServidorLocalWeb : IDisposable
                 out var errorProteccion,
                 out _))
             {
+                if (RutaPermisosInaccesible(ruta))
+                {
+                    return new DiagnosticoPermisos(
+                        EstadoPermisos.Inaccesible,
+                        ruta,
+                        CrearPermisosPorDefecto(),
+                        MensajeCarpetaPermisosNoDisponible);
+                }
+
+                if (!ArchivoProtegidoExiste(ruta))
+                {
+                    return new DiagnosticoPermisos(
+                        EstadoPermisos.NoEncontrado,
+                        ruta,
+                        CrearPermisosPorDefecto(),
+                        "No se encontro el archivo de permisos.");
+                }
+
                 return new DiagnosticoPermisos(
                     EstadoPermisos.Corrupto,
                     ruta,
@@ -1350,6 +1369,19 @@ public sealed class ServidorLocalWeb : IDisposable
         }
     }
 
+    private static bool ArchivoProtegidoExiste(string ruta)
+    {
+        // Comprueba el archivo principal y su respaldo sin lanzar errores de red.
+        try
+        {
+            return File.Exists(ruta) || File.Exists(ruta + ".bak");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private DiagnosticoCatalogo ObtenerDiagnosticoCatalogo()
     {
         var configuracion = CargarConfiguracion();
@@ -1370,7 +1402,7 @@ public sealed class ServidorLocalWeb : IDisposable
             out var error))
         {
             return new DiagnosticoCatalogo(
-                File.Exists(rutaCatalogo) || File.Exists(rutaCatalogo + ".bak")
+                ArchivoProtegidoExiste(rutaCatalogo)
                     ? EstadoCatalogo.Corrupto
                     : EstadoCatalogo.NoEncontrado,
                 rutaCatalogo,

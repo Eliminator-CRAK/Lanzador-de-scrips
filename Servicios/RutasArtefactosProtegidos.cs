@@ -19,6 +19,11 @@ public static class RutasArtefactosProtegidos
         }
 
         var expandida = Environment.ExpandEnvironmentVariables(rutaCarpetaPermisos.Trim());
+        if (ServicioRutasSeguras.ContieneSegmentosNavegacion(expandida) || expandida.Contains('/'))
+        {
+            throw new InvalidOperationException("La ruta de la carpeta de permisos contiene segmentos no permitidos.");
+        }
+
         if (EsRutaDeArchivo(expandida))
         {
             throw new InvalidOperationException("La ruta de permisos debe indicar una carpeta, no un archivo JSON.");
@@ -38,6 +43,13 @@ public static class RutasArtefactosProtegidos
 
     public static RutasArtefactos DesdeRutaPermisos(string rutaPermisos)
     {
+        if (string.IsNullOrWhiteSpace(rutaPermisos)
+            || ServicioRutasSeguras.ContieneSegmentosNavegacion(rutaPermisos)
+            || rutaPermisos.Contains('/'))
+        {
+            throw new InvalidOperationException("La ruta del archivo de permisos contiene segmentos no permitidos.");
+        }
+
         var rutaCompleta = Path.GetFullPath(rutaPermisos);
         if (!string.Equals(Path.GetFileName(rutaCompleta), NombrePermisos, StringComparison.OrdinalIgnoreCase))
         {
@@ -53,6 +65,11 @@ public static class RutasArtefactosProtegidos
     {
         var valor = ruta?.Trim();
         if (string.IsNullOrWhiteSpace(valor))
+        {
+            return rutaPredeterminada;
+        }
+
+        if (ServicioRutasSeguras.ContieneSegmentosNavegacion(valor) || valor.Contains('/'))
         {
             return rutaPredeterminada;
         }
