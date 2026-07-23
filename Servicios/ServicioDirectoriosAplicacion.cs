@@ -25,6 +25,7 @@ public static class ServicioDirectoriosAplicacion
         // Protege la raiz comun antes de crear los datos del usuario.
         PrepararDirectorioBase(RutasAplicacion.RaizProgramData);
         PrepararDirectorioBase(RutasAplicacion.RutaUsuarios);
+        PrepararDirectorioAdministrativo(RutasAplicacion.RutaSeguridad);
         PrepararDatosUsuario();
     }
 
@@ -75,6 +76,48 @@ public static class ServicioDirectoriosAplicacion
         seguridad.AddAccessRule(CrearRegla(Usuarios, FileSystemRights.ReadAndExecute, herencia));
         AsegurarPropietario(seguridad, directorio, usuario, forzarPropietarioAdministrativo: true);
         directorio.SetAccessControl(seguridad);
+    }
+
+    internal static void PrepararDirectorioAdministrativo(string ruta)
+    {
+        // Limita la carpeta a administradores y al sistema.
+        var directorio = new DirectoryInfo(ruta);
+        directorio.Create();
+        RechazarPuntosReanalisis(directorio.FullName);
+
+        var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        var seguridad = new DirectorySecurity();
+        seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        seguridad.AddAccessRule(CrearRegla(Administradores, FileSystemRights.FullControl, herencia));
+        seguridad.AddAccessRule(CrearRegla(Sistema, FileSystemRights.FullControl, herencia));
+        seguridad.SetOwner(Administradores);
+        directorio.SetAccessControl(seguridad);
+    }
+
+    internal static void ProtegerArchivoClaveArtefactos()
+    {
+        // Limita el archivo a administradores y al sistema.
+        var archivo = new FileInfo(RutasAplicacion.RutaClaveArtefactos);
+        if (!archivo.Exists)
+        {
+            throw new FileNotFoundException(
+                "No se encontro el archivo que se debe proteger.",
+                RutasAplicacion.RutaClaveArtefactos);
+        }
+
+        var seguridad = CrearSeguridadArchivoAdministrativo();
+        archivo.SetAccessControl(seguridad);
+    }
+
+    internal static FileSecurity CrearSeguridadArchivoAdministrativo()
+    {
+        // Crea la ACL usada por las claves de maquina.
+        var seguridad = new FileSecurity();
+        seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        seguridad.AddAccessRule(CrearRegla(Administradores, FileSystemRights.FullControl, InheritanceFlags.None));
+        seguridad.AddAccessRule(CrearRegla(Sistema, FileSystemRights.FullControl, InheritanceFlags.None));
+        seguridad.SetOwner(Administradores);
+        return seguridad;
     }
 
     internal static void PrepararDirectorioRuntime(string ruta)

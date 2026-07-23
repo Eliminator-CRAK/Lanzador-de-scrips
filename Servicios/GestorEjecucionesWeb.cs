@@ -460,7 +460,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         await log.WriteLineAsync($"Ruta staging: {script.RutaCompleta}");
         await log.WriteLineAsync($"Catalogo estado: {diagnostico.CatalogoEstado}");
         await log.WriteLineAsync($"Catalogo keyId: {diagnostico.CatalogoKeyId}");
-        await log.WriteLineAsync($"SHA-256 final: {ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta)}");
+        await log.WriteLineAsync($"SHA-256 final: {ServicioSeguridadScripts.CalcularSha256(script.RutaValidada)}");
         await log.WriteLineAsync();
     }
 
@@ -486,12 +486,37 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
         var nombreArchivo = Path.GetFileName(ejecucion.Script.RutaCompleta);
         var rutaDestino = Path.Combine(directorio, nombreArchivo);
-        File.Copy(ejecucion.Script.RutaCompleta, rutaDestino, overwrite: false);
+        using (var origen = ejecucion.Script.RutaValidada.AbrirLectura())
+        using (var destino = new FileStream(
+            rutaDestino,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            4096,
+            FileOptions.WriteThrough))
+        {
+            origen.CopyTo(destino);
+            destino.Flush(flushToDisk: true);
+        }
+
         File.SetAttributes(rutaDestino, File.GetAttributes(rutaDestino) | FileAttributes.ReadOnly);
 
         // Mantiene la copia abierta solo para lectura y bloquea escrituras hasta terminar.
         var bloqueoLectura = new FileStream(rutaDestino, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var scriptPreparado = new ScriptInterno(ejecucion.Script.Id, ejecucion.Script.Nombre, ejecucion.Script.Tipo, rutaDestino);
+        var validacion = new ServicioValidacionScripts().ValidarRutaConocida(
+            directorio,
+            rutaDestino,
+            ejecucion.Script.Id,
+            ejecucion.Script.Nombre,
+            ejecucion.Script.Tipo);
+        if (!validacion.EsValido)
+        {
+            bloqueoLectura.Dispose();
+            throw new InvalidOperationException(
+                $"La copia temporal no supero la validacion: {validacion.Mensaje}");
+        }
+
+        var scriptPreparado = validacion.Script!;
         return new ScriptPreparado(scriptPreparado, directorio, bloqueoLectura);
     }
 

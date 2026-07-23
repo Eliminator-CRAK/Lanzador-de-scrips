@@ -13,6 +13,8 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServicioPaquetesConfiguracion
 {
     public const string ExtensionPaquete = ".lanzadorconfig";
+    public const int LongitudMaximaContenido = 16 * 1024 * 1024;
+    public const int LongitudMaximaBase64 = ((LongitudMaximaContenido + 2) / 3) * 4;
     private const string TipoCifrado = "configuracion-exportada";
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
@@ -22,16 +24,24 @@ public sealed class ServicioPaquetesConfiguracion
     };
 
     private readonly ServicioCifradoAplicacion _servicioCifrado;
-    private readonly ServicioArtefactosProtegidos _servicioArtefactos = new();
+    private readonly ServicioArtefactosProtegidos _servicioArtefactos;
 
     public ServicioPaquetesConfiguracion()
-        : this(new ServicioCifradoAplicacion())
+        : this(new ServicioCifradoAplicacion(), new ServicioArtefactosProtegidos())
     {
     }
 
     public ServicioPaquetesConfiguracion(ServicioCifradoAplicacion servicioCifrado)
+        : this(servicioCifrado, new ServicioArtefactosProtegidos())
+    {
+    }
+
+    internal ServicioPaquetesConfiguracion(
+        ServicioCifradoAplicacion servicioCifrado,
+        ServicioArtefactosProtegidos servicioArtefactos)
     {
         _servicioCifrado = servicioCifrado;
+        _servicioArtefactos = servicioArtefactos;
     }
 
     public PaqueteExportado Exportar(ConfiguracionLanzador configuracion, JsonObject permisos)
@@ -50,16 +60,21 @@ public sealed class ServicioPaquetesConfiguracion
         return new PaqueteExportado(nombre, Convert.ToBase64String(Encoding.UTF8.GetBytes(cifrado)));
     }
 
-    public ResultadoImportacionConfiguracion Importar(string rutaArchivo, ConfiguracionLanzador configuracionActual)
+    public ResultadoImportacionConfiguracion ImportarContenido(
+        string contenido,
+        ConfiguracionLanzador configuracionActual)
     {
-        var rutaSegura = ResolverRutaImportacion(rutaArchivo);
-        if (!File.Exists(rutaSegura))
+        if (string.IsNullOrWhiteSpace(contenido))
         {
-            throw new FileNotFoundException("No se encontro el paquete de configuracion.", rutaSegura);
+            throw new InvalidOperationException("El paquete de configuracion esta vacio.");
         }
 
-        var texto = File.ReadAllText(rutaSegura, Encoding.UTF8);
-        if (!_servicioCifrado.IntentarDescifrarTexto(TipoCifrado, texto, out var json))
+        if (Encoding.UTF8.GetByteCount(contenido) > LongitudMaximaContenido)
+        {
+            throw new InvalidOperationException("El paquete de configuracion supera el limite de 16 MiB.");
+        }
+
+        if (!_servicioCifrado.IntentarDescifrarTexto(TipoCifrado, contenido, out var json))
         {
             throw new InvalidOperationException("El paquete de configuracion no es valido o fue modificado.");
         }

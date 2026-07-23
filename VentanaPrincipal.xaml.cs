@@ -492,6 +492,12 @@ public partial class VentanaPrincipal : Window
         try
         {
             var rutaSegura = ServicioPaquetesConfiguracion.ResolverRutaImportacion(rutaArchivo);
+            var informacion = new FileInfo(rutaSegura);
+            if (informacion.Length > ServicioPaquetesConfiguracion.LongitudMaximaContenido)
+            {
+                throw new InvalidOperationException("El paquete de configuracion supera el limite de 16 MiB.");
+            }
+
             var endpoint = _endpointServicio ?? await ObtenerEndpointBackendAsync();
             _endpointServicio = endpoint;
             var contenidoBase64 = Convert.ToBase64String(await File.ReadAllBytesAsync(rutaSegura));

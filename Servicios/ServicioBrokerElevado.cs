@@ -79,6 +79,7 @@ public sealed class ServicioBrokerElevado
                 script.Id,
                 script.Nombre,
                 script.Tipo,
+                script.RutaValidada.RaizAutorizada,
                 script.RutaCompleta,
                 permitirExecutionPolicyBypass);
 
@@ -87,7 +88,15 @@ public sealed class ServicioBrokerElevado
             {
                 try
                 {
-                    var cancelacionBroker = new ComandoBrokerElevado("cancelar", token, string.Empty, string.Empty, string.Empty, string.Empty, false);
+                    var cancelacionBroker = new ComandoBrokerElevado(
+                        "cancelar",
+                        token,
+                        string.Empty,
+                        string.Empty,
+                        string.Empty,
+                        string.Empty,
+                        string.Empty,
+                        false);
                     escritorFlujo.WriteLine(JsonSerializer.Serialize(cancelacionBroker, OpcionesJson));
                 }
                 catch
@@ -158,7 +167,24 @@ public sealed class ServicioBrokerElevado
             return 5;
         }
 
-        var script = new ScriptInterno(comando.ScriptId, comando.Nombre, comando.TipoScript, comando.RutaCompleta);
+        var validacion = new ServicioValidacionScripts().ValidarRutaConocida(
+            comando.RaizAutorizada,
+            comando.RutaCompleta,
+            comando.ScriptId,
+            comando.Nombre,
+            comando.TipoScript);
+        if (!validacion.EsValido)
+        {
+            await EnviarAsync(
+                escritorFlujo,
+                bloqueoEnvio,
+                EventoBrokerElevado.ErrorFinal(
+                    $"La ruta recibida por el broker no es valida: {validacion.Mensaje}",
+                    null));
+            return 5;
+        }
+
+        var script = validacion.Script!;
         using var proceso = CrearProceso(script, comando.PermitirExecutionPolicyBypass);
         using var cancelacionProceso = new CancellationTokenSource();
         var lectorComandos = EscucharCancelacionAsync(lector, tokenEsperado, proceso, cancelacionProceso.Token);
@@ -408,5 +434,6 @@ public sealed record ComandoBrokerElevado(
     string ScriptId,
     string Nombre,
     string TipoScript,
+    string RaizAutorizada,
     string RutaCompleta,
     bool PermitirExecutionPolicyBypass);

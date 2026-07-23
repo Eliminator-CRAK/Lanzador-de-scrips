@@ -41,7 +41,7 @@ public sealed class ServicioSeguridadScripts
             || ContieneMetacaracteresPeligrosos(script.Nombre)
             || ContieneMetacaracteresPeligrosos(
                 Path.GetRelativePath(
-                    Path.GetPathRoot(script.RutaCompleta) ?? string.Empty,
+                    script.RutaValidada.RaizAutorizada,
                     script.RutaCompleta)))
         {
             return baseDiagnostico with
@@ -65,7 +65,7 @@ public sealed class ServicioSeguridadScripts
                 Permitido = true,
                 MotivoBloqueo = "Modo desarrollo activo: validacion del catalogo omitida.",
                 CatalogoEstado = "omitido",
-                Sha256 = CalcularSha256(script.RutaCompleta)
+                Sha256 = CalcularSha256(script.RutaValidada)
             };
         }
 
@@ -89,10 +89,10 @@ public sealed class ServicioSeguridadScripts
             };
         }
 
-        var info = new FileInfo(script.RutaCompleta);
-        var hash = CalcularSha256(script.RutaCompleta);
-        var extension = Path.GetExtension(script.RutaCompleta);
-        var coincide = entrada.Longitud == info.Length
+        var longitud = script.RutaValidada.ObtenerLongitud();
+        var hash = CalcularSha256(script.RutaValidada);
+        var extension = script.RutaValidada.Extension;
+        var coincide = entrada.Longitud == longitud
             && string.Equals(entrada.Extension, extension, StringComparison.OrdinalIgnoreCase)
             && string.Equals(entrada.Sha256, hash, StringComparison.OrdinalIgnoreCase);
 
@@ -154,15 +154,9 @@ public sealed class ServicioSeguridadScripts
         return LeerPolitica(permisos).ScriptsElevadosPermitidos.Contains(script.Id);
     }
 
-    public static string CalcularSha256(string ruta)
+    public static string CalcularSha256(RutaScriptValidada ruta)
     {
-        var rutaSegura = ServicioRutasSeguras.ResolverArchivoAbsoluto(
-            ruta,
-            "script",
-            ".ps1",
-            ".bat",
-            ".cmd");
-        using var flujo = File.OpenRead(rutaSegura);
+        using var flujo = ruta.AbrirLectura();
         return Convert.ToHexString(SHA256.HashData(flujo));
     }
 

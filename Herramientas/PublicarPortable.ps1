@@ -32,6 +32,8 @@ $salidaAnterior = Join-Path $raiz "obj\PublicacionAnterior-$PID"
 $tamanoMinimoExe = 209715200
 $cacheWebView2 = Join-Path $raiz 'Recursos\WebView2'
 $runtimeZipIntermedio = Join-Path $raiz 'obj\WebView2Runtime\WebView2Runtime.zip'
+$rutaClaveArtefactos = Join-Path $env:ProgramData 'LanzadorScripts\Seguridad\artefactos.key'
+$huellaCertificadoArtefactos = '500266A64E574889370D92E5CE0D65D55CC963B7'
 $versionWebView2Fijada = '150.0.4078.48'
 $nombreCabWebView2Fijado = "Microsoft.WebView2.FixedVersionRuntime.$versionWebView2Fijada.x64.cab"
 $urlCabWebView2Fijado = 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/60926d99-f201-46bb-91a0-d868dc06b275/Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64.cab'
@@ -911,6 +913,20 @@ if ($null -ne $certificadoFirma) {
 }
 
 if ($InicializarArtefactos) {
+    if (-not (Test-Path -LiteralPath $rutaClaveArtefactos -PathType Leaf)) {
+        throw "No se encontro la clave DPAPI de artefactos. Ejecute Herramientas\AprovisionarClaveArtefactos.ps1 como administrador."
+    }
+
+    $certificadoArtefactos = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My |
+        Where-Object {
+            $_.Thumbprint -eq $huellaCertificadoArtefactos -and
+            $_.HasPrivateKey
+        } |
+        Select-Object -First 1
+    if ($null -eq $certificadoArtefactos) {
+        throw "No se encontro el certificado privado de artefactos $huellaCertificadoArtefactos."
+    }
+
     if (-not (Test-Path -LiteralPath $RutaScriptsIniciales -PathType Container)) {
         throw "No se encontro la carpeta de scripts iniciales: $RutaScriptsIniciales"
     }

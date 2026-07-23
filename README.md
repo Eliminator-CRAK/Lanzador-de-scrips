@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.3 |
+| Version | 1.4.4 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -35,6 +35,7 @@ flowchart TD
 | Tokens admin | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Tokens` |
 | Logs | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
+| Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
 | Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
@@ -81,6 +82,14 @@ La inicializacion explicita de ambos archivos operativos se realiza con:
 .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
+Antes de inicializar, la clave AES debe aprovisionarse en una consola administrativa:
+
+```powershell
+powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
+```
+
+El script solicita la clave de 32 bytes en Base64 mediante entrada segura, la protege con DPAPI `LocalMachine` y aplica una ACL limitada a `SYSTEM` y `Administrators`. La clave no se acepta como argumento.
+
 La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
 El pipeline de GitHub instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
@@ -107,7 +116,7 @@ Solo se conservan las ultimas 3 copias de diagnostico de perfiles dañados o de 
 
 La API local exige cookie de sesion y token interno aleatorio por arranque. Los endpoints admin requieren siempre `Authorization: Bearer <token>`.
 
-`permisos.json` y `catalogo-scripts.json` son contenedores cifrados con AES-256-GCM y firmados con RSA-PSS/SHA-256. La aplicacion construye ambos nombres dentro de la carpeta configurada y no usa copias junto al EXE. Si falta un archivo, esta manipulado o no se puede validar, la aplicacion bloquea las ejecuciones.
+`permisos.json` y `catalogo-scripts.json` usan el contenedor v2, cifrado con AES-256-GCM y firmado con RSA-PSS/SHA-256. La clave AES se recupera de DPAPI de maquina y la clave RSA privada se busca en el almacen de certificados; el EXE solo incorpora el certificado publico. La aplicacion construye ambos nombres dentro de la carpeta configurada y no usa copias junto al EXE. Si falta un archivo, esta manipulado o no se puede validar, la aplicacion bloquea las ejecuciones.
 
 La politica editable de permisos conserva solo las opciones operativas:
 

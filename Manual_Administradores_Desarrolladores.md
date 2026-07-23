@@ -25,6 +25,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Tokens de administrador | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Tokens` |
 | Logs de ejecucion | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
+| Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
 | Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
@@ -34,7 +35,9 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 ## Permisos
 
-`permisos.json` es un contenedor cifrado y firmado. El catalogo usa la misma proteccion en `catalogo-scripts.json`. Ambos emplean AES-256-GCM y RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos.
+`permisos.json` es un contenedor v2 cifrado y firmado. El catalogo usa la misma proteccion en `catalogo-scripts.json`. Ambos emplean AES-256-GCM y RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos.
+
+La clave AES no forma parte del EXE. Se protege con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
 
 La configuracion predeterminada apunta a:
 
@@ -164,7 +167,15 @@ Para inicializarlos expresamente:
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
-No se instala ningun servicio, certificado, cuenta, tarea ni puerto. Las claves integradas permiten portabilidad completa, con el riesgo aceptado de extraccion mediante ingenieria inversa.
+Antes de ejecutar `-InicializarArtefactos`, aprovisione la misma clave de 32 bytes en cada equipo autorizado:
+
+```powershell
+powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
+```
+
+La entrada es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Los contenedores v1 no son compatibles con la version 1.4.4: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
+
+No se instala ningun servicio, cuenta, tarea ni puerto. El certificado privado de artefactos solo debe instalarse en los equipos autorizados para publicar cambios.
 
 ## CI
 

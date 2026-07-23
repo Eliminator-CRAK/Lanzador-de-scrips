@@ -54,12 +54,12 @@ public sealed class ServicioCatalogoScripts
                 throw new InvalidOperationException($"El script seleccionado no existe o no es seguro: {scriptId}");
             }
 
-            var info = new FileInfo(script.RutaCompleta);
+            var ruta = script.RutaValidada;
             entradas.Add(new EntradaCatalogoScript(
                 scriptId,
-                Path.GetExtension(script.RutaCompleta).ToLowerInvariant(),
-                info.Length,
-                ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta)));
+                ruta.Extension,
+                ruta.ObtenerLongitud(),
+                ServicioSeguridadScripts.CalcularSha256(ruta)));
         }
 
         return new CatalogoScripts(
@@ -134,26 +134,27 @@ public sealed class ServicioCatalogoScripts
             .OrderBy(script => script.Id, StringComparer.OrdinalIgnoreCase)
             .Select(script =>
             {
-                var info = new FileInfo(script.RutaCompleta);
-                var sha256 = ServicioSeguridadScripts.CalcularSha256(script.RutaCompleta);
+                var ruta = script.RutaValidada;
+                var longitud = ruta.ObtenerLongitud();
+                var sha256 = ServicioSeguridadScripts.CalcularSha256(ruta);
                 if (!indice.TryGetValue(script.Id, out var entrada))
                 {
                     return new EstadoCatalogoScriptCliente(
                         script.Id,
                         script.Tipo,
-                        info.Length,
+                        longitud,
                         sha256,
                         "no-incluido",
                         false);
                 }
 
-                var coincide = entrada.Longitud == info.Length
-                    && string.Equals(entrada.Extension, Path.GetExtension(script.RutaCompleta), StringComparison.OrdinalIgnoreCase)
+                var coincide = entrada.Longitud == longitud
+                    && string.Equals(entrada.Extension, ruta.Extension, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(entrada.Sha256, sha256, StringComparison.OrdinalIgnoreCase);
                 return new EstadoCatalogoScriptCliente(
                     script.Id,
                     script.Tipo,
-                    info.Length,
+                    longitud,
                     sha256,
                     coincide ? "autorizado" : "modificado",
                     true);

@@ -130,6 +130,86 @@ public sealed class ServicioValidacionScripts
             : ResultadoValidacionScript.Correcto(script);
     }
 
+    internal ResultadoValidacionScript ValidarRutaConocida(
+        string raizAutorizada,
+        string rutaCompleta,
+        string identificador,
+        string nombre,
+        string tipo)
+    {
+        // Revalida rutas internas antes de ejecutar o elevar.
+        var resultadoRaiz = ObtenerRaizSegura(raizAutorizada);
+        if (!resultadoRaiz.EsValida)
+        {
+            return ResultadoValidacionScript.Error(resultadoRaiz.Codigo, resultadoRaiz.Mensaje);
+        }
+
+        var resultadoIdentificador = ValidarIdentificadorRelativo(identificador);
+        if (!resultadoIdentificador.EsValida)
+        {
+            return ResultadoValidacionScript.Error(resultadoIdentificador.Codigo, resultadoIdentificador.Mensaje);
+        }
+
+        string rutaSegura;
+        try
+        {
+            rutaSegura = ServicioRutasSeguras.ResolverArchivoAbsoluto(
+                rutaCompleta,
+                "script validado",
+                ".ps1",
+                ".bat",
+                ".cmd");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ResultadoValidacionScript.Error(
+                CodigoValidacionScript.ScriptFueraDeRaiz,
+                ex.Message);
+        }
+
+        if (!EstaDentroDeRaiz(resultadoRaiz.RutaCompleta!, rutaSegura))
+        {
+            return ResultadoValidacionScript.Error(
+                CodigoValidacionScript.ScriptFueraDeRaiz,
+                "El script queda fuera de la ruta autorizada.");
+        }
+
+        if (!File.Exists(rutaSegura))
+        {
+            return ResultadoValidacionScript.Error(
+                CodigoValidacionScript.ScriptNoEncontrado,
+                "El script no existe o no esta disponible.");
+        }
+
+        if (ContieneEnlaceNoPermitido(resultadoRaiz.RutaCompleta!, rutaSegura))
+        {
+            return ResultadoValidacionScript.Error(
+                CodigoValidacionScript.EnlaceNoPermitido,
+                "El script usa enlaces de sistema no permitidos.");
+        }
+
+        var extension = Path.GetExtension(rutaSegura);
+        var tipoEsperado = extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase)
+            ? "powershell"
+            : "batch";
+        if (!string.Equals(nombre, Path.GetFileName(rutaSegura), StringComparison.Ordinal)
+            || !string.Equals(tipo, tipoEsperado, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Path.GetExtension(identificador), extension, StringComparison.OrdinalIgnoreCase))
+        {
+            return ResultadoValidacionScript.Error(
+                CodigoValidacionScript.IdentificadorNoPermitido,
+                "Los metadatos del script no coinciden con la ruta validada.");
+        }
+
+        var rutaValidada = new RutaScriptValidada(
+            resultadoRaiz.RutaCompleta!,
+            rutaSegura,
+            identificador,
+            extension.ToLowerInvariant());
+        return ResultadoValidacionScript.Correcto(
+            new ScriptInterno(identificador, nombre, tipoEsperado, rutaValidada));
+    }
+
     public IReadOnlyList<ScriptInterno> DescubrirScripts(string rutaScripts)
     {
         var resultadoRaiz = ObtenerRaizSegura(rutaScripts);
@@ -324,7 +404,16 @@ public sealed class ServicioValidacionScripts
             ? "powershell"
             : "batch";
 
-        return new ScriptInterno(relativo, Path.GetFileName(rutaCompleta), tipo, rutaCompleta);
+        var rutaValidada = new RutaScriptValidada(
+            raiz,
+            rutaCompleta,
+            relativo,
+            Path.GetExtension(rutaCompleta).ToLowerInvariant());
+        return new ScriptInterno(
+            relativo,
+            Path.GetFileName(rutaCompleta),
+            tipo,
+            rutaValidada);
     }
 
     private static ResultadoRaiz ObtenerRaizSegura(string rutaScripts)

@@ -42,6 +42,14 @@ public static class ServicioGeneracionArtefactosIniciales
 
     public static void Generar(string rutaScripts, string rutaSalida)
     {
+        Generar(rutaScripts, rutaSalida, new ServicioArtefactosProtegidos());
+    }
+
+    internal static void Generar(
+        string rutaScripts,
+        string rutaSalida,
+        ServicioArtefactosProtegidos artefactos)
+    {
         var validador = new ServicioValidacionScripts();
         var scripts = validador.DescubrirScripts(rutaScripts);
         if (scripts.Count == 0)
@@ -51,7 +59,7 @@ public static class ServicioGeneracionArtefactosIniciales
 
         foreach (var script in scripts.Where(script => script.Tipo == "powershell"))
         {
-            var texto = File.ReadAllText(script.RutaCompleta, Encoding.UTF8);
+            var texto = script.RutaValidada.LeerTexto(Encoding.UTF8);
             if (texto.Contains("# SIG # Begin signature block", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
@@ -60,7 +68,6 @@ public static class ServicioGeneracionArtefactosIniciales
         }
 
         Directory.CreateDirectory(rutaSalida);
-        var artefactos = new ServicioArtefactosProtegidos();
         var permisos = CrearPermisosIniciales();
         artefactos.GuardarTextoProtegido(
             Path.Combine(rutaSalida, RutasArtefactosProtegidos.NombrePermisos),

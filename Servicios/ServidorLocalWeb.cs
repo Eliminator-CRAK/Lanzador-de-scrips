@@ -39,10 +39,10 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioConfiguracion _servicioConfiguracion = new();
     private readonly ServicioTokensAdmin _servicioTokensAdmin = new();
     private readonly ServicioTokenMaestro _servicioTokenMaestro;
-    private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion = new();
+    private readonly ServicioPaquetesConfiguracion _servicioPaquetesConfiguracion;
     private readonly ServicioValidacionScripts _servicioValidacionScripts = new();
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts = new();
-    private readonly ServicioArtefactosProtegidos _servicioArtefactos = new();
+    private readonly ServicioArtefactosProtegidos _servicioArtefactos;
     private readonly ServicioCatalogoScripts _servicioCatalogoScripts;
     private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly ConfiguracionLanzador? _configuracionFija;
@@ -65,11 +65,16 @@ public sealed class ServidorLocalWeb : IDisposable
     private ServidorLocalWeb(
         int puerto,
         ServicioTokenMaestro servicioTokenMaestro,
-        string? rutaStaging = null)
+        string? rutaStaging = null,
+        ServicioArtefactosProtegidos? servicioArtefactos = null)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
         _servicioTokenMaestro = servicioTokenMaestro;
+        _servicioArtefactos = servicioArtefactos ?? new ServicioArtefactosProtegidos();
+        _servicioPaquetesConfiguracion = new ServicioPaquetesConfiguracion(
+            new ServicioCifradoAplicacion(),
+            _servicioArtefactos);
         _servicioCatalogoScripts = new ServicioCatalogoScripts(_servicioArtefactos);
         _gestorEjecuciones = new GestorEjecucionesWeb(
             _servicioAuditoria,
@@ -91,6 +96,20 @@ public sealed class ServidorLocalWeb : IDisposable
             puerto,
             servicioTokenMaestro,
             Path.Combine(configuracion.RutaLogs, ".staging-pruebas"))
+    {
+        _configuracionFija = configuracion;
+    }
+
+    private ServidorLocalWeb(
+        int puerto,
+        ConfiguracionLanzador configuracion,
+        ServicioTokenMaestro servicioTokenMaestro,
+        ServicioArtefactosProtegidos servicioArtefactos)
+        : this(
+            puerto,
+            servicioTokenMaestro,
+            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
+            servicioArtefactos)
     {
         _configuracionFija = configuracion;
     }
@@ -120,6 +139,37 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         // Inicia el servidor con servicios aislados de pruebas.
         var servidor = new ServidorLocalWeb(ReservarPuertoLibre(), configuracion, servicioTokenMaestro);
+        servidor._escuchador.Start();
+        _ = servidor.EscucharAsync();
+        return servidor;
+    }
+
+    internal static ServidorLocalWeb IniciarParaPruebas(
+        ConfiguracionLanzador configuracion,
+        ServicioArtefactosProtegidos servicioArtefactos)
+    {
+        // Inicia el servidor con claves aisladas de pruebas.
+        var servidor = new ServidorLocalWeb(
+            ReservarPuertoLibre(),
+            configuracion,
+            new ServicioTokenMaestro(),
+            servicioArtefactos);
+        servidor._escuchador.Start();
+        _ = servidor.EscucharAsync();
+        return servidor;
+    }
+
+    internal static ServidorLocalWeb IniciarParaPruebas(
+        ConfiguracionLanzador configuracion,
+        ServicioTokenMaestro servicioTokenMaestro,
+        ServicioArtefactosProtegidos servicioArtefactos)
+    {
+        // Inicia el servidor con todos los servicios aislados de pruebas.
+        var servidor = new ServidorLocalWeb(
+            ReservarPuertoLibre(),
+            configuracion,
+            servicioTokenMaestro,
+            servicioArtefactos);
         servidor._escuchador.Start();
         _ = servidor.EscucharAsync();
         return servidor;
@@ -740,7 +790,9 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private async Task ProcesarImportacionPaqueteConfiguracionAsync(HttpListenerContext contexto)
     {
-        var cuerpo = await LeerJsonAsync(contexto.Request);
+        var cuerpo = await LeerJsonAsync(
+            contexto.Request,
+            ServicioPaquetesConfiguracion.LongitudMaximaBase64 + 4096);
         var contenidoBase64 = LeerTexto(cuerpo, "contenidoBase64", string.Empty);
         if (string.IsNullOrWhiteSpace(contenidoBase64))
         {
@@ -748,25 +800,39 @@ public sealed class ServidorLocalWeb : IDisposable
             return;
         }
 
-        ServicioDirectoriosAplicacion.PrepararDirectorioPrivado(RutasAplicacion.RutaImportacionesTemporales);
-        var rutaTemporal = ServicioRutasSeguras.ResolverArchivoEnCarpeta(
-            RutasAplicacion.RutaImportacionesTemporales,
-            $"LanzadorScripts_{Guid.NewGuid():N}{ServicioPaquetesConfiguracion.ExtensionPaquete}",
-            "paquete de configuracion temporal",
-            ServicioPaquetesConfiguracion.ExtensionPaquete);
         try
         {
-            File.WriteAllBytes(rutaTemporal, Convert.FromBase64String(contenidoBase64));
-            var configuracion = CargarConfiguracion();
-            var importacion = _servicioPaquetesConfiguracion.Importar(rutaTemporal, configuracion);
-            _servicioConfiguracion.Guardar(importacion.Configuracion);
-            InvalidarDiagnosticoAjustes();
-            if (importacion.Permisos is not null)
+            if (contenidoBase64.Length > ServicioPaquetesConfiguracion.LongitudMaximaBase64)
             {
-                _servicioPaquetesConfiguracion.GuardarPermisosImportados(importacion.Configuracion, importacion.Permisos);
+                await EscribirJsonAsync(contexto, 413, new { error = "El paquete de configuracion supera el limite de 16 MiB." });
+                return;
             }
 
-            await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion importada correctamente en el servicio." });
+            var datos = Convert.FromBase64String(contenidoBase64);
+            try
+            {
+                if (datos.Length > ServicioPaquetesConfiguracion.LongitudMaximaContenido)
+                {
+                    await EscribirJsonAsync(contexto, 413, new { error = "El paquete de configuracion supera el limite de 16 MiB." });
+                    return;
+                }
+
+                var contenido = new UTF8Encoding(false, true).GetString(datos);
+                var configuracion = CargarConfiguracion();
+                var importacion = _servicioPaquetesConfiguracion.ImportarContenido(contenido, configuracion);
+                _servicioConfiguracion.Guardar(importacion.Configuracion);
+                InvalidarDiagnosticoAjustes();
+                if (importacion.Permisos is not null)
+                {
+                    _servicioPaquetesConfiguracion.GuardarPermisosImportados(importacion.Configuracion, importacion.Permisos);
+                }
+
+                await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion importada correctamente en el servicio." });
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(datos);
+            }
         }
         catch (FormatException)
         {
@@ -775,16 +841,6 @@ public sealed class ServidorLocalWeb : IDisposable
         catch (Exception ex)
         {
             await EscribirJsonAsync(contexto, 400, new { error = ServicioRedaccionSecretos.Sanitizar(ex.Message) });
-        }
-        finally
-        {
-            try
-            {
-                File.Delete(rutaTemporal);
-            }
-            catch
-            {
-            }
         }
     }
 
@@ -1996,10 +2052,35 @@ public sealed class ServidorLocalWeb : IDisposable
             : "nominal";
     }
 
-    private static async Task<JsonNode?> LeerJsonAsync(HttpListenerRequest peticion)
+    private static Task<JsonNode?> LeerJsonAsync(HttpListenerRequest peticion)
     {
+        return LeerJsonAsync(peticion, 1024 * 1024);
+    }
+
+    private static async Task<JsonNode?> LeerJsonAsync(
+        HttpListenerRequest peticion,
+        int longitudMaximaCaracteres)
+    {
+        if (peticion.ContentLength64 > longitudMaximaCaracteres)
+        {
+            throw new InvalidOperationException("La solicitud supera el tamano permitido.");
+        }
+
         using var lector = new StreamReader(peticion.InputStream, peticion.ContentEncoding);
-        var texto = await lector.ReadToEndAsync();
+        var contenido = new StringBuilder(Math.Min(longitudMaximaCaracteres, 4096));
+        var buffer = new char[4096];
+        int leidos;
+        while ((leidos = await lector.ReadAsync(buffer)) > 0)
+        {
+            if (contenido.Length + leidos > longitudMaximaCaracteres)
+            {
+                throw new InvalidOperationException("La solicitud supera el tamano permitido.");
+            }
+
+            contenido.Append(buffer, 0, leidos);
+        }
+
+        var texto = contenido.ToString();
         return string.IsNullOrWhiteSpace(texto) ? null : JsonNode.Parse(texto);
     }
 

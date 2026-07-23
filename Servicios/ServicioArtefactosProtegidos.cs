@@ -14,15 +14,11 @@ public sealed class ServicioArtefactosProtegidos
     public const string TipoPermisos = "permissions";
     public const string TipoCatalogoScripts = "script-catalog";
 
-    private const int Version = 1;
+    private const int Version = 2;
     private const string Algoritmo = "AES-256-GCM+RSA-PSS-SHA256";
     private const string AutorContenedor = "Alex Roman";
     private const string DescripcionContenedor = "Artefacto cifrado y firmado de LanzadorScripts.";
-    private const string KeyIdIntegrado = "547B5A49214738CE";
     private const int LongitudMaximaCifrada = 16 * 1024 * 1024;
-    private const string ClaveAesBase64 = "***REMOVED***";
-    private const string ClavePrivadaBase64 = "***REMOVED***";
-    private const string ClavePublicaBase64 = "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAwPGTdfQwv/lxBbAoc8BQV+LQ5Wn/99JfIyQgz87kkSN/rHRWlKWWnE7Z8eOqDElxbWcElcbjE4N56RoRYXAx73nJ3h7YOy33P4rHRz1/K6kwMrLvQvZecdqpmny2qhc55fi4cP4uF+UOl3klt80bJCVpXlEx9VQVR/FZbmpX09yiVHXzWDl+k4UsEMH7XCaRY8zj4ueBNpll5vDDTySCPjVbgIlo7M0lRdm3WzQqcpjb+4CN7w5HUyXrVCGBo/iDPkJNsE5dbRUAdCsZaIGpZbXZtWrGet+TEcbf0aPp6a+dkkoXk3otIE1JSAVDDS5fbnoupl7tuB3LutODzXCK8BQPVH1p9Of6JdVW8wmTlwMYAhMKbqk94GTC9/fmnrr76+kv5UWZiewyx6ocqBCwXGDS/ji74rCGyaaivFh460Wg01n0s0oDG333SY3YmpBwckZtUtK4au2WosoILTvpFCkOVQUOHxgfp37IJeuRlBop0vqlHGBvhMCiVzLDCMKnAgMBAAE=";
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -31,67 +27,87 @@ public sealed class ServicioArtefactosProtegidos
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
-    private readonly byte[] _claveAes;
-    private readonly byte[] _clavePrivada;
-    private readonly byte[] _clavePublica;
-    private readonly string _keyId;
+    private readonly ServicioClaveArtefactos? _servicioClave;
+    private readonly ServicioFirmaArtefactos _servicioFirma;
+    private readonly byte[]? _clavePruebas;
 
     public ServicioArtefactosProtegidos()
-        : this(
-            Convert.FromBase64String(ClaveAesBase64),
-            Convert.FromBase64String(ClavePrivadaBase64),
-            Convert.FromBase64String(ClavePublicaBase64),
-            KeyIdIntegrado)
     {
+        _servicioClave = new ServicioClaveArtefactos();
+        _servicioFirma = new ServicioFirmaArtefactos();
     }
 
-    internal ServicioArtefactosProtegidos(byte[] claveAes, byte[] clavePrivada, byte[] clavePublica, string keyId)
+    internal ServicioArtefactosProtegidos(byte[] claveAes, RSA claveFirma, RSA claveVerificacion)
     {
         if (claveAes.Length != 32)
         {
             throw new ArgumentException("La clave AES debe tener 32 bytes.", nameof(claveAes));
         }
 
-        _claveAes = claveAes.ToArray();
-        _clavePrivada = clavePrivada.ToArray();
-        _clavePublica = clavePublica.ToArray();
-        _keyId = keyId;
+        _clavePruebas = claveAes.ToArray();
+        _servicioFirma = new ServicioFirmaArtefactos(claveFirma, claveVerificacion);
     }
 
-    public string KeyId => _keyId;
+    internal ServicioArtefactosProtegidos(
+        ServicioClaveArtefactos servicioClave,
+        ServicioFirmaArtefactos servicioFirma)
+    {
+        _servicioClave = servicioClave;
+        _servicioFirma = servicioFirma;
+    }
+
+    public string KeyId
+    {
+        get
+        {
+            using var material = ObtenerMaterialClave();
+            return material.KeyId;
+        }
+    }
 
     public string ProtegerTexto(string tipo, string texto)
     {
         ValidarTipo(tipo);
+        using var material = ObtenerMaterialClave();
         var nonce = RandomNumberGenerator.GetBytes(12);
         var claro = Encoding.UTF8.GetBytes(texto);
         var cifrado = new byte[claro.Length];
         var etiqueta = new byte[16];
-        var datosAsociados = ObtenerDatosAsociados(tipo);
-
-        using (var aes = new AesGcm(_claveAes, etiqueta.Length))
+        var datosAsociados = ObtenerDatosAsociados(tipo, material.KeyId);
+        try
         {
-            aes.Encrypt(nonce, claro, cifrado, etiqueta, datosAsociados);
+            using (var aes = new AesGcm(material.Clave, etiqueta.Length))
+            {
+                aes.Encrypt(nonce, claro, cifrado, etiqueta, datosAsociados);
+            }
+
+            var nonceBase64 = Convert.ToBase64String(nonce);
+            var etiquetaBase64 = Convert.ToBase64String(etiqueta);
+            var datosBase64 = Convert.ToBase64String(cifrado);
+            var firma = _servicioFirma.Firmar(ObtenerBytesFirma(
+                tipo,
+                material.KeyId,
+                nonceBase64,
+                etiquetaBase64,
+                datosBase64));
+            var contenedor = new ContenedorProtegido(
+                AutorContenedor,
+                DescripcionContenedor,
+                Version,
+                tipo,
+                Algoritmo,
+                material.KeyId,
+                nonceBase64,
+                etiquetaBase64,
+                datosBase64,
+                Convert.ToBase64String(firma));
+
+            return JsonSerializer.Serialize(contenedor, OpcionesJson);
         }
-
-        var nonceBase64 = Convert.ToBase64String(nonce);
-        var etiquetaBase64 = Convert.ToBase64String(etiqueta);
-        var datosBase64 = Convert.ToBase64String(cifrado);
-        var firma = Firmar(ObtenerBytesFirma(tipo, nonceBase64, etiquetaBase64, datosBase64));
-        var contenedor = new ContenedorProtegido(
-            AutorContenedor,
-            DescripcionContenedor,
-            Version,
-            tipo,
-            Algoritmo,
-            _keyId,
-            nonceBase64,
-            etiquetaBase64,
-            datosBase64,
-            Convert.ToBase64String(firma));
-
-        CryptographicOperations.ZeroMemory(claro);
-        return JsonSerializer.Serialize(contenedor, OpcionesJson);
+        finally
+        {
+            CryptographicOperations.ZeroMemory(claro);
+        }
     }
 
     public bool IntentarDesprotegerTexto(string tipo, string texto, out string claro, out string error)
@@ -102,6 +118,7 @@ public sealed class ServicioArtefactosProtegidos
         try
         {
             ValidarTipo(tipo);
+            using var material = ObtenerMaterialClave();
             var contenedor = JsonSerializer.Deserialize<ContenedorProtegido>(texto, OpcionesJson);
             if (contenedor is null
                 || !string.Equals(contenedor.Autor, AutorContenedor, StringComparison.Ordinal)
@@ -109,7 +126,7 @@ public sealed class ServicioArtefactosProtegidos
                 || contenedor.Version != Version
                 || !string.Equals(contenedor.Tipo, tipo, StringComparison.Ordinal)
                 || !string.Equals(contenedor.Algoritmo, Algoritmo, StringComparison.Ordinal)
-                || !string.Equals(contenedor.KeyId, _keyId, StringComparison.Ordinal))
+                || !string.Equals(contenedor.KeyId, material.KeyId, StringComparison.Ordinal))
             {
                 error = "El contenedor protegido no tiene el tipo, version o clave esperados.";
                 return false;
@@ -125,8 +142,13 @@ public sealed class ServicioArtefactosProtegidos
                 return false;
             }
 
-            if (!VerificarFirma(
-                ObtenerBytesFirma(tipo, contenedor.Nonce, contenedor.Etiqueta, contenedor.Datos),
+            if (!_servicioFirma.Verificar(
+                ObtenerBytesFirma(
+                    tipo,
+                    material.KeyId,
+                    contenedor.Nonce,
+                    contenedor.Etiqueta,
+                    contenedor.Datos),
                 firma))
             {
                 error = "La firma del contenedor protegido no es valida.";
@@ -134,14 +156,30 @@ public sealed class ServicioArtefactosProtegidos
             }
 
             var claroBytes = new byte[cifrado.Length];
-            using (var aes = new AesGcm(_claveAes, etiqueta.Length))
+            try
             {
-                aes.Decrypt(nonce, cifrado, etiqueta, claroBytes, ObtenerDatosAsociados(tipo));
-            }
+                using (var aes = new AesGcm(material.Clave, etiqueta.Length))
+                {
+                    aes.Decrypt(
+                        nonce,
+                        cifrado,
+                        etiqueta,
+                        claroBytes,
+                        ObtenerDatosAsociados(tipo, material.KeyId));
+                }
 
-            claro = Encoding.UTF8.GetString(claroBytes);
-            CryptographicOperations.ZeroMemory(claroBytes);
-            return true;
+                claro = Encoding.UTF8.GetString(claroBytes);
+                return true;
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(claroBytes);
+            }
+        }
+        catch (ClaveArtefactosNoDisponibleException ex)
+        {
+            error = ex.Message;
+            return false;
         }
         catch (Exception ex) when (ex is JsonException or FormatException or CryptographicException or ArgumentException)
         {
@@ -217,38 +255,36 @@ public sealed class ServicioArtefactosProtegidos
         }
     }
 
-    private byte[] Firmar(byte[] datos)
+    private MaterialClaveArtefactos ObtenerMaterialClave()
     {
-        using var rsa = RSA.Create();
-        rsa.ImportPkcs8PrivateKey(_clavePrivada, out _);
-        return rsa.SignData(datos, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        return _clavePruebas is null
+            ? _servicioClave!.ObtenerMaterial()
+            : new MaterialClaveArtefactos(_clavePruebas.ToArray());
     }
 
-    private bool VerificarFirma(byte[] datos, byte[] firma)
+    private static byte[] ObtenerDatosAsociados(string tipo, string keyId)
     {
-        using var rsa = RSA.Create();
-        rsa.ImportSubjectPublicKeyInfo(_clavePublica, out _);
-        return rsa.VerifyData(datos, firma, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        return Encoding.UTF8.GetBytes($"LanzadorScripts|artefacto|v{Version}|{tipo}|{Algoritmo}|{keyId}");
     }
 
-    private byte[] ObtenerDatosAsociados(string tipo)
-    {
-        return Encoding.UTF8.GetBytes($"LanzadorScripts|artefacto|v{Version}|{tipo}|{Algoritmo}|{_keyId}");
-    }
-
-    private byte[] ObtenerBytesFirma(string tipo, string nonce, string etiqueta, string datos)
+    private static byte[] ObtenerBytesFirma(
+        string tipo,
+        string keyId,
+        string nonce,
+        string etiqueta,
+        string datos)
     {
         return Encoding.UTF8.GetBytes(
-            $"LanzadorScripts|firma|{AutorContenedor}|{DescripcionContenedor}|v{Version}|{tipo}|{Algoritmo}|{_keyId}|{nonce}|{etiqueta}|{datos}");
+            $"LanzadorScripts|firma|{AutorContenedor}|{DescripcionContenedor}|v{Version}|{tipo}|{Algoritmo}|{keyId}|{nonce}|{etiqueta}|{datos}");
     }
 
     private bool IntentarCargarDesdeRuta(string ruta, string tipo, out string claro, out string error)
     {
         claro = string.Empty;
-        string rutaSegura;
+        RutaArchivoProtegidoValidada rutaSegura;
         try
         {
-            rutaSegura = ServicioRutasSeguras.ResolverArchivoAbsoluto(ruta, "archivo protegido");
+            rutaSegura = ServicioRutasSeguras.ResolverArchivoProtegido(ruta);
         }
         catch
         {
@@ -256,7 +292,7 @@ public sealed class ServicioArtefactosProtegidos
             return false;
         }
 
-        if (!File.Exists(rutaSegura))
+        if (!File.Exists(rutaSegura.RutaCompleta))
         {
             error = "No se encontro el archivo protegido.";
             return false;
@@ -264,11 +300,9 @@ public sealed class ServicioArtefactosProtegidos
 
         try
         {
-            return IntentarDesprotegerTexto(
-                tipo,
-                File.ReadAllText(rutaSegura, Encoding.UTF8),
-                out claro,
-                out error);
+            using var flujo = rutaSegura.AbrirLectura();
+            using var lector = new StreamReader(flujo, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return IntentarDesprotegerTexto(tipo, lector.ReadToEnd(), out claro, out error);
         }
         catch (IOException)
         {

@@ -7,6 +7,13 @@ namespace LanzadorScripts.Servicios;
 
 public static class ServicioRutasSeguras
 {
+    internal static RutaArchivoProtegidoValidada ResolverArchivoProtegido(string ruta)
+    {
+        // Convierte una ruta absoluta segura en un contrato de lectura.
+        return new RutaArchivoProtegidoValidada(
+            ResolverArchivoAbsoluto(ruta, "archivo protegido"));
+    }
+
     public static string ResolverArchivoAbsoluto(
         string rutaArchivo,
         string descripcion,

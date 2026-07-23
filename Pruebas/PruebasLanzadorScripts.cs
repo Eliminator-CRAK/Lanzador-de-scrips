@@ -36,6 +36,45 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void ValidadorBloqueaEnlacesDeSistema()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var destino = Path.Combine(
+            Path.GetTempPath(),
+            "LanzadorScripts_Destino_" + Guid.NewGuid().ToString("N"));
+        var enlace = Path.Combine(entorno.Raiz, "enlace");
+        Directory.CreateDirectory(destino);
+        File.WriteAllText(Path.Combine(destino, "a.ps1"), "Write-Output 1");
+
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(enlace, destino);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException
+                or IOException
+                or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            var resultado = new ServicioValidacionScripts()
+                .ValidarScriptParaEjecucion(entorno.Raiz, "enlace/a.ps1");
+            Assert.Equal(CodigoValidacionScript.EnlaceNoPermitido, resultado.Codigo);
+        }
+        finally
+        {
+            if (Directory.Exists(enlace))
+            {
+                Directory.Delete(enlace);
+            }
+
+            Directory.Delete(destino, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ValidadorDescubreCarpetasAunqueNoTenganScripts()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -149,8 +188,8 @@ public sealed class PruebasLanzadorScripts
         Assert.Equal("usuario_micro", PerfilAplicacion.Normalizar("usuario micro"));
         Assert.Equal("default", PerfilAplicacion.Normalizar(null));
         Assert.NotEqual(
-            PerfilAplicacion.CrearIdentificadorSid("S-1-5-21-4294967295-4294967295-4294967295-1234567890"),
-            PerfilAplicacion.CrearIdentificadorSid("S-1-5-21-4294967295-4294967295-4294967295-1234567899"));
+            PerfilAplicacion.CrearIdentificadorSid("S-1-5-21-1000"),
+            PerfilAplicacion.CrearIdentificadorSid("S-1-5-21-1001"));
     }
 
     [Fact]
@@ -540,21 +579,28 @@ public sealed class PruebasLanzadorScripts
             Path.Combine(entorno.Raiz, "..", "mal.lanzadorconfig"),
             "paquete de configuracion",
             ServicioPaquetesConfiguracion.ExtensionPaquete));
+        var rutasUnc = RutasArtefactosProtegidos.Resolver(@"\\SERVIDOR\C$\PERMISOS");
+        Assert.Equal(@"\\SERVIDOR\C$\PERMISOS\permisos.json", rutasUnc.RutaPermisos);
     }
 
     [Fact]
-    public void PaqueteConfiguracionYHashScriptRechazanRutasNoSeguras()
+    public void ImportacionPorContenidoYRutaScriptValidadaRechazanTraversal()
     {
         using var entorno = EntornoPruebas.Crear();
         var servicio = new ServicioPaquetesConfiguracion();
         var rutaPaqueteTraversal = Path.Combine(entorno.Raiz, "..", "mal.lanzadorconfig");
-        var rutaScriptTraversal = Path.Combine(entorno.Raiz, "sub", "..", "ok.ps1");
+        var validador = new ServicioValidacionScripts();
 
-        Assert.Throws<InvalidOperationException>(() => servicio.Importar(rutaPaqueteTraversal, new ConfiguracionLanzador()));
-        Assert.Throws<InvalidOperationException>(() => ServicioSeguridadScripts.CalcularSha256(rutaScriptTraversal));
-        Assert.Throws<InvalidOperationException>(() =>
-            ServicioSeguridadScripts.CalcularSha256(Path.Combine(entorno.Raiz, "texto.txt")));
-        Assert.Equal(64, ServicioSeguridadScripts.CalcularSha256(Path.Combine(entorno.Raiz, "ok.ps1")).Length);
+        Assert.False(ServicioPaquetesConfiguracion.EsRutaImportacionValida(rutaPaqueteTraversal));
+        Assert.False(validador.ValidarScriptParaEjecucion(entorno.Raiz, "sub/../ok.ps1").EsValido);
+        Assert.False(validador.ValidarScriptParaEjecucion(entorno.Raiz, @"sub/..\ok.ps1").EsValido);
+        Assert.False(validador.ValidarScriptParaEjecucion(entorno.Raiz, "texto.txt").EsValido);
+        var script = validador.ValidarScriptParaEjecucion(entorno.Raiz, "ok.ps1").Script!;
+        Assert.Equal(64, ServicioSeguridadScripts.CalcularSha256(script.RutaValidada).Length);
+        Assert.DoesNotContain(
+            typeof(ServicioSeguridadScripts).GetMethods(),
+            metodo => metodo.Name == nameof(ServicioSeguridadScripts.CalcularSha256)
+                && metodo.GetParameters().Single().ParameterType == typeof(string));
     }
 
     [Fact]
@@ -650,7 +696,7 @@ public sealed class PruebasLanzadorScripts
         Assert.False(seguridad.Diagnosticar(ps1, permisosVacios, null, "Catalogo ausente.").Permitido);
         Assert.False(seguridad.Diagnosticar(cmd, permisosVacios, null, "Catalogo ausente.").Permitido);
 
-        var catalogo = new ServicioCatalogoScripts().Crear([ps1, cmd], [cmd.Id]);
+        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear([ps1, cmd], [cmd.Id]);
         Assert.True(seguridad.Diagnosticar(cmd, permisosVacios, catalogo, string.Empty).Permitido);
         Assert.False(seguridad.Diagnosticar(ps1, permisosVacios, catalogo, string.Empty).Permitido);
         Assert.True(seguridad.Diagnosticar(
@@ -683,22 +729,19 @@ public sealed class PruebasLanzadorScripts
     {
         var claveAes = RandomNumberGenerator.GetBytes(32);
         using var rsa = RSA.Create(3072);
-        var servicio = new ServicioArtefactosProtegidos(
-            claveAes,
-            rsa.ExportPkcs8PrivateKey(),
-            rsa.ExportSubjectPublicKeyInfo(),
-            "PRUEBAS");
+        var servicio = new ServicioArtefactosProtegidos(claveAes, rsa, rsa);
         var protegido = servicio.ProtegerTexto(
             ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"secreto\":\"Alex Roman\"}");
+            "{\"dato\":\"valor-publico\"}");
 
-        Assert.DoesNotContain("\"secreto\"", protegido, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"dato\"", protegido, StringComparison.Ordinal);
+        Assert.Contains("\"Version\": 2", protegido, StringComparison.Ordinal);
         Assert.True(servicio.IntentarDesprotegerTexto(
             ServicioArtefactosProtegidos.TipoPermisos,
             protegido,
             out var claro,
             out _));
-        Assert.Contains("\"secreto\":\"Alex Roman\"", claro, StringComparison.Ordinal);
+        Assert.Contains("\"dato\":\"valor-publico\"", claro, StringComparison.Ordinal);
         Assert.False(servicio.IntentarDesprotegerTexto(
             ServicioArtefactosProtegidos.TipoCatalogoScripts,
             protegido,
@@ -736,7 +779,7 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         var ruta = Path.Combine(entorno.Raiz, "artefacto.json");
-        var servicio = new ServicioArtefactosProtegidos();
+        var servicio = entorno.Artefactos;
         servicio.GuardarTextoProtegido(
             ruta,
             ServicioArtefactosProtegidos.TipoPermisos,
@@ -758,13 +801,112 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void ClaveArtefactosUsaDpapiDeMaquina()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var rutaClave = Path.Combine(entorno.Raiz, "Seguridad", "artefactos.key");
+        var clave = RandomNumberGenerator.GetBytes(32);
+
+        ServicioClaveArtefactos.Aprovisionar(rutaClave, clave, aplicarAcl: false);
+        var contenidoProtegido = File.ReadAllText(rutaClave, Encoding.UTF8);
+        using var material = new ServicioClaveArtefactos(rutaClave).ObtenerMaterial();
+
+        Assert.True(material.Clave.SequenceEqual(clave));
+        Assert.DoesNotContain(Convert.ToBase64String(clave), contenidoProtegido, StringComparison.Ordinal);
+        Assert.Contains("\"ambito\": \"LocalMachine\"", contenidoProtegido, StringComparison.Ordinal);
+        CryptographicOperations.ZeroMemory(clave);
+    }
+
+    [Fact]
+    public void ArtefactosFallanCerradosSinClaveDpapi()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosProtegidos(
+            new ServicioClaveArtefactos(Path.Combine(entorno.Raiz, "ausente.key")),
+            new ServicioFirmaArtefactos(rsa, rsa));
+
+        Assert.Throws<ClaveArtefactosNoDisponibleException>(() =>
+            servicio.ProtegerTexto(ServicioArtefactosProtegidos.TipoPermisos, "{}"));
+        Assert.False(servicio.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoPermisos,
+            "{}",
+            out _,
+            out var error));
+        Assert.Contains("No se ha aprovisionado", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FirmaArtefactosSeparaFirmaYVerificacion()
+    {
+        var clave = RandomNumberGenerator.GetBytes(32);
+        using var rsaFirma = RSA.Create(3072);
+        using var rsaIncorrecta = RSA.Create(3072);
+        var escritor = new ServicioArtefactosProtegidos(clave, rsaFirma, rsaFirma);
+        var lectorIncorrecto = new ServicioArtefactosProtegidos(clave, rsaFirma, rsaIncorrecta);
+        var protegido = escritor.ProtegerTexto(
+            ServicioArtefactosProtegidos.TipoCatalogoScripts,
+            "{\"version\":1}");
+
+        Assert.False(lectorIncorrecto.IntentarDesprotegerTexto(
+            ServicioArtefactosProtegidos.TipoCatalogoScripts,
+            protegido,
+            out _,
+            out var error));
+        Assert.Equal("La firma del contenedor protegido no es valida.", error);
+        CryptographicOperations.ZeroMemory(clave);
+    }
+
+    [Fact]
+    public void AclClaveSoloPermiteSistemaYAdministradores()
+    {
+        var seguridad = ServicioDirectoriosAplicacion.CrearSeguridadArchivoAdministrativo();
+        var reglas = seguridad
+            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .ToList();
+        var permitidos = new HashSet<string>(StringComparer.Ordinal)
+        {
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value,
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null).Value
+        };
+
+        Assert.Equal(2, reglas.Count);
+        Assert.All(reglas, regla =>
+        {
+            Assert.False(regla.IsInherited);
+            Assert.Equal(AccessControlType.Allow, regla.AccessControlType);
+            Assert.Equal(FileSystemRights.FullControl, regla.FileSystemRights);
+            Assert.Contains(((SecurityIdentifier)regla.IdentityReference).Value, permitidos);
+        });
+    }
+
+    [Fact]
+    public void CodigoNoContieneClavesPrivadasIntegradas()
+    {
+        var raiz = ObtenerRaizProyecto();
+        var artefactos = File.ReadAllText(
+            Path.Combine(raiz, "Servicios", "ServicioArtefactosProtegidos.cs"),
+            Encoding.UTF8);
+        var aprovisionamiento = File.ReadAllText(
+            Path.Combine(raiz, "Herramientas", "AprovisionarClaveArtefactos.ps1"),
+            Encoding.UTF8);
+
+        Assert.DoesNotContain("ClaveAesBase64", artefactos, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClavePrivadaBase64", artefactos, StringComparison.Ordinal);
+        Assert.DoesNotContain("ImportPkcs8PrivateKey", artefactos, StringComparison.Ordinal);
+        Assert.Contains("Read-Host", aprovisionamiento, StringComparison.Ordinal);
+        Assert.Contains("-AsSecureString", aprovisionamiento, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CatalogoBloqueaScriptModificado()
     {
         using var entorno = EntornoPruebas.Crear();
         var validador = new ServicioValidacionScripts();
         var seguridad = new ServicioSeguridadScripts();
         var script = validador.ValidarScriptParaEjecucion(entorno.Raiz, "sub/ok.cmd").Script!;
-        var catalogo = new ServicioCatalogoScripts().Crear([script], [script.Id]);
+        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear([script], [script.Id]);
 
         Assert.True(seguridad.Diagnosticar(
             script,
@@ -791,7 +933,7 @@ public sealed class PruebasLanzadorScripts
         var script = new ServicioValidacionScripts()
             .ValidarScriptParaEjecucion(entorno.Raiz, "INSTALADOR.BAT")
             .Script!;
-        var servicio = new ServicioCatalogoScripts();
+        var servicio = new ServicioCatalogoScripts(entorno.Artefactos);
         var catalogo = servicio.Crear([script], [script.Id]);
         var rutaCatalogo = Path.Combine(entorno.Raiz, ServicioCatalogoScripts.NombreArchivo);
 
@@ -806,8 +948,8 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         var salida = Path.Combine(entorno.Raiz, "salida-publicacion");
-        ServicioGeneracionArtefactosIniciales.Generar(entorno.Raiz, salida);
-        var artefactos = new ServicioArtefactosProtegidos();
+        ServicioGeneracionArtefactosIniciales.Generar(entorno.Raiz, salida, entorno.Artefactos);
+        var artefactos = entorno.Artefactos;
 
         var permisosProtegidos = File.ReadAllText(Path.Combine(salida, "permisos.json"));
         Assert.True(artefactos.IntentarDesprotegerTexto(
@@ -822,7 +964,7 @@ public sealed class PruebasLanzadorScripts
         Assert.All(usuarios, usuario => Assert.Equal("admin", usuario?["rol"]?.GetValue<string>()));
 
         var rutaCatalogo = Path.Combine(salida, ServicioCatalogoScripts.NombreArchivo);
-        Assert.True(new ServicioCatalogoScripts().IntentarCargar(rutaCatalogo, out var catalogo, out _));
+        Assert.True(new ServicioCatalogoScripts(entorno.Artefactos).IntentarCargar(rutaCatalogo, out var catalogo, out _));
         Assert.NotNull(catalogo);
         Assert.Contains(catalogo!.Scripts, script => script.ScriptId == "ok.ps1");
         Assert.Contains(catalogo.Scripts, script => script.ScriptId == "sub/ok.cmd");
@@ -844,6 +986,27 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void ImportacionContenidoLimitaTamanoYRechazaManipulacion()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        using var rsa = RSA.Create(3072);
+        var firma = new ServicioCifradoAplicacion(rsa, rsa, "Pruebas");
+        var servicio = new ServicioPaquetesConfiguracion(firma);
+        var configuracion = entorno.CrearConfiguracion();
+        var paquete = servicio.Exportar(configuracion, CrearPermisosAdmin());
+        var contenido = Encoding.UTF8.GetString(Convert.FromBase64String(paquete.ContenidoBase64));
+        var manipulado = JsonNode.Parse(contenido)!.AsObject();
+        manipulado["Firma"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(384));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            servicio.ImportarContenido(manipulado.ToJsonString(), new ConfiguracionLanzador()));
+        Assert.Throws<InvalidOperationException>(() =>
+            servicio.ImportarContenido(
+                new string('A', ServicioPaquetesConfiguracion.LongitudMaximaContenido + 1),
+                new ConfiguracionLanzador()));
+    }
+
+    [Fact]
     public void PaqueteConfiguracionFirmadoImportaAdminShareOperativo()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -857,10 +1020,8 @@ public sealed class PruebasLanzadorScripts
         };
 
         var paquete = servicio.Exportar(configuracion, CrearPermisosAdmin());
-        var rutaPaquete = Path.Combine(entorno.Raiz, paquete.NombreArchivo);
-        File.WriteAllBytes(rutaPaquete, Convert.FromBase64String(paquete.ContenidoBase64));
-
-        var importacion = servicio.Importar(rutaPaquete, new ConfiguracionLanzador());
+        var contenido = Encoding.UTF8.GetString(Convert.FromBase64String(paquete.ContenidoBase64));
+        var importacion = servicio.ImportarContenido(contenido, new ConfiguracionLanzador());
         Assert.Equal(configuracion.RutaScripts, importacion.Configuracion.RutaScripts);
         Assert.NotNull(importacion.Permisos);
 
@@ -870,10 +1031,11 @@ public sealed class PruebasLanzadorScripts
             RutaPermisos = @"\\SERVIDOR\C$\REPO\PERMISOS"
         };
         var paqueteAdminShare = servicio.Exportar(configuracionAdminShare, CrearPermisosAdmin());
-        var rutaAdminShare = Path.Combine(entorno.Raiz, "admin-share.lanzadorconfig");
-        File.WriteAllBytes(rutaAdminShare, Convert.FromBase64String(paqueteAdminShare.ContenidoBase64));
-
-        var importacionAdminShare = servicio.Importar(rutaAdminShare, new ConfiguracionLanzador());
+        var contenidoAdminShare = Encoding.UTF8.GetString(
+            Convert.FromBase64String(paqueteAdminShare.ContenidoBase64));
+        var importacionAdminShare = servicio.ImportarContenido(
+            contenidoAdminShare,
+            new ConfiguracionLanzador());
         Assert.Equal(configuracionAdminShare.RutaScripts, importacionAdminShare.Configuracion.RutaScripts);
     }
 
@@ -881,7 +1043,9 @@ public sealed class PruebasLanzadorScripts
     public async Task ApiBloqueaPermisosAusentesOCorruptos()
     {
         using var entorno = EntornoPruebas.Crear();
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracionPermisosAusentes(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -903,7 +1067,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -924,7 +1090,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         File.WriteAllText(entorno.RutaPermisos, CrearPermisosAdmin().ToJsonString());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -938,7 +1106,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         File.WriteAllText(entorno.RutaPermisos, "{");
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -956,7 +1126,10 @@ public sealed class PruebasLanzadorScripts
         using var entorno = EntornoPruebas.Crear();
         using var rsaToken = RSA.Create(3072);
         var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes(), servicioToken);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracionPermisosAusentes(),
+            servicioToken,
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -989,7 +1162,10 @@ public sealed class PruebasLanzadorScripts
         using var rsaToken = RSA.Create(3072);
         var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
         var configuracion = entorno.CrearConfiguracionPermisosInaccesibles();
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(configuracion, servicioToken);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            configuracion,
+            servicioToken,
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1035,7 +1211,10 @@ public sealed class PruebasLanzadorScripts
         using var entorno = EntornoPruebas.Crear();
         using var rsaToken = RSA.Create(3072);
         var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracionPermisosAusentes(), servicioToken);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracionPermisosAusentes(),
+            servicioToken,
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1054,7 +1233,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1078,7 +1259,9 @@ public sealed class PruebasLanzadorScripts
         var permisos = CrearPermisosAdmin();
         permisos["usuarios"]![0]!["rol"] = "nominal";
         entorno.GuardarPermisosProtegidos(permisos);
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1100,14 +1283,16 @@ public sealed class PruebasLanzadorScripts
     public async Task ApiNominalSoloListaCarpetasPermitidas()
     {
         using var entorno = EntornoPruebas.Crear();
-        Directory.CreateDirectory(Path.Combine(entorno.Raiz, "secreto"));
-        File.WriteAllText(Path.Combine(entorno.Raiz, "secreto", "oculto.ps1"), "Write-Output 'oculto'");
+        Directory.CreateDirectory(Path.Combine(entorno.Raiz, "privado"));
+        File.WriteAllText(Path.Combine(entorno.Raiz, "privado", "a.ps1"), "Write-Output 1");
 
         var permisos = CrearPermisosAdmin();
         permisos["usuarios"]![0]!["rol"] = "nominal";
         permisos["usuarios"]![0]!["carpetasPermitidas"] = new JsonArray("sub");
         entorno.GuardarPermisosProtegidos(permisos);
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1116,16 +1301,16 @@ public sealed class PruebasLanzadorScripts
         Assert.Contains(raiz!, script => script?["nombre"]?.GetValue<string>() == "ok.ps1");
         Assert.Contains(raiz!, script => script?["esCarpeta"]?.GetValue<bool>() == true && script?["carpeta"]?.GetValue<string>() == "sub");
         Assert.DoesNotContain(raiz!, script => script?["id"]?.GetValue<string>() == "sub/ok.cmd");
-        Assert.DoesNotContain(raiz!, script => script?["carpeta"]?.GetValue<string>() == "secreto");
+        Assert.DoesNotContain(raiz!, script => script?["carpeta"]?.GetValue<string>() == "privado");
 
         var sub = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=sub")) as JsonArray;
         Assert.NotNull(sub);
         Assert.Contains(sub!, script => script?["id"]?.GetValue<string>() == "sub/ok.cmd");
         Assert.DoesNotContain(sub!, script => script?["nombre"]?.GetValue<string>() == "ok.ps1");
 
-        var secreto = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=secreto")) as JsonArray;
-        Assert.NotNull(secreto);
-        Assert.Empty(secreto!);
+        var privado = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=privado")) as JsonArray;
+        Assert.NotNull(privado);
+        Assert.Empty(privado!);
     }
 
     [Fact]
@@ -1133,7 +1318,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1156,7 +1343,7 @@ public sealed class PruebasLanzadorScripts
         Assert.Contains("\"Firma\"", texto, StringComparison.Ordinal);
         Assert.Contains("\"Datos\"", texto, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(entorno.Raiz, "permisos.json")));
-        Assert.True(new ServicioArtefactosProtegidos().IntentarDesprotegerTexto(
+        Assert.True(entorno.Artefactos.IntentarDesprotegerTexto(
             ServicioArtefactosProtegidos.TipoPermisos,
             texto,
             out var claro,
@@ -1169,7 +1356,9 @@ public sealed class PruebasLanzadorScripts
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
-        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion());
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(
+            entorno.CrearConfiguracion(),
+            entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
@@ -1281,15 +1470,12 @@ public sealed class PruebasLanzadorScripts
             ZipFile.ExtractToDirectory(memoria, carpetaEsperada);
         }
 
-        var ejecutable = Directory
-            .EnumerateFiles(carpetaEsperada, "msedgewebview2.exe", SearchOption.AllDirectories)
-            .Single();
         return new ServicioRuntimeWebView2Embebido(
             () => new MemoryStream(zip),
             [raizRuntime],
             Convert.ToHexString(SHA256.HashData(zip)),
             ServicioRuntimeWebView2Embebido.CalcularHashContenidoRuntime(carpetaEsperada),
-            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ejecutable))),
+            Convert.ToHexString(SHA256.HashData(new byte[] { 1, 2, 3, 4 })),
             null);
     }
 
@@ -1349,11 +1535,18 @@ public sealed class PruebasLanzadorScripts
 
 internal sealed class EntornoPruebas : IDisposable
 {
+    private readonly RSA _rsaArtefactos;
+
     private EntornoPruebas(string raiz)
     {
         Raiz = raiz;
         CarpetaPermisos = Path.Combine(Raiz, "PERMISOS");
         RutaPermisos = Path.Combine(CarpetaPermisos, RutasArtefactosProtegidos.NombrePermisos);
+        _rsaArtefactos = RSA.Create(3072);
+        Artefactos = new ServicioArtefactosProtegidos(
+            RandomNumberGenerator.GetBytes(32),
+            _rsaArtefactos,
+            _rsaArtefactos);
     }
 
     public string Raiz { get; }
@@ -1361,6 +1554,8 @@ internal sealed class EntornoPruebas : IDisposable
     public string RutaPermisos { get; }
 
     public string CarpetaPermisos { get; }
+
+    public ServicioArtefactosProtegidos Artefactos { get; }
 
     public static EntornoPruebas Crear()
     {
@@ -1414,7 +1609,7 @@ internal sealed class EntornoPruebas : IDisposable
     public void GuardarPermisosProtegidos(JsonObject permisos)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(RutaPermisos)!);
-        new ServicioArtefactosProtegidos().GuardarTextoProtegido(
+        Artefactos.GuardarTextoProtegido(
             RutaPermisos,
             ServicioArtefactosProtegidos.TipoPermisos,
             permisos.ToJsonString());
@@ -1423,13 +1618,14 @@ internal sealed class EntornoPruebas : IDisposable
     public void GuardarCatalogo(IEnumerable<string> scriptIds)
     {
         var validador = new ServicioValidacionScripts();
-        var servicio = new ServicioCatalogoScripts();
+        var servicio = new ServicioCatalogoScripts(Artefactos);
         var catalogo = servicio.Crear(validador.DescubrirScripts(Raiz), scriptIds);
         servicio.Guardar(ServicioCatalogoScripts.ObtenerRuta(RutaPermisos), catalogo);
     }
 
     public void Dispose()
     {
+        _rsaArtefactos.Dispose();
         try
         {
             Directory.Delete(Raiz, recursive: true);
