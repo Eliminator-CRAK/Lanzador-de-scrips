@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.4 |
+| Version | 1.4.5 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -90,6 +90,8 @@ powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
 
 El script solicita la clave de 32 bytes en Base64 mediante entrada segura, la protege con DPAPI `LocalMachine` y aplica una ACL limitada a `SYSTEM` y `Administrators`. La clave no se acepta como argumento.
 
+Para actualizar una instalacion anterior, haga copia de `permisos.json` y `catalogo-scripts.json`, exporte la configuracion con la version anterior, aprovisione la misma clave AES en cada equipo autorizado e importe la configuracion con la version nueva. Los dos JSON v2 son contenedores cifrados: no se editan directamente con un editor de texto. Cualquier cambio en un script exige volver a publicar el catalogo.
+
 La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
 El pipeline de GitHub instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
@@ -135,7 +137,7 @@ La politica es fail closed. Los `.ps1`, `.bat` y `.cmd` deben figurar en el cata
 
 Los administradores publican el catalogo desde Ajustes mediante `Firmar scripts y publicar catálogo`. La operacion descubre de nuevo los archivos seleccionados y no modifica su contenido. El modo desarrollo es una excepcion administrativa limitada a la sesion.
 
-Las claves de los contenedores estan integradas en el EXE por el requisito de portabilidad. Esto oculta el contenido frente a lectura casual y detecta manipulaciones normales, pero no protege frente a un atacante capaz de extraer y reutilizar las claves del ejecutable.
+La clave AES de los contenedores no esta integrada en el EXE: se recupera del archivo protegido por DPAPI de maquina. El EXE incorpora solo el certificado publico de verificacion; la clave RSA privada permanece en el almacen de certificados de los equipos administradores autorizados.
 
 La aplicacion no crea tareas programadas ni registra la apertura con Windows. El operador la abre manualmente y el backend integrado toma la identidad del proceso que ha abierto la app.
 

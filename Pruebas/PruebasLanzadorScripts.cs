@@ -273,6 +273,29 @@ public sealed class PruebasLanzadorScripts
         Assert.False(File.Exists(Path.Combine(ObtenerRaizProyecto(), "Servicios", "PerfilServicioLanzador.cs")));
     }
 
+    // Comprueba que no regresen las implementaciones WPF sustituidas por el backend web.
+    [Fact]
+    public void ProyectoNoConservaImplementacionesWpfObsoletas()
+    {
+        var archivosObsoletos = new[]
+        {
+            Path.Combine("Modelos", "ConfiguracionPermisos.cs"),
+            Path.Combine("Modelos", "EstadoEjecucion.cs"),
+            Path.Combine("Modelos", "InformacionScript.cs"),
+            Path.Combine("Modelos", "PermisosLanzador.cs"),
+            Path.Combine("ModelosVista", "ModeloEjecucionScript.cs"),
+            Path.Combine("ModelosVista", "ModeloVentanaPrincipal.cs"),
+            Path.Combine("ModelosVista", "ObjetoNotificable.cs"),
+            Path.Combine("ModelosVista", "ObjetoObservable.cs"),
+            Path.Combine("Servicios", "GestorEjecucionScripts.cs")
+        };
+
+        foreach (var archivo in archivosObsoletos)
+        {
+            Assert.False(File.Exists(Path.Combine(ObtenerRaizProyecto(), archivo)));
+        }
+    }
+
     [Fact]
     public void PerfilWebView2PrincipalUsaProgramDataYSeparaUsuariosPorSid()
     {

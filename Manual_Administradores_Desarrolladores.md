@@ -64,6 +64,18 @@ Reglas:
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
 
+## Migracion A La Version 1.4.5
+
+1. Conserve una copia administrativa de `permisos.json` y `catalogo-scripts.json`.
+2. Si los archivos proceden del formato v1, exporte la configuracion con la version anterior antes de sustituirlos.
+3. Genere y custodie una unica clave AES de 32 bytes fuera de Git, historiales de consola y archivos compartidos.
+4. Ejecute `Herramientas\AprovisionarClaveArtefactos.ps1` como administrador en cada equipo que deba leer o publicar los contenedores.
+5. Importe el paquete exportado o use `-InicializarArtefactos` solo para una instalacion nueva.
+6. Publique de nuevo `catalogo-scripts.json` despues de cambiar, mover, renombrar o sustituir cualquier script.
+7. Verifique un equipo cliente antes de retirar la copia de seguridad.
+
+No edite directamente los dos JSON: en v2 son contenedores cifrados y firmados. Los equipos cliente necesitan la clave AES protegida por DPAPI, pero no el certificado privado. El certificado privado de artefactos se instala solo en los equipos autorizados para guardar permisos o publicar catalogos.
+
 ## Uso Manual Y Servicio Local
 
 La aplicacion no registra tareas programadas ni configura la apertura con Windows.
@@ -173,7 +185,7 @@ Antes de ejecutar `-InicializarArtefactos`, aprovisione la misma clave de 32 byt
 powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
 ```
 
-La entrada es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Los contenedores v1 no son compatibles con la version 1.4.4: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
+La entrada es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Los contenedores v1 no son compatibles con la version 1.4.4 o posteriores: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
 
 No se instala ningun servicio, cuenta, tarea ni puerto. El certificado privado de artefactos solo debe instalarse en los equipos autorizados para publicar cambios.
 
