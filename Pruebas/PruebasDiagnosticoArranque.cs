@@ -48,6 +48,20 @@ public sealed class PruebasDiagnosticoArranque
     }
 
     [Fact]
+    public void ErrorBackendIncluyeRutaYDetalleSaneado()
+    {
+        var excepcion = new InvalidOperationException("No se pudo leer permisos.json con token=abc123.");
+
+        var mensaje = ServidorLocalWeb.CrearMensajeErrorBackend("/api/ajustes", excepcion);
+
+        Assert.Contains(ServidorLocalWeb.MensajeBackendLocalNoDisponible, mensaje, StringComparison.Ordinal);
+        Assert.Contains("/api/ajustes", mensaje, StringComparison.Ordinal);
+        Assert.Contains("No se pudo leer permisos.json", mensaje, StringComparison.Ordinal);
+        Assert.Contains("token=[oculto]", mensaje, StringComparison.Ordinal);
+        Assert.DoesNotContain("abc123", mensaje, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnosticoScriptsNoCreaLaCarpetaConfigurada()
     {
         var carpeta = Path.Combine(Path.GetTempPath(), "LanzadorScripts_Diagnostico_" + Guid.NewGuid().ToString("N"));
@@ -94,6 +108,10 @@ public sealed class PruebasDiagnosticoArranque
         Assert.Contains("_tareaDiagnosticoAjustes ??= Task.Run(ObtenerDiagnosticoPermisos)", codigo, StringComparison.Ordinal);
         Assert.Contains("Task.WhenAny(tarea, Task.Delay(TimeSpan.FromSeconds(2)))", codigo, StringComparison.Ordinal);
         Assert.Contains("_diagnosticoAjustesValidoHasta = DateTimeOffset.UtcNow.AddSeconds(2)", codigo, StringComparison.Ordinal);
+        Assert.Contains("return CrearDiagnosticoPermisosNoDisponible();", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ultimoDiagnosticoPermisosDisponible", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("ObtenerDiagnosticoPermisosFallback()", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("_diagnosticoAjustesAgotoEspera", codigo, StringComparison.Ordinal);
         Assert.Contains("Evita consultar la red durante una sesion de emergencia activa", codigo, StringComparison.Ordinal);
     }
 

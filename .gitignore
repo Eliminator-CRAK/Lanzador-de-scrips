@@ -10,3 +10,12 @@ Recursos/WebView2/
 publicacion/
 publicacion_*/
 /*.obj
+
+# Perfiles locales y configuraciones con secretos.
+**/EBWebView/
+*.WebView2/
+*.WebView2/**
+LanzadorScripts.exe.WebView2/
+LanzadorScripts.exe.WebView2/**
+[[]mcp_servers.*[]].txt
+mcp_servers.*.txt

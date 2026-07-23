@@ -146,15 +146,7 @@ public partial class Aplicacion : System.Windows.Application
 
     private static bool EsPaqueteConfiguracionValido(string ruta)
     {
-        try
-        {
-            return EsPaqueteConfiguracion(ruta)
-                && File.Exists(ruta)
-                && !Path.GetFullPath(ruta).Contains("..", StringComparison.Ordinal);
-        }
-        catch
-        {
-            return false;
-        }
+        return EsPaqueteConfiguracion(ruta)
+            && ServicioPaquetesConfiguracion.EsRutaImportacionValida(ruta);
     }
 }

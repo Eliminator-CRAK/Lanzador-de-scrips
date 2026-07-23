@@ -245,7 +245,18 @@ public sealed class ServicioArtefactosProtegidos
     private bool IntentarCargarDesdeRuta(string ruta, string tipo, out string claro, out string error)
     {
         claro = string.Empty;
-        if (!File.Exists(ruta))
+        string rutaSegura;
+        try
+        {
+            rutaSegura = ServicioRutasSeguras.ResolverArchivoAbsoluto(ruta, "archivo protegido");
+        }
+        catch
+        {
+            error = "La ruta del archivo protegido no es segura.";
+            return false;
+        }
+
+        if (!File.Exists(rutaSegura))
         {
             error = "No se encontro el archivo protegido.";
             return false;
@@ -255,7 +266,7 @@ public sealed class ServicioArtefactosProtegidos
         {
             return IntentarDesprotegerTexto(
                 tipo,
-                File.ReadAllText(ruta, Encoding.UTF8),
+                File.ReadAllText(rutaSegura, Encoding.UTF8),
                 out claro,
                 out error);
         }

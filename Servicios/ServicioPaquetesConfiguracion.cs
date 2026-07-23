@@ -52,12 +52,13 @@ public sealed class ServicioPaquetesConfiguracion
 
     public ResultadoImportacionConfiguracion Importar(string rutaArchivo, ConfiguracionLanzador configuracionActual)
     {
-        if (!File.Exists(rutaArchivo))
+        var rutaSegura = ResolverRutaImportacion(rutaArchivo);
+        if (!File.Exists(rutaSegura))
         {
-            throw new FileNotFoundException("No se encontro el paquete de configuracion.", rutaArchivo);
+            throw new FileNotFoundException("No se encontro el paquete de configuracion.", rutaSegura);
         }
 
-        var texto = File.ReadAllText(rutaArchivo, Encoding.UTF8);
+        var texto = File.ReadAllText(rutaSegura, Encoding.UTF8);
         if (!_servicioCifrado.IntentarDescifrarTexto(TipoCifrado, texto, out var json))
         {
             throw new InvalidOperationException("El paquete de configuracion no es valido o fue modificado.");
@@ -98,6 +99,26 @@ public sealed class ServicioPaquetesConfiguracion
             rutaPermisos,
             ServicioArtefactosProtegidos.TipoPermisos,
             permisos.ToJsonString(OpcionesJson));
+    }
+
+    public static string ResolverRutaImportacion(string rutaArchivo)
+    {
+        return ServicioRutasSeguras.ResolverArchivoAbsoluto(
+            rutaArchivo,
+            "paquete de configuracion",
+            ExtensionPaquete);
+    }
+
+    public static bool EsRutaImportacionValida(string rutaArchivo)
+    {
+        try
+        {
+            return File.Exists(ResolverRutaImportacion(rutaArchivo));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private sealed record PayloadConfiguracionExportada(

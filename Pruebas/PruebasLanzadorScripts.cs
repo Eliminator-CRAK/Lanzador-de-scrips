@@ -528,6 +528,56 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void RutasProtegidasRechazanTraversalYSeparadoresNoPermitidos()
+    {
+        using var entorno = EntornoPruebas.Crear();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            RutasArtefactosProtegidos.Resolver(Path.Combine(entorno.Raiz, "..", "PERMISOS")));
+        Assert.Throws<InvalidOperationException>(() =>
+            RutasArtefactosProtegidos.Resolver("C:/LanzadorScripts/PERMISOS"));
+        Assert.False(ServicioRutasSeguras.EsArchivoAbsolutoValido(
+            Path.Combine(entorno.Raiz, "..", "mal.lanzadorconfig"),
+            "paquete de configuracion",
+            ServicioPaquetesConfiguracion.ExtensionPaquete));
+    }
+
+    [Fact]
+    public void PaqueteConfiguracionYHashScriptRechazanRutasNoSeguras()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var servicio = new ServicioPaquetesConfiguracion();
+        var rutaPaqueteTraversal = Path.Combine(entorno.Raiz, "..", "mal.lanzadorconfig");
+        var rutaScriptTraversal = Path.Combine(entorno.Raiz, "sub", "..", "ok.ps1");
+
+        Assert.Throws<InvalidOperationException>(() => servicio.Importar(rutaPaqueteTraversal, new ConfiguracionLanzador()));
+        Assert.Throws<InvalidOperationException>(() => ServicioSeguridadScripts.CalcularSha256(rutaScriptTraversal));
+        Assert.Throws<InvalidOperationException>(() =>
+            ServicioSeguridadScripts.CalcularSha256(Path.Combine(entorno.Raiz, "texto.txt")));
+        Assert.Equal(64, ServicioSeguridadScripts.CalcularSha256(Path.Combine(entorno.Raiz, "ok.ps1")).Length);
+    }
+
+    [Fact]
+    public void LectorPermisosObsoletoNoFormaParteDelBackend()
+    {
+        Assert.False(File.Exists(Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioPermisos.cs")));
+    }
+
+    [Fact]
+    public void GitignoreExcluyePerfilesLocalesYConfiguracionesMcp()
+    {
+        var raiz = ObtenerRaizProyecto();
+        var gitignore = File.ReadAllText(Path.Combine(raiz, ".gitignore"));
+
+        Assert.Contains("bin/", gitignore, StringComparison.Ordinal);
+        Assert.Contains("obj/", gitignore, StringComparison.Ordinal);
+        Assert.Contains("**/EBWebView/", gitignore, StringComparison.Ordinal);
+        Assert.Contains("*.WebView2/", gitignore, StringComparison.Ordinal);
+        Assert.Contains("[[]mcp_servers.*[]].txt", gitignore, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(raiz, "[mcp_servers.stitch].txt")));
+    }
+
+    [Fact]
     public void ConfiguracionMigraLogsDeLocalAppDataAProgramData()
     {
         var configuracion = new ConfiguracionLanzador

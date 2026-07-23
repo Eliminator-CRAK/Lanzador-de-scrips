@@ -86,12 +86,6 @@ public sealed class ServicioCatalogoScripts
     {
         catalogo = null;
         error = string.Empty;
-        if (!File.Exists(rutaCatalogo))
-        {
-            error = "No se encontro catalogo-scripts.json.";
-            return false;
-        }
-
         try
         {
             if (!_artefactos.IntentarCargarTextoProtegido(
@@ -101,6 +95,11 @@ public sealed class ServicioCatalogoScripts
                 out error,
                 out _))
             {
+                if (string.IsNullOrWhiteSpace(error))
+                {
+                    error = "No se encontro catalogo-scripts.json.";
+                }
+
                 return false;
             }
 
