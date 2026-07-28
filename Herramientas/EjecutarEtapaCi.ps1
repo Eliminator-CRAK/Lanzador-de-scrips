@@ -67,21 +67,37 @@ function Confiar-CertificadoFirmaCi {
     }
 
     if ($env:GITHUB_ACTIONS -eq 'true') {
-        $rutaPublica = Join-Path $env:RUNNER_TEMP 'lanzador-signing.cer'
+        # Agrega solo la parte publica sin abrir dialogos en el runner.
+        $bytesPublicos = $Certificado.Export(
+            [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+        $certificadoPublico = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $bytesPublicos)
         try {
-            Export-Certificate `
-                -Cert $Certificado `
-                -FilePath $rutaPublica `
-                -Force | Out-Null
-            Import-Certificate `
-                -FilePath $rutaPublica `
-                -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
-            Import-Certificate `
-                -FilePath $rutaPublica `
-                -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' | Out-Null
+            foreach ($nombreAlmacen in @(
+                [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+                [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher)) {
+                $almacen = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+                    $nombreAlmacen,
+                    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+                try {
+                    $almacen.Open(
+                        [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                    $almacen.Add($certificadoPublico)
+                    $coincidencias = $almacen.Certificates.Find(
+                        [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                        $Certificado.Thumbprint,
+                        $false)
+                    if ($coincidencias.Count -lt 1) {
+                        throw "No se pudo confiar en el certificado dentro de $nombreAlmacen."
+                    }
+                }
+                finally {
+                    $almacen.Close()
+                }
+            }
         }
         finally {
-            Remove-Item -LiteralPath $rutaPublica -Force -ErrorAction SilentlyContinue
+            $certificadoPublico.Dispose()
         }
     }
 }
@@ -99,6 +115,7 @@ function Publicar-Aplicacion {
 
         $certPath = Join-Path $env:RUNNER_TEMP 'lanzador-signing.pfx'
         try {
+            Write-Host 'Cargando certificado de firma del runner...'
             [IO.File]::WriteAllBytes(
                 $certPath,
                 [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
@@ -109,7 +126,9 @@ function Publicar-Aplicacion {
             $certificado = Get-PfxCertificate `
                 -FilePath $certPath `
                 -Password $securePassword
+            Write-Host 'Aprovisionando confianza del certificado en el runner...'
             Confiar-CertificadoFirmaCi -Certificado $certificado
+            Write-Host 'Certificado de firma preparado correctamente.'
             & "$PSScriptRoot\PublicarPortable.ps1" `
                 -CertPath $certPath `
                 -CertPassword $securePassword
