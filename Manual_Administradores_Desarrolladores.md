@@ -248,6 +248,8 @@ Semgrep Multimodal envia fragmentos necesarios a OpenAI o AWS Bedrock bajo Zero 
 
 La unica excepcion revisada corresponde a la regla de baja confianza `javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop` sobre `AnimatePresence` de Framer Motion. El codigo detectado usa `Map` y `Set`, que son la mitigacion indicada por la propia regla. `Herramientas/ValidarResultadosSemgrep.py` solo la admite cuando coinciden regla, ruta, linea y SHA-256 del bundle completo. No se deshabilita la regla ni se excluye el archivo; cualquier cambio del bundle invalida automaticamente la excepcion.
 
+Las etapas PowerShell del workflow se mantienen en `Herramientas/EjecutarEtapaCi.ps1`. Esto permite que Semgrep analice el workflow completo con `--strict` y evita duplicar la logica de preparacion, publicacion y comprobacion del artefacto.
+
 El workflow de publicacion en GitHub actua como respaldo y ejecuta:
 
 - Restore.

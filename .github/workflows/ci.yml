@@ -26,20 +26,7 @@ jobs:
 
       - name: Setup PowerShell 7.6
         shell: powershell
-        run: |
-          $version = '7.6.0'
-          $hashEsperado = '9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322'
-          $zip = Join-Path $env:RUNNER_TEMP "PowerShell-$version-win-x64.zip"
-          $destino = Join-Path $env:RUNNER_TEMP "PowerShell-$version"
-          $url = "https://github.com/PowerShell/PowerShell/releases/download/v$version/PowerShell-$version-win-x64.zip"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          $hashReal = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
-          if ($hashReal -ne $hashEsperado) {
-            throw "Hash de PowerShell inesperado: $hashReal"
-          }
-          Expand-Archive -LiteralPath $zip -DestinationPath $destino -Force
-          & (Join-Path $destino 'pwsh.exe') -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
-          [IO.File]::AppendAllText($env:GITHUB_PATH, "$destino`r`n", [Text.UTF8Encoding]::new($false))
+        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa PrepararPowerShell
 
       - name: Restore
         run: dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
@@ -52,12 +39,7 @@ jobs:
 
       - name: Verify Visual C++ x64
         shell: powershell
-        run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          $instalacion = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if ([string]::IsNullOrWhiteSpace($instalacion)) {
-            throw 'La imagen no contiene las herramientas C++ x64 requeridas.'
-          }
+        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarCpp
 
       - name: Publish x64
         shell: pwsh
@@ -65,41 +47,13 @@ jobs:
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if ($PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
-            throw "La publicacion exige PowerShell 7.6.x. Version activa: $($PSVersionTable.PSVersion)"
-          }
-          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
-            $certPath = Join-Path $env:RUNNER_TEMP 'lanzador-signing.pfx'
-            try {
-              [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
-              $securePassword = ConvertTo-SecureString $env:WINDOWS_SIGNING_CERT_PASSWORD -AsPlainText -Force
-              .\Herramientas\PublicarPortable.ps1 -CertPath $certPath -CertPassword $securePassword
-            } finally {
-              Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue
-            }
-          } elseif ($env:EVENT_NAME -eq 'pull_request') {
-            .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
-          } else {
-            throw 'Falta WINDOWS_SIGNING_CERT_BASE64. La publicacion en main exige firma Authenticode.'
-          }
+        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa Publicar
 
       - name: Verify artifact
         shell: pwsh
-        run: |
-          $exe = Join-Path $PWD 'publicacion\LanzadorScripts.exe'
-          if (-not (Test-Path -LiteralPath $exe)) {
-            throw 'No se genero LanzadorScripts.exe.'
-          }
-          $archivos = @(Get-ChildItem -LiteralPath (Split-Path $exe) -Recurse -File)
-          if ($archivos.Count -ne 1) {
-            throw "La publicacion debe generar un unico EXE. Archivos: $($archivos.Count)"
-          }
-          $firma = Get-AuthenticodeSignature -LiteralPath $exe
-          if ('${{ github.event_name }}' -ne 'pull_request' -and $firma.Status -ne 'Valid') {
-            throw "La firma del artefacto no es valida: $($firma.Status)."
-          }
-          Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarArtefacto
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
