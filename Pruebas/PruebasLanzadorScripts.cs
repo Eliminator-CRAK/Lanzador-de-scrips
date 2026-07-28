@@ -1364,15 +1364,25 @@ public sealed class PruebasLanzadorScripts
         using var entorno = EntornoPruebas.Crear();
         using var rsaToken = RSA.Create(3072);
         var servicioToken = new ServicioTokenMaestro(rsaToken, rsaToken);
+        entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
         using var servidor = ServidorLocalWeb.IniciarParaPruebas(
-            entorno.CrearConfiguracionPermisosAusentes(),
+            entorno.CrearConfiguracion(),
             servicioToken,
             entorno.Artefactos);
         using var cliente = CrearCliente(servidor);
         await PrepararSesionAsync(cliente, servidor);
 
-        using var cuerpo = new StringContent("{}", Encoding.UTF8, "application/json");
-        var respuesta = await cliente.PostAsync("/api/token-maestro/generar", cuerpo);
+        using var respuestaUsuario = await cliente.GetAsync("/api/usuario");
+        var usuario = await LeerJsonAsync(respuestaUsuario);
+        var tokenAdmin = usuario?["tokenAdmin"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(tokenAdmin));
+
+        using var peticion = new HttpRequestMessage(HttpMethod.Post, "/api/token-maestro/generar")
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        };
+        peticion.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+        using var respuesta = await cliente.SendAsync(peticion);
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
 
         var json = await LeerJsonAsync(respuesta);
@@ -1398,6 +1408,10 @@ public sealed class PruebasLanzadorScripts
         using var importarSinBearer = new StringContent("{}", Encoding.UTF8, "application/json");
         var respuestaImportarSinBearer = await cliente.PostAsync("/api/configuracion-paquete/importar", importarSinBearer);
         Assert.Equal(HttpStatusCode.Unauthorized, respuestaImportarSinBearer.StatusCode);
+
+        using var generarSinBearer = new StringContent("{}", Encoding.UTF8, "application/json");
+        var respuestaGenerarSinBearer = await cliente.PostAsync("/api/token-maestro/generar", generarSinBearer);
+        Assert.Equal(HttpStatusCode.Unauthorized, respuestaGenerarSinBearer.StatusCode);
 
         using var bearerInvalido = new HttpRequestMessage(HttpMethod.Get, "/api/ajustes");
         bearerInvalido.Headers.TryAddWithoutValidation("Authorization", "Bearer invalido");

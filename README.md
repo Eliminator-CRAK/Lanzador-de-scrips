@@ -149,7 +149,7 @@ La clave AES de los contenedores no esta integrada en el EXE: se recupera del ar
 
 La aplicacion no crea tareas programadas ni registra la apertura con Windows. El operador la abre manualmente y el backend integrado toma la identidad del proceso que ha abierto la app.
 
-El token maestro se firma con el certificado privado autorizado de Alex Roman. El mismo token puede reutilizarse mientras se conserve protegido y la firma sea valida; no requiere motivo operativo ni se registra como usado.
+El token maestro se firma con el certificado privado autorizado de Alex Roman y su generacion exige ademas una sesion de aplicacion con rol administrador y Bearer valido. El mismo token puede reutilizarse mientras se conserve protegido y la firma sea valida; no requiere motivo operativo ni se registra como usado.
 
 Antes de ejecutar, la aplicacion valida integridad, copia el script a staging local, aplica protecciones de archivo y revalida la copia para mitigar TOCTOU.
 

@@ -90,7 +90,7 @@ Al abrir la ventana se inicia el backend integrado en el mismo proceso elevado. 
 
 ## Emergencia
 
-El token maestro esta firmado por el certificado privado autorizado de Alex Roman y permite abrir una sesion de emergencia cuando los permisos no estan disponibles.
+El token maestro esta firmado por el certificado privado autorizado de Alex Roman y permite abrir una sesion de emergencia cuando los permisos no estan disponibles. Solo puede generarlo una sesion de aplicacion que ya tenga rol administrador, un Bearer valido y acceso al certificado privado.
 
 - TTL del token: sin caducidad operativa en la aplicacion.
 - Uso: reutilizable mientras se conserve protegido y la firma sea valida.

@@ -468,8 +468,13 @@ public partial class VentanaPrincipal : Window
             var endpoint = _endpointServicio ?? await ObtenerEndpointBackendAsync();
             _endpointServicio = endpoint;
             using var cliente = await CrearClienteServicioAsync(endpoint);
-            using var contenido = new StringContent("{}", Encoding.UTF8, "application/json");
-            var respuesta = await cliente.PostAsync("/api/token-maestro/generar", contenido);
+            var tokenAdmin = await ObtenerTokenAdminAsync(cliente);
+            using var peticion = new HttpRequestMessage(HttpMethod.Post, "/api/token-maestro/generar")
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            };
+            peticion.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
+            using var respuesta = await cliente.SendAsync(peticion);
             var json = await respuesta.Content.ReadAsStringAsync();
             if (!respuesta.IsSuccessStatusCode)
             {
@@ -751,7 +756,7 @@ public partial class VentanaPrincipal : Window
             return valor;
         }
 
-        throw new InvalidOperationException("La sesion actual no tiene permisos de administrador para exportar configuracion.");
+        throw new InvalidOperationException("La sesion actual no tiene permisos para realizar esta accion administrativa.");
     }
 
     private static string NormalizarNombreArchivoPaquete(string? nombreArchivo)

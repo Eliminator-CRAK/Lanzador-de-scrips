@@ -394,6 +394,11 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "POST" && ruta.Equals("/api/token-maestro/generar", StringComparison.OrdinalIgnoreCase))
         {
+            if (!await RequerirAdministradorAsync(contexto))
+            {
+                return;
+            }
+
             if (!_servicioTokenMaestro.PuedeGenerar())
             {
                 await EscribirJsonAsync(contexto, 409, new { error = "No se encontro el certificado privado de Alex Roman con clave RSA para generar el token maestro." });
