@@ -12,22 +12,7 @@ semgrep-high-sensitivity:
   variables:
     GIT_DEPTH: "0"
   script:
-    - >-
-      semgrep scan
-      --config auto
-      --config p/security-audit
-      --config p/secrets
-      --no-error
-      --strict
-      --disable-nosem
-      --no-git-ignore
-      --timeout 60
-      --timeout-threshold 0
-      --max-target-bytes 0
-      --json-output semgrep-results.json
-      --verbose
-      .
-    - python3 Herramientas/ValidarResultadosSemgrep.py semgrep-results.json
+    - sh Herramientas/EjecutarSemgrepEstricto.sh
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'

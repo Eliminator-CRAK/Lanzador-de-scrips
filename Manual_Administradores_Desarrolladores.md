@@ -246,9 +246,11 @@ Semgrep Multimodal envia fragmentos necesarios a OpenAI o AWS Bedrock bajo Zero 
 - Ignorando supresiones `nosemgrep`.
 - Fallando ante cualquier hallazgo nuevo o configuracion invalida.
 
-La unica excepcion revisada corresponde a la regla de baja confianza `javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop` sobre `AnimatePresence` de Framer Motion. El codigo detectado usa `Map` y `Set`, que son la mitigacion indicada por la propia regla. `Herramientas/ValidarResultadosSemgrep.py` solo la admite cuando coinciden regla, ruta, linea y SHA-256 del bundle completo. No se deshabilita la regla ni se excluye el archivo; cualquier cambio del bundle invalida automaticamente la excepcion.
+La unica excepcion de hallazgo revisada corresponde a la regla de baja confianza `javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop` sobre `AnimatePresence` de Framer Motion. El codigo detectado usa `Map` y `Set`, que son la mitigacion indicada por la propia regla.
 
-Las etapas PowerShell del workflow se mantienen en `Herramientas/EjecutarEtapaCi.ps1`. Esto permite que Semgrep analice el workflow completo con `--strict` y evita duplicar la logica de preparacion, publicacion y comprobacion del artefacto.
+Semgrep tampoco puede analizar por completo cuatro zonas con sintaxis que su parser actual no admite: los literales raw de `VentanaPrincipal.xaml.cs` y `ServicioFirmaAuthenticode.cs`, el constructor primario de la clase interna de `GestorEjecucionesWeb.cs` y dos expresiones del bundle JavaScript minificado. `Herramientas/ValidarResultadosSemgrep.py` solo acepta cada hallazgo, error y omision cuando coinciden tipo, ruta, lineas y SHA-256 del archivo completo. No se deshabilitan reglas ni se excluyen archivos; cualquier cambio invalida automaticamente la excepcion correspondiente.
+
+Los workflows llaman a `Herramientas/EjecutarSemgrepEstricto.sh`, que conserva `--strict` y entrega al validador el informe y el codigo real del motor. Las etapas PowerShell se mantienen en `Herramientas/EjecutarEtapaCi.ps1` para evitar duplicar la logica de preparacion, publicacion y comprobacion del artefacto.
 
 El workflow de publicacion en GitHub actua como respaldo y ejecuta:
 

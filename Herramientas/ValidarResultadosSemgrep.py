@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,15 @@ class ExcepcionSemgrep:
     regla: str
     ruta: str
     linea: int
+    sha256: str
+    motivo: str
+
+
+@dataclass(frozen=True)
+class ExcepcionErrorSemgrep:
+    ruta: str
+    tipo: str
+    lineas: tuple[int, ...]
     sha256: str
     motivo: str
 
@@ -37,6 +47,38 @@ EXCEPCIONES = (
     ),
 )
 
+# Estas excepciones identifican limitaciones conocidas del parser por huella completa.
+EXCEPCIONES_ERRORES = (
+    ExcepcionErrorSemgrep(
+        ruta="VentanaPrincipal.xaml.cs",
+        tipo="Syntax error",
+        lineas=(1,),
+        sha256="D4A15A453ED96DB92A8D850FB1C06D4CBFEDE0AFF376A2F2D2930BE6690B4935",
+        motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
+    ),
+    ExcepcionErrorSemgrep(
+        ruta="Servicios/ServicioFirmaAuthenticode.cs",
+        tipo="Syntax error",
+        lineas=(1,),
+        sha256="F65A3E68D23CF2FF0C8C182ADF2B9339A9A4FBAB15FEF193ACAA17F16621FBBC",
+        motivo="El parser C# de Semgrep no admite los literales raw interpolados.",
+    ),
+    ExcepcionErrorSemgrep(
+        ruta="ClienteWeb/assets/index-DgdNDMM1.js",
+        tipo="PartialParsing",
+        lineas=(119, 119),
+        sha256="01AE1D96E4F7B99ED159E83781689A90AA67F07B5436E21BE7D096D554B69EE8",
+        motivo="El parser JavaScript omite dos expresiones del bundle minificado.",
+    ),
+    ExcepcionErrorSemgrep(
+        ruta="Servicios/GestorEjecucionesWeb.cs",
+        tipo="PartialParsing",
+        lineas=(953, 960, 1094),
+        sha256="C343D5596AAF0A50A8015C9C9CE20D8A6135EAEBB996F2ED1267AD933F32F93C",
+        motivo="El parser C# de Semgrep no admite el constructor primario de la clase interna.",
+    ),
+)
+
 LONGITUD_MAXIMA_INFORME = 50 * 1024 * 1024
 
 
@@ -50,8 +92,12 @@ def cargar_informe(ruta_informe: Path, raiz: Path) -> dict[str, Any]:
     with ruta_segura.open("r", encoding="utf-8") as flujo:
         informe = json.load(flujo)
 
-    if not isinstance(informe, dict) or not isinstance(informe.get("results"), list):
-        raise ValueError("El informe Semgrep no contiene una lista de resultados valida.")
+    if (
+        not isinstance(informe, dict)
+        or not isinstance(informe.get("results"), list)
+        or not isinstance(informe.get("errors"), list)
+    ):
+        raise ValueError("El informe Semgrep no contiene resultados y errores validos.")
 
     return informe
 
@@ -109,10 +155,163 @@ def buscar_excepcion(
     return None
 
 
-def validar_resultados(informe: dict[str, Any], raiz: Path) -> int:
-    # Semgrep --strict controla los errores del motor antes de este filtro.
+def obtener_tipo_y_lineas_error(
+    error: dict[str, Any],
+) -> tuple[str, tuple[int, ...]] | None:
+    # Normaliza los dos formatos de error emitidos por Semgrep.
+    tipo = error.get("type")
+    if isinstance(tipo, str):
+        mensaje = error.get("message")
+        if not isinstance(mensaje, str):
+            return None
+
+        coincidencia = re.match(r"^Syntax error at line .+:(\d+):\r?\n", mensaje)
+        if coincidencia is None:
+            return None
+        return tipo, (int(coincidencia.group(1)),)
+
+    if (
+        not isinstance(tipo, list)
+        or len(tipo) != 2
+        or not isinstance(tipo[0], str)
+        or not isinstance(tipo[1], list)
+    ):
+        return None
+
+    ruta_error = normalizar_ruta(error.get("path"))
+    lineas: list[int] = []
+    for ubicacion in tipo[1]:
+        if not isinstance(ubicacion, dict):
+            return None
+        if normalizar_ruta(ubicacion.get("path")) != ruta_error:
+            return None
+
+        inicio = ubicacion.get("start")
+        if not isinstance(inicio, dict) or not isinstance(inicio.get("line"), int):
+            return None
+        lineas.append(inicio["line"])
+
+    return tipo[0], tuple(lineas)
+
+
+def buscar_excepcion_error(
+    ruta: str,
+    tipo: str,
+    lineas: tuple[int, ...],
+) -> ExcepcionErrorSemgrep | None:
+    # Exige coincidencia exacta de ruta, tipo y lineas omitidas.
+    for excepcion in EXCEPCIONES_ERRORES:
+        if (
+            excepcion.ruta == ruta
+            and excepcion.tipo == tipo
+            and excepcion.lineas == lineas
+        ):
+            return excepcion
+    return None
+
+
+def validar_errores(
+    informe: dict[str, Any],
+    raiz: Path,
+) -> tuple[list[str], int, set[str]]:
+    # Admite solo limitaciones conocidas del parser con archivo inmutable.
     bloqueantes: list[str] = []
     aceptados = 0
+    rutas_aceptadas: set[str] = set()
+
+    for error_bruto in informe["errors"]:
+        if not isinstance(error_bruto, dict):
+            bloqueantes.append("Error Semgrep con formato no valido.")
+            continue
+
+        ruta = normalizar_ruta(error_bruto.get("path"))
+        detalle = obtener_tipo_y_lineas_error(error_bruto)
+        if (
+            error_bruto.get("code") != 3
+            or error_bruto.get("level") != "warn"
+            or detalle is None
+        ):
+            bloqueantes.append(f"Error Semgrep no permitido en {ruta or '<sin-ruta>'}.")
+            continue
+
+        tipo, lineas = detalle
+        excepcion = buscar_excepcion_error(ruta, tipo, lineas)
+        if excepcion is None:
+            bloqueantes.append(
+                f"Error {tipo} no permitido en {ruta or '<sin-ruta>'}:"
+                f"{','.join(map(str, lineas)) or 'sin-linea'}."
+            )
+            continue
+
+        try:
+            sha256 = calcular_sha256(raiz, excepcion.ruta)
+        except (OSError, ValueError) as error:
+            bloqueantes.append(f"No se pudo verificar {excepcion.ruta}: {error}")
+            continue
+
+        if sha256 != excepcion.sha256:
+            bloqueantes.append(
+                f"La huella de {excepcion.ruta} cambio: {sha256}. "
+                "La excepcion de parser requiere una revision nueva."
+            )
+            continue
+
+        aceptados += 1
+        rutas_aceptadas.add(ruta)
+        print(
+            f"[ERROR DE PARSER VERIFICADO] {tipo} en {ruta}:"
+            f"{','.join(map(str, lineas))}. Motivo: {excepcion.motivo}"
+        )
+
+    return bloqueantes, aceptados, rutas_aceptadas
+
+
+def validar_omisiones(
+    informe: dict[str, Any],
+    rutas_errores_aceptadas: set[str],
+) -> list[str]:
+    # Rechaza cualquier archivo omitido que no corresponda a un error aceptado.
+    rutas = informe.get("paths")
+    if not isinstance(rutas, dict):
+        return ["El informe Semgrep no contiene informacion de rutas."]
+
+    omisiones = rutas.get("skipped")
+    if not isinstance(omisiones, list):
+        return ["El informe Semgrep no contiene una lista de omisiones valida."]
+
+    bloqueantes: list[str] = []
+    for omision in omisiones:
+        if not isinstance(omision, dict):
+            bloqueantes.append("Omision Semgrep con formato no valido.")
+            continue
+
+        ruta = normalizar_ruta(omision.get("path"))
+        if (
+            omision.get("reason") != "analysis_failed_parser_or_internal_error"
+            or ruta not in rutas_errores_aceptadas
+        ):
+            bloqueantes.append(
+                f"Archivo omitido sin excepcion valida: {ruta or '<sin-ruta>'}."
+            )
+
+    if rutas_errores_aceptadas != {
+        normalizar_ruta(omision.get("path"))
+        for omision in omisiones
+        if isinstance(omision, dict)
+    }:
+        bloqueantes.append("Las omisiones no coinciden con los errores de parser aceptados.")
+
+    return bloqueantes
+
+
+def validar_resultados(
+    informe: dict[str, Any],
+    raiz: Path,
+    codigo_semgrep: int,
+) -> int:
+    # Valida hallazgos, errores, omisiones y codigo de salida del motor.
+    bloqueantes: list[str] = []
+    hallazgos_aceptados = 0
 
     for resultado_bruto in informe["results"]:
         if not isinstance(resultado_bruto, dict):
@@ -142,35 +341,53 @@ def validar_resultados(informe: dict[str, Any], raiz: Path) -> int:
             )
             continue
 
-        aceptados += 1
+        hallazgos_aceptados += 1
         print(
             f"[EXCEPCION VERIFICADA] {regla} en {ruta}:{linea}. "
             f"Motivo: {excepcion.motivo}"
         )
 
+    errores_bloqueantes, errores_aceptados, rutas_errores_aceptadas = validar_errores(
+        informe,
+        raiz,
+    )
+    bloqueantes.extend(errores_bloqueantes)
+    bloqueantes.extend(validar_omisiones(informe, rutas_errores_aceptadas))
+
+    codigo_esperado = 3 if informe["errors"] else 0
+    if codigo_semgrep != codigo_esperado:
+        bloqueantes.append(
+            f"Semgrep termino con codigo {codigo_semgrep}; se esperaba {codigo_esperado}."
+        )
+
     if bloqueantes:
-        print(f"Semgrep detecto {len(bloqueantes)} hallazgo(s) bloqueante(s):")
-        for hallazgo in bloqueantes:
-            print(f"  - {hallazgo}")
+        print(f"Semgrep detecto {len(bloqueantes)} problema(s) bloqueante(s):")
+        for problema in bloqueantes:
+            print(f"  - {problema}")
         return 1
 
     print(
         "Validacion Semgrep correcta: "
-        f"{aceptados} excepcion(es) verificadas y ningun hallazgo nuevo."
+        f"{hallazgos_aceptados} hallazgo(s) y {errores_aceptados} error(es) "
+        "de parser verificados; ningun problema nuevo."
     )
     return 0
 
 
 def main(argumentos: list[str]) -> int:
     # Valida los argumentos y resuelve la raiz desde este archivo.
-    if len(argumentos) != 2:
-        print("Uso: ValidarResultadosSemgrep.py <informe-json>", file=sys.stderr)
+    if len(argumentos) != 3:
+        print(
+            "Uso: ValidarResultadosSemgrep.py <informe-json> <codigo-semgrep>",
+            file=sys.stderr,
+        )
         return 2
 
     raiz = Path(__file__).resolve().parent.parent
     try:
+        codigo_semgrep = int(argumentos[2])
         informe = cargar_informe(Path(argumentos[1]), raiz)
-        return validar_resultados(informe, raiz)
+        return validar_resultados(informe, raiz, codigo_semgrep)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"No se pudo validar el informe Semgrep: {error}", file=sys.stderr)
         return 2

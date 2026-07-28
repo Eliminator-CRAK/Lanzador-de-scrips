@@ -104,13 +104,18 @@ public sealed class PruebasPublicacionWebView2
     public void CiFijaPowerShell760()
     {
         var ci = File.ReadAllText(ObtenerRutaProyecto(".github", "workflows", "ci.yml"));
+        var etapas = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "EjecutarEtapaCi.ps1"));
 
-        Assert.Contains("$version = '7.6.0'", ci, StringComparison.Ordinal);
-        Assert.Contains("9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322", ci, StringComparison.Ordinal);
-        Assert.Contains("PowerShell-$version-win-x64.zip", ci, StringComparison.Ordinal);
-        Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", ci, StringComparison.Ordinal);
-        Assert.Contains("Microsoft.VisualStudio.Component.VC.Tools.x86.x64", ci, StringComparison.Ordinal);
-        Assert.Contains("Remove-Item -LiteralPath $certPath", ci, StringComparison.Ordinal);
+        Assert.Contains(
+            "./Herramientas/EjecutarEtapaCi.ps1 -Etapa PrepararPowerShell",
+            ci,
+            StringComparison.Ordinal);
+        Assert.Contains("$version = '7.6.0'", etapas, StringComparison.Ordinal);
+        Assert.Contains("9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322", etapas, StringComparison.Ordinal);
+        Assert.Contains("PowerShell-$version-win-x64.zip", etapas, StringComparison.Ordinal);
+        Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", etapas, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.VisualStudio.Component.VC.Tools.x86.x64", etapas, StringComparison.Ordinal);
+        Assert.Contains("Remove-Item -LiteralPath $certPath", etapas, StringComparison.Ordinal);
     }
 
     // Localiza archivos desde la raiz del proyecto.
