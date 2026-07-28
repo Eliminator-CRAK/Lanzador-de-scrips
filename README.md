@@ -96,9 +96,11 @@ Para actualizar una instalacion anterior, haga copia de `permisos.json` y `catal
 
 La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
-GitLab es el remoto principal en `micro2822131/Lanzador-de-scrips`. Semgrep Managed Scans analiza Code y Supply Chain sobre `main`, ejecuta un analisis completo semanal y usa el webhook del grupo para nuevas merge requests. El job `semgrep-secrets` de `.gitlab-ci.yml` complementa esa cobertura con `p/secrets` en `main`, merge requests y ejecuciones manuales.
+GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 
-El workflow conservado en GitHub actua como respaldo para compilacion, pruebas y publicacion Windows. Sus acciones estan fijadas a commits inmutables. Instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
+Semgrep Managed Scans analiza ambos repositorios con las 2944 reglas disponibles, analisis entre archivos, Code, Supply Chain y deteccion con IA. Los flujos de GitLab y GitHub complementan esa cobertura en cada `push`, PR/MR, ejecucion manual y revision diaria con `auto`, `p/security-audit` y `p/secrets`. Tambien revisan todo el historial Git, no aplican exclusiones de `.gitignore` y fallan ante cualquier hallazgo o error de configuracion.
+
+El workflow de publicacion en GitHub actua como respaldo para compilacion, pruebas y publicacion Windows. Sus acciones estan fijadas a commits inmutables. Instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
 
 ## Recuperacion WebView2
 

@@ -1,17 +1,35 @@
 # (Autor: Alex Roman)
-# Descripcion: Analisis continuo de secretos para GitLab.
+# Descripcion: Analisis continuo de alta sensibilidad con Semgrep.
 
 stages:
   - security
 
-semgrep-secrets:
+semgrep-high-sensitivity:
   stage: security
   image: semgrep/semgrep@sha256:98c2572fced2474539fd27cab3207ebd8e95e4e7aab4c3b381fdc5e2641d9941
   interruptible: true
-  timeout: 20m
+  timeout: 60m
+  variables:
+    GIT_DEPTH: "0"
   script:
-    - semgrep scan --config p/secrets --error .
+    - >-
+      semgrep scan
+      --config auto
+      --config p/security-audit
+      --config p/secrets
+      --error
+      --strict
+      --disable-nosem
+      --historical-secrets
+      --no-exclude-minified-files
+      --no-git-ignore
+      --timeout 60
+      --timeout-threshold 0
+      --max-target-bytes 0
+      --verbose
+      .
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_MERGE_REQUEST_IID'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: "$CI_MERGE_REQUEST_IID"
+    - if: '$CI_PIPELINE_SOURCE == "push"'

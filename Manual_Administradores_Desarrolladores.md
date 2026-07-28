@@ -197,19 +197,56 @@ No se instala ningun servicio, cuenta, tarea ni puerto. El certificado privado d
 
 ## CI y analisis continuo
 
-GitLab es el repositorio principal en `micro2822131/Lanzador-de-scrips`.
+Los repositorios `micro2822131/Lanzador-de-scrips` en GitLab y `Eliminator-CRAK/Lanzador-de-scrips` en GitHub mantienen el mismo historial de `main`. Todo cambio debe publicarse en ambos remotos y comprobarse con:
+
+```powershell
+git push origin main
+git fetch --all --prune
+git rev-list --left-right --count origin/main...github/main
+```
+
+El ultimo comando debe devolver `0 0`. El remoto local `origin` tiene dos destinos de escritura para que un unico `git push origin main` actualice GitLab y GitHub.
 
 Semgrep esta conectado al grupo `micro2822131`:
 
 - Managed Scans ejecuta Code y Supply Chain sobre `main`.
 - El webhook del grupo activa el analisis de nuevas merge requests.
 - El proyecto antiguo pendiente de eliminacion no tiene escaneos habilitados.
-- `.gitlab-ci.yml` ejecuta `p/secrets` porque Secrets no esta activo en el plan administrado.
 - El token dedicado `semgrep-managed-scanning-micro` usa el alcance `api` y caduca el `2027-07-28`.
 
 Antes de la caducidad, rote el token en GitLab y actualicelo en `Semgrep > Settings > Source code managers > micro2822131 > Update access token`. Pruebe la conexion y confirme que el webhook `https://semgrep.dev/api/webhook/v2/gitlab` sigue activo. No guarde el valor del token en archivos, variables del repositorio ni historiales.
 
-El workflow conservado en GitHub actua como respaldo y ejecuta:
+Semgrep tambien esta conectado a la cuenta personal `Eliminator-CRAK` mediante la aplicacion privada `semgrep-code-eliminator-crak`. Managed Scans y los analisis de PR estan activos para `Eliminator-CRAK/Lanzador-de-scrips`; los demas repositorios de la cuenta no se escanean automaticamente.
+
+La politica de maxima cobertura usa:
+
+- Las 2944 reglas de Code habilitadas y ninguna regla deshabilitada.
+- Analisis entre archivos.
+- Code, Supply Chain, busqueda de dependencias y avisos de dependencias maliciosas.
+- Deteccion con IA para fallos de logica de negocio.
+- Notificaciones de hallazgos aunque el filtro de ruido los considere posibles falsos positivos.
+- Sugerencias con umbral de confianza bajo.
+- Ninguna ruta ignorada globalmente.
+- Modo fail-closed para los Managed Scans.
+- Autofix PR desactivado para impedir cambios automaticos de codigo.
+
+Semgrep Multimodal envia fragmentos necesarios a OpenAI o AWS Bedrock bajo Zero Data Retention del proveedor. Semgrep puede conservar esos fragmentos durante seis meses para prestar sus funciones de analisis y remediacion.
+
+`.gitlab-ci.yml` y `.github/workflows/semgrep.yml` ejecutan `auto`, `p/security-audit` y `p/secrets`:
+
+- En cada `push`.
+- En cada PR o MR.
+- Bajo demanda.
+- Una vez al dia.
+- Incluyendo todo el historial Git para detectar secretos eliminados.
+- Sin aplicar exclusiones de `.gitignore`.
+- Sin limite de tamano por archivo.
+- Sin omitir archivos tras timeouts de reglas.
+- Con 60 segundos por regla y archivo.
+- Ignorando supresiones `nosemgrep`.
+- Fallando ante cualquier hallazgo o configuracion invalida.
+
+El workflow de publicacion en GitHub actua como respaldo y ejecuta:
 
 - Restore.
 - Instalacion y validacion de PowerShell 7.6.0.
