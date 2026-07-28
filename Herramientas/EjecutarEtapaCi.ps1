@@ -76,9 +76,10 @@ function Confiar-CertificadoFirmaCi {
             foreach ($nombreAlmacen in @(
                 [System.Security.Cryptography.X509Certificates.StoreName]::Root,
                 [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher)) {
+                Write-Host "Aprovisionando LocalMachine\$nombreAlmacen..."
                 $almacen = [System.Security.Cryptography.X509Certificates.X509Store]::new(
                     $nombreAlmacen,
-                    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+                    [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
                 try {
                     $almacen.Open(
                         [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)

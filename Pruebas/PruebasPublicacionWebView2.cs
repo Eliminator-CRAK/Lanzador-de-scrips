@@ -116,7 +116,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", etapas, StringComparison.Ordinal);
         Assert.Contains("Microsoft.VisualStudio.Component.VC.Tools.x86.x64", etapas, StringComparison.Ordinal);
         Assert.Contains("X509Store]::new", etapas, StringComparison.Ordinal);
-        Assert.Contains("StoreLocation]::CurrentUser", etapas, StringComparison.Ordinal);
+        Assert.Contains("StoreLocation]::LocalMachine", etapas, StringComparison.Ordinal);
+        Assert.DoesNotContain("StoreLocation]::CurrentUser", etapas, StringComparison.Ordinal);
         Assert.DoesNotContain("Import-Certificate", etapas, StringComparison.Ordinal);
         Assert.Contains("Remove-Item -LiteralPath $certPath", etapas, StringComparison.Ordinal);
     }
