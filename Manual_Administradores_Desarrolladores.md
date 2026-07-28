@@ -195,9 +195,21 @@ La entrada es interactiva y segura. No introduzca la clave en argumentos, archiv
 
 No se instala ningun servicio, cuenta, tarea ni puerto. El certificado privado de artefactos solo debe instalarse en los equipos autorizados para publicar cambios.
 
-## CI
+## CI y analisis continuo
 
-El workflow de GitHub ejecuta:
+GitLab es el repositorio principal en `micro2822131/Lanzador-de-scrips`.
+
+Semgrep esta conectado al grupo `micro2822131`:
+
+- Managed Scans ejecuta Code y Supply Chain sobre `main`.
+- El webhook del grupo activa el analisis de nuevas merge requests.
+- El proyecto antiguo pendiente de eliminacion no tiene escaneos habilitados.
+- `.gitlab-ci.yml` ejecuta `p/secrets` porque Secrets no esta activo en el plan administrado.
+- El token dedicado `semgrep-managed-scanning-micro` usa el alcance `api` y caduca el `2027-07-28`.
+
+Antes de la caducidad, rote el token en GitLab y actualicelo en `Semgrep > Settings > Source code managers > micro2822131 > Update access token`. Pruebe la conexion y confirme que el webhook `https://semgrep.dev/api/webhook/v2/gitlab` sigue activo. No guarde el valor del token en archivos, variables del repositorio ni historiales.
+
+El workflow conservado en GitHub actua como respaldo y ejecuta:
 
 - Restore.
 - Instalacion y validacion de PowerShell 7.6.0.
@@ -207,7 +219,7 @@ El workflow de GitHub ejecuta:
 - Validacion de firma en `main`.
 - Hash SHA-256 del artefacto.
 
-Configurar secretos:
+Sus referencias externas estan fijadas a commits SHA completos. Para usar la publicacion de respaldo, configure estos secretos en GitHub:
 
 - `WINDOWS_SIGNING_CERT_BASE64`
 - `WINDOWS_SIGNING_CERT_PASSWORD`

@@ -1,0 +1,17 @@
+# (Autor: Alex Roman)
+# Descripcion: Analisis continuo de secretos para GitLab.
+
+stages:
+  - security
+
+semgrep-secrets:
+  stage: security
+  image: semgrep/semgrep@sha256:98c2572fced2474539fd27cab3207ebd8e95e4e7aab4c3b381fdc5e2641d9941
+  interruptible: true
+  timeout: 20m
+  script:
+    - semgrep scan --config p/secrets --error .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_MERGE_REQUEST_IID'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
