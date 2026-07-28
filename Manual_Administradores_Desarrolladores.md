@@ -232,13 +232,13 @@ La politica de maxima cobertura usa:
 
 Semgrep Multimodal envia fragmentos necesarios a OpenAI o AWS Bedrock bajo Zero Data Retention del proveedor. Semgrep puede conservar esos fragmentos durante seis meses para prestar sus funciones de analisis y remediacion.
 
-`.gitlab-ci.yml` y `.github/workflows/semgrep.yml` ejecutan `auto`, `p/security-audit` y `p/secrets`:
+`.gitlab-ci.yml` y `.github/workflows/semgrep.yml` ejecutan `auto`, `p/security-audit` y `p/secrets`. Semgrep Secrets no esta incluido en el plan actual, por lo que Gitleaks 8.30.1 complementa el analisis revisando todo el historial Git.
 
 - En cada `push`.
 - En cada PR o MR.
 - Bajo demanda.
 - Una vez al dia.
-- Incluyendo todo el historial Git para detectar secretos eliminados.
+- Incluyendo archivos comprimidos y valores codificados al buscar secretos.
 - Sin aplicar exclusiones de `.gitignore`.
 - Sin limite de tamano por archivo.
 - Sin omitir archivos tras timeouts de reglas.

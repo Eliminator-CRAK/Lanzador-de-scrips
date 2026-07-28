@@ -98,7 +98,7 @@ La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exte
 
 GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 
-Semgrep Managed Scans analiza ambos repositorios con las 2944 reglas disponibles, analisis entre archivos, Code, Supply Chain y deteccion con IA. Los flujos de GitLab y GitHub complementan esa cobertura en cada `push`, PR/MR, ejecucion manual y revision diaria con `auto`, `p/security-audit` y `p/secrets`. Tambien revisan todo el historial Git, no aplican exclusiones de `.gitignore` y fallan ante cualquier hallazgo o error de configuracion.
+Semgrep Managed Scans analiza ambos repositorios con las 2944 reglas disponibles, analisis entre archivos, Code, Supply Chain y deteccion con IA. Los flujos de GitLab y GitHub complementan esa cobertura en cada `push`, PR/MR, ejecucion manual y revision diaria con `auto`, `p/security-audit` y `p/secrets`. Como Semgrep Secrets no esta incluido en el plan actual, Gitleaks 8.30.1 revisa ademas todo el historial Git, archivos comprimidos y valores codificados. No se aplican exclusiones de `.gitignore` y los CI fallan ante cualquier hallazgo o error de configuracion.
 
 El workflow de publicacion en GitHub actua como respaldo para compilacion, pruebas y publicacion Windows. Sus acciones estan fijadas a commits inmutables. Instala PowerShell `7.6.0` desde la publicacion oficial, valida su SHA-256 y exige firma Authenticode en `main` mediante los secretos `WINDOWS_SIGNING_CERT_BASE64` y `WINDOWS_SIGNING_CERT_PASSWORD`.
 
