@@ -26,7 +26,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Logs de ejecucion | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
-| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
+| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
 | Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
@@ -63,6 +63,13 @@ Reglas:
 - Solo un administrador puede seleccionar scripts y publicar el catalogo.
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
+
+## Migracion A La Version 1.4.7
+
+1. Sustituya el EXE por la version 1.4.7; no cambie `permisos.json`, `catalogo-scripts.json` ni `artefactos.key`.
+2. La aplicacion crea automaticamente `WebView2\Perfil-v2` con control total para el SID actual y conserva `WebView2\Perfil` sin usar.
+3. No conceda acceso a `Everyone` ni modifique manualmente las ACL de `ProgramData`.
+4. Tras validar el arranque, un administrador puede archivar el perfil antiguo con la aplicacion cerrada.
 
 ## Migracion A La Version 1.4.6
 

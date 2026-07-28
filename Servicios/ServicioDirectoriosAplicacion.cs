@@ -20,6 +20,13 @@ public static class ServicioDirectoriosAplicacion
         PrepararDirectorioPrivado(RutasAplicacion.RaizDatosUsuario);
     }
 
+    public static void PrepararDatosWebView2()
+    {
+        // Permite que WebView2 configure la ACL de sus procesos aislados.
+        PrepararDatosUsuario();
+        PrepararDirectorioWebView2(RutasAplicacion.RutaRaizWebView2Usuario);
+    }
+
     public static void PrepararEstructuraAplicacion()
     {
         // Protege la raiz comun antes de crear los datos del usuario.
@@ -36,6 +43,7 @@ public static class ServicioDirectoriosAplicacion
         PrepararDirectorioBase(raizTemporal);
         PrepararDirectorioBase(RutasAplicacion.RutaBaseWebView2RecuperacionSistema);
         PrepararDirectorioPrivado(RutasAplicacion.RutaRaizWebView2RecuperacionSistema);
+        PrepararDirectorioWebView2(RutasAplicacion.RutaRaizWebView2RecuperacionSistema);
     }
 
     internal static void PrepararDirectorioPrivado(string ruta)
@@ -55,6 +63,22 @@ public static class ServicioDirectoriosAplicacion
         seguridad.AddAccessRule(CrearRegla(Administradores, FileSystemRights.FullControl, herencia));
         seguridad.AddAccessRule(CrearRegla(Sistema, FileSystemRights.FullControl, herencia));
         AsegurarPropietario(seguridad, directorio, usuario, forzarPropietarioAdministrativo: false);
+        directorio.SetAccessControl(seguridad);
+    }
+
+    internal static void PrepararDirectorioWebView2(string ruta)
+    {
+        // Conserva las reglas existentes y concede control total solo al usuario actual.
+        var directorio = new DirectoryInfo(ruta);
+        directorio.Create();
+        RechazarPuntosReanalisis(directorio.FullName);
+
+        using var identidad = WindowsIdentity.GetCurrent();
+        var usuario = identidad.User
+            ?? throw new InvalidOperationException("No se pudo identificar al usuario actual.");
+        var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        var seguridad = directorio.GetAccessControl(AccessControlSections.Access);
+        seguridad.SetAccessRule(CrearRegla(usuario, FileSystemRights.FullControl, herencia));
         directorio.SetAccessControl(seguridad);
     }
 

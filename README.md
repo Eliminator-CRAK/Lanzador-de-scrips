@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.6 |
+| Version | 1.4.7 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -36,7 +36,7 @@ flowchart TD
 | Logs | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
-| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` |
+| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
 | Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
@@ -110,7 +110,7 @@ La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%ProgramFile
 
 Cada extraccion concede lectura y ejecucion a `ALL APPLICATION PACKAGES` y `ALL RESTRICTED APPLICATION PACKAGES`, requeridos por el aislamiento de WebView2 Fixed Runtime. Los usuarios normales no reciben permisos de escritura sobre los binarios.
 
-La aplicacion usa `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil` como perfil local de WebView2. El identificador se obtiene del hash completo del SID; las raices impiden que otro usuario precree carpetas y la carpeta privada solo concede escritura a ese usuario, administradores y sistema. Si el perfil falla, la aplicacion intenta recuperarlo dentro de su zona privada y, como ultimo recurso, en `C:\Windows\Temp\LanzadorScripts` sin ejecutar binarios desde esa ruta.
+La aplicacion usa `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` como perfil local de WebView2. El identificador se obtiene del hash completo del SID; las raices impiden que otro usuario precree carpetas. El subarbol WebView2 concede control total al SID actual para que el runtime pueda configurar las ACL de sus procesos LowIL/AppContainer, mientras administradores y sistema conservan su acceso. El perfil `Perfil` de versiones anteriores queda sin uso y no se borra automaticamente. Si el perfil falla, la aplicacion intenta recuperarlo dentro de su zona privada y, como ultimo recurso, en `C:\Windows\Temp\LanzadorScripts` sin ejecutar binarios desde esa ruta.
 
 Antes de arrancar .NET, el lanzador nativo dirige la extraccion del bundle a `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet` y los temporales a la carpeta privada del usuario en `%ProgramData%`. Ninguna de esas rutas utiliza AppData.
 

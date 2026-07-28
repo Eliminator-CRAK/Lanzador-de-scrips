@@ -55,7 +55,7 @@ public static class RutasAplicacion
 
     public static string RutaPerfilWebView2 => Path.Combine(
         RutaRaizWebView2Usuario,
-        "Perfil");
+        "Perfil-v2");
 
     public static string RutaPerfilesWebView2Recuperacion => Path.Combine(
         RutaRaizWebView2Usuario,

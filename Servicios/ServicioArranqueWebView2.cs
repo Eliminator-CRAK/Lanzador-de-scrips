@@ -190,7 +190,6 @@ public sealed class ServicioArranqueWebView2
     {
         try
         {
-            Directory.CreateDirectory(rutaPerfil);
             var entorno = await CoreWebView2Environment.CreateAsync(runtimeFijo, rutaPerfil);
             await vista.EnsureCoreWebView2Async(entorno);
 
@@ -221,9 +220,8 @@ public sealed class ServicioArranqueWebView2
     {
         try
         {
-            ServicioDirectoriosAplicacion.PrepararDatosUsuario();
-            Directory.CreateDirectory(RutasAplicacion.RutaPerfilWebView2);
-            ProbarEscrituraDirectorio(RutasAplicacion.RutaPerfilWebView2);
+            ServicioDirectoriosAplicacion.PrepararDatosWebView2();
+            ProbarEscrituraDirectorio(RutasAplicacion.RutaRaizWebView2Usuario);
             return RutasAplicacion.RutaPerfilWebView2;
         }
         catch (Exception ex)
@@ -243,11 +241,11 @@ public sealed class ServicioArranqueWebView2
     private async Task<string> PrepararPerfilRecuperadoAsync(string rutaPerfil)
     {
         var raiz = Path.GetDirectoryName(rutaPerfil) ?? RutasAplicacion.RutaPerfilesWebView2Recuperacion;
-        Directory.CreateDirectory(raiz);
+        ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(raiz);
+        ProbarEscrituraDirectorio(raiz);
 
         if (!Directory.Exists(rutaPerfil))
         {
-            Directory.CreateDirectory(rutaPerfil);
             return rutaPerfil;
         }
 
@@ -257,7 +255,6 @@ public sealed class ServicioArranqueWebView2
         try
         {
             Directory.Move(rutaPerfil, rutaDanada);
-            Directory.CreateDirectory(rutaPerfil);
             await _logInicio.RegistrarAsync("webview2.perfil.renombrado", "Perfil WebView2 renombrado para diagnostico.", new Dictionary<string, string?>
             {
                 ["origen"] = rutaPerfil,
@@ -269,7 +266,6 @@ public sealed class ServicioArranqueWebView2
         catch (Exception ex)
         {
             var rutaRecuperacion = Path.Combine(raiz, $"WebView2_Recuperacion_{marcaTiempo}");
-            Directory.CreateDirectory(rutaRecuperacion);
             await _logInicio.RegistrarExcepcionAsync(
                 "webview2.perfil.bloqueado",
                 "renombrar-perfil",
@@ -301,13 +297,12 @@ public sealed class ServicioArranqueWebView2
                 }
                 else
                 {
-                    ServicioDirectoriosAplicacion.PrepararDatosUsuario();
+                    ServicioDirectoriosAplicacion.PrepararDatosWebView2();
                 }
 
-                var ruta = Path.Combine(candidato.Raiz, Guid.NewGuid().ToString("N"));
-                Directory.CreateDirectory(ruta);
-                ProbarEscrituraDirectorio(ruta);
-                return ruta;
+                ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(candidato.Raiz);
+                ProbarEscrituraDirectorio(candidato.Raiz);
+                return Path.Combine(candidato.Raiz, Guid.NewGuid().ToString("N"));
             }
             catch (Exception ex) when (ex is IOException
                 or UnauthorizedAccessException

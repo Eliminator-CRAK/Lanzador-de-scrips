@@ -14,12 +14,13 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
-## Cambios En La Version 1.4.6
+## Cambios En La Version 1.4.7
 
 - El usuario no debe modificar `permisos.json`, `catalogo-scripts.json` ni crear carpetas de configuracion.
 - La aplicacion ya no se abre automaticamente con Windows; debe iniciarse desde el EXE distribuido.
 - La configuracion, WebView2, temporales y logs se guardan en las zonas protegidas de `ProgramData` y `Program Files`, no en el perfil AppData del usuario.
 - La configuracion local se guarda de forma atomica y coordina las peticiones paralelas para evitar bloqueos de `configuracion.dat`.
+- WebView2 usa un perfil nuevo con permisos compatibles con sus procesos aislados; el usuario no debe modificar la carpeta.
 - Si un script cambia, queda bloqueado hasta que un administrador publique de nuevo el catalogo.
 - Si falta la clave de maquina o los permisos no se pueden validar, la aplicacion bloquea la ejecucion y el usuario debe comunicar el mensaje exacto.
 
@@ -53,7 +54,7 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 | Permisos ausentes o no validos | No ejecutar y comunicar el mensaje exacto al administrador. |
 | Falta `artefactos.key` | Un administrador debe pulsar `Instalar clave` y pegar la clave compartida de la instalación. No use una clave nueva o diferente. |
 | WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
-| El error muestra una ruta dentro de AppData | El EXE no corresponde a la version 1.4.6 o se ha abierto el componente interno. Cierre la app y use el `LanzadorScripts.exe` distribuido. |
+| El error muestra una ruta dentro de AppData | El EXE no corresponde a la version 1.4.7 o se ha abierto el componente interno. Cierre la app y use el `LanzadorScripts.exe` distribuido. |
 
 ## Logs
 
