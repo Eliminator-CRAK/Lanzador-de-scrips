@@ -53,7 +53,7 @@ EXCEPCIONES_ERRORES = (
         ruta="VentanaPrincipal.xaml.cs",
         tipo="Syntax error",
         lineas=(1,),
-        sha256="D4A15A453ED96DB92A8D850FB1C06D4CBFEDE0AFF376A2F2D2930BE6690B4935",
+        sha256="77048EE45F8BB824AB99BA43FD33AB8E8D11141E8BC40773D809DAE64FA3DACE",
         motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
     ),
     ExcepcionErrorSemgrep(
@@ -74,12 +74,13 @@ EXCEPCIONES_ERRORES = (
         ruta="Servicios/GestorEjecucionesWeb.cs",
         tipo="PartialParsing",
         lineas=(953, 960, 1094),
-        sha256="C343D5596AAF0A50A8015C9C9CE20D8A6135EAEBB996F2ED1267AD933F32F93C",
+        sha256="D456658787E753E2E781F286B983D00EFF8705FA4712FAADB24B1D94D5E5E067",
         motivo="El parser C# de Semgrep no admite el constructor primario de la clase interna.",
     ),
 )
 
 LONGITUD_MAXIMA_INFORME = 50 * 1024 * 1024
+LONGITUD_MAXIMA_ARCHIVO_EXCEPCION = 50 * 1024 * 1024
 
 
 def cargar_informe(ruta_informe: Path, raiz: Path) -> dict[str, Any]:
@@ -124,19 +125,19 @@ def obtener_linea(resultado: dict[str, Any]) -> int:
 
 
 def calcular_sha256(raiz: Path, ruta_relativa: str) -> str:
-    # Impide que una ruta del informe salga de la raiz del repositorio.
+    # Impide salir de la raiz y normaliza finales de linea entre sistemas.
     partes = Path(ruta_relativa).parts
     if not partes or Path(ruta_relativa).is_absolute() or ".." in partes:
         raise ValueError(f"Ruta de hallazgo no permitida: {ruta_relativa}")
 
     ruta = (raiz / Path(*partes)).resolve(strict=True)
     ruta.relative_to(raiz)
+    if ruta.stat().st_size > LONGITUD_MAXIMA_ARCHIVO_EXCEPCION:
+        raise ValueError(f"El archivo de excepcion es demasiado grande: {ruta_relativa}")
 
-    resumen = hashlib.sha256()
-    with ruta.open("rb") as flujo:
-        for bloque in iter(lambda: flujo.read(1024 * 1024), b""):
-            resumen.update(bloque)
-    return resumen.hexdigest().upper()
+    datos = ruta.read_bytes()
+    datos_normalizados = datos.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(datos_normalizados).hexdigest().upper()
 
 
 def buscar_excepcion(
