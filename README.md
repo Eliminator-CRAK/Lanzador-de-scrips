@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.5 |
+| Version | 1.4.6 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -89,6 +89,8 @@ powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
 ```
 
 El script solicita la clave de 32 bytes en Base64 mediante entrada segura, la protege con DPAPI `LocalMachine` y aplica una ACL limitada a `SYSTEM` y `Administrators`. La clave no se acepta como argumento.
+
+La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente: primero aprovisione la clave compartida y despues regenere o migre `permisos.json` y `catalogo-scripts.json` desde un equipo que tenga el certificado privado de artefactos.
 
 Para actualizar una instalacion anterior, haga copia de `permisos.json` y `catalogo-scripts.json`, exporte la configuracion con la version anterior, aprovisione la misma clave AES en cada equipo autorizado e importe la configuracion con la version nueva. Los dos JSON v2 son contenedores cifrados: no se editan directamente con un editor de texto. Cualquier cambio en un script exige volver a publicar el catalogo.
 

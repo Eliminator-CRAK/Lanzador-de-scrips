@@ -205,6 +205,27 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
+    public void PantallaPrincipalPermiteAprovisionarClaveSinExponerlaAlCliente()
+    {
+        var raiz = ObtenerRaizProyecto();
+        var rutaVentana = Path.Combine(raiz, "VentanaPrincipal.xaml.cs");
+        var rutaDialogo = Path.Combine(raiz, "DialogoClaveArtefactos.xaml");
+        var rutaCodigoDialogo = Path.Combine(raiz, "DialogoClaveArtefactos.xaml.cs");
+        var ventana = File.ReadAllText(rutaVentana);
+        var dialogo = File.ReadAllText(rutaDialogo);
+        var codigoDialogo = File.ReadAllText(rutaCodigoDialogo);
+
+        Assert.Contains("Instalar clave", ventana, StringComparison.Ordinal);
+        Assert.Contains("aprovisionarClaveArtefactos", ventana, StringComparison.Ordinal);
+        Assert.Contains("ServicioClaveArtefactos.Aprovisionar", ventana, StringComparison.Ordinal);
+        Assert.Contains("CryptographicOperations.ZeroMemory(clave)", ventana, StringComparison.Ordinal);
+        Assert.Contains("<PasswordBox", dialogo, StringComparison.Ordinal);
+        Assert.Contains("SecurePassword", codigoDialogo, StringComparison.Ordinal);
+        Assert.DoesNotContain("claveBase64", ventana, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("localStorage", codigoDialogo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PanelAjustesPublicaCatalogoUnificado()
     {
         var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
@@ -678,6 +699,99 @@ public sealed class PruebasLanzadorScripts
         Assert.Equal(ConfiguracionLanzador.VersionActual, antigua.VersionConfiguracion);
         Assert.Equal(predeterminada.RutaScripts, antigua.RutaScripts);
         Assert.Equal(predeterminada.RutaPermisos, antigua.RutaPermisos);
+    }
+
+    [Fact]
+    public async Task ConfiguracionReintentaCuandoElArchivoEstaBloqueado()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "configuracion.dat");
+        var servicio = new ServicioConfiguracion(ruta);
+        servicio.Guardar(entorno.CrearConfiguracion());
+
+        var bloqueo = new FileStream(ruta, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var carga = Task.Run(() => new ServicioConfiguracion(ruta).Cargar());
+        await Task.Delay(125);
+        bloqueo.Dispose();
+
+        var configuracion = await carga;
+
+        Assert.Equal(entorno.Raiz, configuracion.RutaScripts, ignoreCase: true);
+        Assert.Equal(entorno.CarpetaPermisos, configuracion.RutaPermisos, ignoreCase: true);
+    }
+
+    [Fact]
+    public async Task ConfiguracionPermaneceValidaConAccesoConcurrente()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "configuracion.dat");
+        new ServicioConfiguracion(ruta).Guardar(entorno.CrearConfiguracion());
+
+        var tareas = Enumerable.Range(0, 16).Select(indice => Task.Run(() =>
+        {
+            var servicio = new ServicioConfiguracion(ruta);
+            for (var iteracion = 0; iteracion < 8; iteracion++)
+            {
+                var configuracion = servicio.Cargar();
+                configuracion.MaximoEjecucionesParalelas = ((indice + iteracion) % 50) + 1;
+                servicio.Guardar(configuracion);
+            }
+        }));
+
+        await Task.WhenAll(tareas);
+        var resultado = new ServicioConfiguracion(ruta).Cargar();
+
+        Assert.Equal(entorno.Raiz, resultado.RutaScripts, ignoreCase: true);
+        Assert.Equal(entorno.CarpetaPermisos, resultado.RutaPermisos, ignoreCase: true);
+        Assert.InRange(resultado.MaximoEjecucionesParalelas, 1, 50);
+    }
+
+    [Fact]
+    public void ConfiguracionValidaNoSeReescribeAlCargar()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "configuracion.dat");
+        var servicio = new ServicioConfiguracion(ruta);
+        servicio.Guardar(entorno.CrearConfiguracion());
+        var fechaControl = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(ruta, fechaControl);
+
+        _ = servicio.Cargar();
+
+        Assert.Equal(fechaControl, File.GetLastWriteTimeUtc(ruta));
+        Assert.False(File.Exists(ruta + ".bak"));
+    }
+
+    [Fact]
+    public void ConfiguracionRecuperaRespaldoSiLaPrincipalEstaDanada()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "configuracion.dat");
+        var servicio = new ServicioConfiguracion(ruta);
+        var anterior = entorno.CrearConfiguracion();
+        anterior.MaximoEjecucionesParalelas = 3;
+        servicio.Guardar(anterior);
+        var actual = entorno.CrearConfiguracion();
+        actual.MaximoEjecucionesParalelas = 8;
+        servicio.Guardar(actual);
+        File.WriteAllBytes(ruta, [1, 2, 3, 4, 5]);
+
+        var recuperada = servicio.Cargar();
+
+        Assert.Equal(3, recuperada.MaximoEjecucionesParalelas);
+        Assert.Equal(3, servicio.Cargar().MaximoEjecucionesParalelas);
+    }
+
+    [Fact]
+    public void ConfiguracionInvalidaNoSeSustituyePorValoresPredeterminados()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var ruta = Path.Combine(entorno.Raiz, "configuracion.dat");
+        var contenidoInvalido = new byte[] { 1, 2, 3, 4, 5 };
+        File.WriteAllBytes(ruta, contenidoInvalido);
+
+        Assert.Throws<InvalidDataException>(() => new ServicioConfiguracion(ruta).Cargar());
+        Assert.Equal(contenidoInvalido, File.ReadAllBytes(ruta));
     }
 
 

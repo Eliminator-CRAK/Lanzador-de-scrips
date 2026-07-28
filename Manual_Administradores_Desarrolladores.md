@@ -64,7 +64,7 @@ Reglas:
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
 
-## Migracion A La Version 1.4.5
+## Migracion A La Version 1.4.6
 
 1. Conserve una copia administrativa de `permisos.json` y `catalogo-scripts.json`.
 2. Si los archivos proceden del formato v1, exporte la configuracion con la version anterior antes de sustituirlos.
@@ -75,6 +75,12 @@ Reglas:
 7. Verifique un equipo cliente antes de retirar la copia de seguridad.
 
 No edite directamente los dos JSON: en v2 son contenedores cifrados y firmados. Los equipos cliente necesitan la clave AES protegida por DPAPI, pero no el certificado privado. El certificado privado de artefactos se instala solo en los equipos autorizados para guardar permisos o publicar catalogos.
+
+La clave debe crearse una sola vez y custodiarse en el gestor de secretos corporativo. El aviso de clave ausente no se resuelve generando una clave nueva en ese cliente: ejecute el aprovisionador con la clave compartida. Si se rota la clave, aprovisionela en todos los equipos y regenere ambos contenedores desde un equipo con el certificado privado de artefactos.
+
+En un equipo cliente que solo dispone del EXE, pulse `Instalar clave` en la pantalla principal e introduzca la clave Base64 corporativa. La entrada queda enmascarada, no pasa por JavaScript y se protege con DPAPI `LocalMachine`; el resultado y el `KeyId` quedan auditados. Si ya existe una clave, la aplicación exige confirmar el reemplazo.
+
+La version 1.4.6 serializa el acceso a `configuracion.dat`, reintenta bloqueos transitorios y usa reemplazo atomico con copia `.bak`. Una carga ordinaria ya no reescribe el archivo. Si el archivo existente no se puede descifrar o validar, la aplicacion falla sin sustituirlo por rutas predeterminadas.
 
 ## Uso Manual Y Servicio Local
 

@@ -1,0 +1,101 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Dialogo seguro para aprovisionar la clave compartida de artefactos. -->
+<Window x:Class="LanzadorScripts.DialogoClaveArtefactos"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Clave de artefactos"
+        Width="560"
+        Height="330"
+        MinWidth="560"
+        MinHeight="330"
+        MaxWidth="560"
+        MaxHeight="330"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#0F1115">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="MinWidth" Value="108" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#F9FAFB" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="1"
+            Padding="28"
+            Background="#171A21"
+            BorderBrush="#303541"
+            BorderThickness="1"
+            CornerRadius="6">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="Instalar clave compartida"
+                       Foreground="#F9FAFB"
+                       FontSize="20"
+                       FontWeight="SemiBold" />
+            <TextBlock Grid.Row="1"
+                       Margin="0,10,0,0"
+                       Text="Introduce la clave AES Base64 de 32 bytes entregada por el administrador. Debe ser la misma que protege los permisos y el catálogo."
+                       Foreground="#A7AFBE"
+                       FontSize="13"
+                       TextWrapping="Wrap" />
+            <TextBlock Grid.Row="2"
+                       Margin="0,22,0,7"
+                       Text="Clave AES compartida"
+                       Foreground="#D1D5DB"
+                       FontSize="12"
+                       FontWeight="SemiBold" />
+            <PasswordBox x:Name="EntradaClave"
+                         Grid.Row="3"
+                         Height="38"
+                         MaxLength="64"
+                         Padding="11,7"
+                         Background="#0F1115"
+                         BorderBrush="#3A4150"
+                         BorderThickness="1"
+                         Foreground="#F9FAFB"
+                         CaretBrush="#F9FAFB"
+                         FontFamily="Consolas"
+                         FontSize="14"
+                         AutomationProperties.Name="Clave AES compartida"
+                         KeyDown="EntradaClave_KeyDown" />
+            <TextBlock x:Name="TextoError"
+                       Grid.Row="4"
+                       Margin="0,8,0,0"
+                       Foreground="#F87171"
+                       FontSize="12"
+                       TextWrapping="Wrap" />
+
+            <StackPanel Grid.Row="5"
+                        Margin="0,18,0,0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Content="Cancelar"
+                        Margin="0,0,10,0"
+                        Background="#252A34"
+                        BorderBrush="#3A4150"
+                        IsCancel="True"
+                        Click="Cancelar_Click" />
+                <Button Content="Instalar"
+                        Background="#047857"
+                        BorderBrush="#059669"
+                        IsDefault="True"
+                        Click="Instalar_Click" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

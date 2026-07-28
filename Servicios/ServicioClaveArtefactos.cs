@@ -44,7 +44,10 @@ public sealed class ServicioClaveArtefactos
         if (!File.Exists(_rutaClave))
         {
             throw new ClaveArtefactosNoDisponibleException(
-                $"No se ha aprovisionado la clave de artefactos en {_rutaClave}.");
+                $"No se ha aprovisionado la clave de artefactos en {_rutaClave}. "
+                + "Un administrador debe instalar exactamente la clave AES compartida de esta instalacion "
+                + "desde el boton 'Instalar clave' o con Herramientas\\AprovisionarClaveArtefactos.ps1; "
+                + "no se debe crear una clave distinta en cada equipo.");
         }
 
         try
