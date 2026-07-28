@@ -244,7 +244,9 @@ Semgrep Multimodal envia fragmentos necesarios a OpenAI o AWS Bedrock bajo Zero 
 - Sin omitir archivos tras timeouts de reglas.
 - Con 60 segundos por regla y archivo.
 - Ignorando supresiones `nosemgrep`.
-- Fallando ante cualquier hallazgo o configuracion invalida.
+- Fallando ante cualquier hallazgo nuevo o configuracion invalida.
+
+La unica excepcion revisada corresponde a la regla de baja confianza `javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop` sobre `AnimatePresence` de Framer Motion. El codigo detectado usa `Map` y `Set`, que son la mitigacion indicada por la propia regla. `Herramientas/ValidarResultadosSemgrep.py` solo la admite cuando coinciden regla, ruta, linea y SHA-256 del bundle completo. No se deshabilita la regla ni se excluye el archivo; cualquier cambio del bundle invalida automaticamente la excepcion.
 
 El workflow de publicacion en GitHub actua como respaldo y ejecuta:
 

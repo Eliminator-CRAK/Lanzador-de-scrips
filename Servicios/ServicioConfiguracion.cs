@@ -14,7 +14,8 @@ namespace LanzadorScripts.Servicios;
 public sealed class ServicioConfiguracion
 {
     private const int LongitudMaximaConfiguracion = 1024 * 1024;
-    private const int IntentosLectura = 10;
+    // Tolera bloqueos transitorios de hasta tres segundos.
+    private const int IntentosLectura = 60;
     private const int EsperaLecturaMilisegundos = 50;
 
     private static readonly JsonSerializerOptions OpcionesJson = new()

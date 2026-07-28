@@ -702,7 +702,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public async Task ConfiguracionReintentaCuandoElArchivoEstaBloqueado()
+    public void ConfiguracionReintentaCuandoElArchivoEstaBloqueado()
     {
         using var entorno = EntornoPruebas.Crear();
         var ruta = Path.Combine(entorno.Raiz, "configuracion.dat");
@@ -710,11 +710,27 @@ public sealed class PruebasLanzadorScripts
         servicio.Guardar(entorno.CrearConfiguracion());
 
         var bloqueo = new FileStream(ruta, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        var carga = Task.Run(() => new ServicioConfiguracion(ruta).Cargar());
-        await Task.Delay(125);
-        bloqueo.Dispose();
+        // Usa un hilo dedicado para liberar el archivo sin depender del ThreadPool.
+        var liberador = new Thread(() =>
+        {
+            Thread.Sleep(600);
+            bloqueo.Dispose();
+        })
+        {
+            IsBackground = true
+        };
+        liberador.Start();
 
-        var configuracion = await carga;
+        ConfiguracionLanzador configuracion;
+        try
+        {
+            configuracion = new ServicioConfiguracion(ruta).Cargar();
+        }
+        finally
+        {
+            liberador.Join();
+            bloqueo.Dispose();
+        }
 
         Assert.Equal(entorno.Raiz, configuracion.RutaScripts, ignoreCase: true);
         Assert.Equal(entorno.CarpetaPermisos, configuracion.RutaPermisos, ignoreCase: true);
