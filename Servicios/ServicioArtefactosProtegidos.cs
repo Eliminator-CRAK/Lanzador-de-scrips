@@ -19,6 +19,8 @@ public sealed class ServicioArtefactosProtegidos
     private const string AutorContenedor = "Alex Roman";
     private const string DescripcionContenedor = "Artefacto cifrado y firmado de LanzadorScripts.";
     private const int LongitudMaximaCifrada = 16 * 1024 * 1024;
+    private const int LongitudMaximaArchivo = 24 * 1024 * 1024;
+    private const int LongitudMaximaFirma = 16 * 1024;
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -117,16 +119,13 @@ public sealed class ServicioArtefactosProtegidos
 
         try
         {
-            ValidarTipo(tipo);
             using var material = ObtenerMaterialClave();
-            var contenedor = JsonSerializer.Deserialize<ContenedorProtegido>(texto, OpcionesJson);
-            if (contenedor is null
-                || !string.Equals(contenedor.Autor, AutorContenedor, StringComparison.Ordinal)
-                || !string.Equals(contenedor.Descripcion, DescripcionContenedor, StringComparison.Ordinal)
-                || contenedor.Version != Version
-                || !string.Equals(contenedor.Tipo, tipo, StringComparison.Ordinal)
-                || !string.Equals(contenedor.Algoritmo, Algoritmo, StringComparison.Ordinal)
-                || !string.Equals(contenedor.KeyId, material.KeyId, StringComparison.Ordinal))
+            if (!IntentarValidarContenedorFirmado(tipo, texto, out var contenedor, out error))
+            {
+                return false;
+            }
+
+            if (!string.Equals(contenedor!.KeyId, material.KeyId, StringComparison.Ordinal))
             {
                 error = "El contenedor protegido no tiene el tipo, version o clave esperados.";
                 return false;
@@ -135,26 +134,6 @@ public sealed class ServicioArtefactosProtegidos
             var nonce = Convert.FromBase64String(contenedor.Nonce);
             var etiqueta = Convert.FromBase64String(contenedor.Etiqueta);
             var cifrado = Convert.FromBase64String(contenedor.Datos);
-            var firma = Convert.FromBase64String(contenedor.Firma);
-            if (nonce.Length != 12 || etiqueta.Length != 16 || cifrado.Length > LongitudMaximaCifrada)
-            {
-                error = "El contenedor protegido tiene longitudes no validas.";
-                return false;
-            }
-
-            if (!_servicioFirma.Verificar(
-                ObtenerBytesFirma(
-                    tipo,
-                    material.KeyId,
-                    contenedor.Nonce,
-                    contenedor.Etiqueta,
-                    contenedor.Datos),
-                firma))
-            {
-                error = "La firma del contenedor protegido no es valida.";
-                return false;
-            }
-
             var claroBytes = new byte[cifrado.Length];
             try
             {
@@ -186,6 +165,22 @@ public sealed class ServicioArtefactosProtegidos
             error = "El contenedor protegido esta corrupto o fue modificado.";
             return false;
         }
+    }
+
+    internal bool IntentarObtenerKeyIdFirmado(
+        string tipo,
+        string texto,
+        out string keyId,
+        out string error)
+    {
+        keyId = string.Empty;
+        if (!IntentarValidarContenedorFirmado(tipo, texto, out var contenedor, out error))
+        {
+            return false;
+        }
+
+        keyId = contenedor!.KeyId;
+        return true;
     }
 
     public void GuardarTextoProtegido(string ruta, string tipo, string texto)
@@ -301,6 +296,12 @@ public sealed class ServicioArtefactosProtegidos
         try
         {
             using var flujo = rutaSegura.AbrirLectura();
+            if (flujo.Length <= 0 || flujo.Length > LongitudMaximaArchivo)
+            {
+                error = "El archivo protegido tiene un tamano no valido.";
+                return false;
+            }
+
             using var lector = new StreamReader(flujo, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             return IntentarDesprotegerTexto(tipo, lector.ReadToEnd(), out claro, out error);
         }
@@ -312,6 +313,83 @@ public sealed class ServicioArtefactosProtegidos
         catch (UnauthorizedAccessException)
         {
             error = "No se pudo acceder al archivo protegido.";
+            return false;
+        }
+    }
+
+    private bool IntentarValidarContenedorFirmado(
+        string tipo,
+        string texto,
+        out ContenedorProtegido? contenedor,
+        out string error)
+    {
+        contenedor = null;
+        error = string.Empty;
+        try
+        {
+            ValidarTipo(tipo);
+            if (string.IsNullOrWhiteSpace(texto) || texto.Length > LongitudMaximaArchivo)
+            {
+                error = "El contenedor protegido tiene un tamano no valido.";
+                return false;
+            }
+
+            contenedor = JsonSerializer.Deserialize<ContenedorProtegido>(texto, OpcionesJson);
+            if (contenedor is null
+                || !string.Equals(contenedor.Autor, AutorContenedor, StringComparison.Ordinal)
+                || !string.Equals(contenedor.Descripcion, DescripcionContenedor, StringComparison.Ordinal)
+                || contenedor.Version != Version
+                || !string.Equals(contenedor.Tipo, tipo, StringComparison.Ordinal)
+                || !string.Equals(contenedor.Algoritmo, Algoritmo, StringComparison.Ordinal)
+                || string.IsNullOrEmpty(contenedor.KeyId)
+                || string.IsNullOrEmpty(contenedor.Nonce)
+                || string.IsNullOrEmpty(contenedor.Etiqueta)
+                || string.IsNullOrEmpty(contenedor.Datos)
+                || string.IsNullOrEmpty(contenedor.Firma)
+                || contenedor.KeyId.Length != 16
+                || !contenedor.KeyId.All(Uri.IsHexDigit)
+                || contenedor.Nonce.Length > 32
+                || contenedor.Etiqueta.Length > 32
+                || contenedor.Datos.Length > ((LongitudMaximaCifrada + 2L) / 3L * 4L)
+                || contenedor.Firma.Length > ((LongitudMaximaFirma + 2L) / 3L * 4L))
+            {
+                error = "El contenedor protegido no tiene el tipo, version o clave esperados.";
+                return false;
+            }
+
+            var nonce = Convert.FromBase64String(contenedor.Nonce);
+            var etiqueta = Convert.FromBase64String(contenedor.Etiqueta);
+            var cifrado = Convert.FromBase64String(contenedor.Datos);
+            var firma = Convert.FromBase64String(contenedor.Firma);
+            if (nonce.Length != 12
+                || etiqueta.Length != 16
+                || cifrado.Length > LongitudMaximaCifrada
+                || firma.Length == 0
+                || firma.Length > LongitudMaximaFirma)
+            {
+                error = "El contenedor protegido tiene longitudes no validas.";
+                return false;
+            }
+
+            if (!_servicioFirma.Verificar(
+                ObtenerBytesFirma(
+                    tipo,
+                    contenedor.KeyId,
+                    contenedor.Nonce,
+                    contenedor.Etiqueta,
+                    contenedor.Datos),
+                firma))
+            {
+                error = "La firma del contenedor protegido no es valida.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or CryptographicException or ArgumentException)
+        {
+            contenedor = null;
+            error = "El contenedor protegido esta corrupto o fue modificado.";
             return false;
         }
     }

@@ -61,9 +61,9 @@ public sealed class PruebasPublicacionWebView2
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
 
-        Assert.Contains("<Version>1.4.7</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.4.7.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.4.7.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.4.8</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.4.8.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.4.8.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
     }
 

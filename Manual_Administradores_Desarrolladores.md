@@ -26,6 +26,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Logs de ejecucion | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
+| Paquete central de clave | `<RutaPermisos>\clave-artefactos.dpng.json` |
 | Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
@@ -37,7 +38,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 `permisos.json` es un contenedor v2 cifrado y firmado. El catalogo usa la misma proteccion en `catalogo-scripts.json`. Ambos emplean AES-256-GCM y RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos.
 
-La clave AES no forma parte del EXE. Se protege con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
+La clave AES no forma parte del EXE. Se distribuye en `clave-artefactos.dpng.json`, cifrada con DPAPI-NG para un grupo de Active Directory y firmada con RSA-PSS/SHA-256. En el primer arranque autorizado se guarda con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
 
 La configuracion predeterminada apunta a:
 
@@ -64,6 +65,24 @@ Reglas:
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
 
+## Migracion A La Version 1.4.8
+
+1. Conserve una copia administrativa de `permisos.json`, `catalogo-scripts.json` y de la clave AES custodiada.
+2. Cree o seleccione un grupo de seguridad de Active Directory para los usuarios autorizados.
+3. En el equipo publicador que ya tiene `artefactos.key` y el certificado privado, ejecute con acceso al dominio:
+
+```powershell
+pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
+  -GrupoDominio 'MAD00\<GRUPO_SEGURIDAD>'
+```
+
+4. Verifique que `clave-artefactos.dpng.json` queda junto a los dos artefactos y que el grupo dispone de lectura sobre la carpeta.
+5. Sustituya el EXE por la version 1.4.8. No copie `artefactos.key` entre equipos.
+6. En el primer arranque, la aplicacion valida las firmas y los `KeyId`, usa la identidad de dominio para abrir DPAPI-NG y crea automaticamente la copia local.
+7. Pruebe primero un equipo piloto conectado al dominio. Si Windows no autoriza el grupo o no hay acceso al controlador de dominio, el sistema permanece bloqueado y no instala una clave distinta.
+
+El boton `Instalar clave` se conserva solo para recuperacion administrativa. No es necesario introducir la AES en cada cliente cuando el paquete central esta desplegado.
+
 ## Migracion A La Version 1.4.7
 
 1. Sustituya el EXE por la version 1.4.7; no cambie `permisos.json`, `catalogo-scripts.json` ni `artefactos.key`.
@@ -76,16 +95,16 @@ Reglas:
 1. Conserve una copia administrativa de `permisos.json` y `catalogo-scripts.json`.
 2. Si los archivos proceden del formato v1, exporte la configuracion con la version anterior antes de sustituirlos.
 3. Genere y custodie una unica clave AES de 32 bytes fuera de Git, historiales de consola y archivos compartidos.
-4. Ejecute `Herramientas\AprovisionarClaveArtefactos.ps1` como administrador en cada equipo que deba leer o publicar los contenedores.
+4. En esa version, ejecute `Herramientas\AprovisionarClaveArtefactos.ps1` como administrador en cada equipo que deba leer o publicar los contenedores.
 5. Importe el paquete exportado o use `-InicializarArtefactos` solo para una instalacion nueva.
 6. Publique de nuevo `catalogo-scripts.json` despues de cambiar, mover, renombrar o sustituir cualquier script.
 7. Verifique un equipo cliente antes de retirar la copia de seguridad.
 
 No edite directamente los dos JSON: en v2 son contenedores cifrados y firmados. Los equipos cliente necesitan la clave AES protegida por DPAPI, pero no el certificado privado. El certificado privado de artefactos se instala solo en los equipos autorizados para guardar permisos o publicar catalogos.
 
-La clave debe crearse una sola vez y custodiarse en el gestor de secretos corporativo. El aviso de clave ausente no se resuelve generando una clave nueva en ese cliente: ejecute el aprovisionador con la clave compartida. Si se rota la clave, aprovisionela en todos los equipos y regenere ambos contenedores desde un equipo con el certificado privado de artefactos.
+La clave debe crearse una sola vez y custodiarse en el gestor de secretos corporativo. El aviso de clave ausente no se resuelve generando una clave nueva en ese cliente. Si se rota la AES, regenere y firme los dos contenedores y el paquete DPAPI-NG desde el equipo publicador; cada cliente reemplazara la copia local solo cuando las tres firmas y los `KeyId` coincidan.
 
-En un equipo cliente que solo dispone del EXE, pulse `Instalar clave` en la pantalla principal e introduzca la clave Base64 corporativa. La entrada queda enmascarada, no pasa por JavaScript y se protege con DPAPI `LocalMachine`; el resultado y el `KeyId` quedan auditados. Si ya existe una clave, la aplicación exige confirmar el reemplazo.
+En la version actual, los clientes aprovisionan la clave automaticamente desde el paquete DPAPI-NG. El boton `Instalar clave` permite una recuperacion excepcional: la entrada queda enmascarada, no pasa por JavaScript y se protege con DPAPI `LocalMachine`; el resultado y el `KeyId` quedan auditados. Si ya existe una clave, la aplicacion exige confirmar el reemplazo.
 
 La version 1.4.6 serializa el acceso a `configuracion.dat`, reintenta bloqueos transitorios y usa reemplazo atomico con copia `.bak`. Una carga ordinaria ya no reescribe el archivo. Si el archivo existente no se puede descifrar o validar, la aplicacion falla sin sustituirlo por rutas predeterminadas.
 
@@ -192,13 +211,13 @@ Para inicializarlos expresamente:
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
-Antes de ejecutar `-InicializarArtefactos`, aprovisione la misma clave de 32 bytes en cada equipo autorizado:
+Antes de ejecutar `-InicializarArtefactos`, aprovisione la clave de 32 bytes en el equipo publicador:
 
 ```powershell
 powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
 ```
 
-La entrada es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Los contenedores v1 no son compatibles con la version 1.4.4 o posteriores: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
+La entrada es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Despues cree `clave-artefactos.dpng.json` una sola vez con `CrearPaqueteAprovisionamientoClave.ps1`; los clientes no reciben la AES manualmente. Los contenedores v1 no son compatibles con la version 1.4.4 o posteriores: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
 
 No se instala ningun servicio, cuenta, tarea ni puerto. El certificado privado de artefactos solo debe instalarse en los equipos autorizados para publicar cambios.
 

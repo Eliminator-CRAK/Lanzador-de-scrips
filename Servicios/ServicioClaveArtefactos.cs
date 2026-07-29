@@ -39,15 +39,19 @@ public sealed class ServicioClaveArtefactos
         _rutaClave = Path.GetFullPath(rutaClave);
     }
 
+    internal string RutaClave => _rutaClave;
+
+    internal bool Existe => File.Exists(_rutaClave);
+
     internal MaterialClaveArtefactos ObtenerMaterial()
     {
         if (!File.Exists(_rutaClave))
         {
             throw new ClaveArtefactosNoDisponibleException(
                 $"No se ha aprovisionado la clave de artefactos en {_rutaClave}. "
-                + "Un administrador debe instalar exactamente la clave AES compartida de esta instalacion "
-                + "desde el boton 'Instalar clave' o con Herramientas\\AprovisionarClaveArtefactos.ps1; "
-                + "no se debe crear una clave distinta en cada equipo.");
+                + $"La aplicacion intenta instalarla al arrancar desde {ServicioAprovisionamientoClaveArtefactos.NombrePaquete} "
+                + "en la carpeta central de permisos. Un administrador puede usar el boton 'Instalar clave' "
+                + "solo como recuperacion; no se debe crear una clave distinta en cada equipo.");
         }
 
         try

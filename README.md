@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.7 |
+| Version | 1.4.8 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -25,6 +25,8 @@ flowchart TD
     H --> J[PowerShell]
     I --> K[permisos.json cifrado]
     I --> L[catalogo-scripts.json cifrado]
+    M[clave-artefactos.dpng.json] --> N[DPAPI-NG y grupo AD]
+    N --> O[artefactos.key con DPAPI local]
 ```
 
 ## Rutas
@@ -36,6 +38,7 @@ flowchart TD
 | Logs | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs` |
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
+| Paquete central de clave | `<RutaPermisos>\clave-artefactos.dpng.json` |
 | Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
@@ -72,7 +75,7 @@ pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUM
 
 Tambien se puede usar `-CertPath` y `-CertPassword` con un certificado PFX. Si no se indica certificado, el script bloquea la publicacion salvo que se use `-AllowUnsignedForDev` para pruebas locales.
 
-La carpeta `publicacion` contiene unicamente `LanzadorScripts.exe`. `permisos.json` y `catalogo-scripts.json` permanecen siempre en `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`.
+La carpeta `publicacion` contiene unicamente `LanzadorScripts.exe`. `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json` permanecen en `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`.
 
 El parametro `-RutaRuntimeWebView2Portable` permite usar una carpeta de Fixed Runtime ya descargada como origen local. Si no se indica, la publicacion descarga la URL oficial fijada de `150.0.4078.48`, guarda la cache en `Recursos\WebView2` y deja esa cache fuera de Git.
 
@@ -82,17 +85,22 @@ La inicializacion explicita de ambos archivos operativos se realiza con:
 .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
-Antes de inicializar, la clave AES debe aprovisionarse en una consola administrativa:
+Antes de inicializar, la clave AES debe aprovisionarse una sola vez en el equipo administrador que publica los artefactos:
 
 ```powershell
 powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
 ```
 
-El script solicita la clave de 32 bytes en Base64 mediante entrada segura, la protege con DPAPI `LocalMachine` y aplica una ACL limitada a `SYSTEM` y `Administrators`. La clave no se acepta como argumento.
+El script solicita la clave de 32 bytes en Base64 mediante entrada segura, la protege con DPAPI `LocalMachine` y aplica una ACL limitada a `SYSTEM` y `Administrators`. La clave no se acepta como argumento. Despues de generar `permisos.json` y `catalogo-scripts.json`, cree una unica copia de distribucion para un grupo de Active Directory:
 
-La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente: primero aprovisione la clave compartida y despues regenere o migre `permisos.json` y `catalogo-scripts.json` desde un equipo que tenga el certificado privado de artefactos.
+```powershell
+pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
+  -GrupoDominio 'MAD00\<GRUPO_SEGURIDAD>'
+```
 
-Para actualizar una instalacion anterior, haga copia de `permisos.json` y `catalogo-scripts.json`, exporte la configuracion con la version anterior, aprovisione la misma clave AES en cada equipo autorizado e importe la configuracion con la version nueva. Los dos JSON v2 son contenedores cifrados: no se editan directamente con un editor de texto. Cualquier cambio en un script exige volver a publicar el catalogo.
+La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. En cada equipo cliente, la aplicacion intenta leer ese paquete al arrancar, verifica las tres firmas, exige que los dos `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente.
+
+La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON v2 son contenedores cifrados y firmados: no se editan directamente con un editor de texto. Cualquier cambio en un script exige volver a publicar el catalogo.
 
 La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
@@ -126,7 +134,7 @@ Solo se conservan las ultimas 3 copias de diagnostico de perfiles dañados o de 
 
 La API local exige cookie de sesion y token interno aleatorio por arranque. Los endpoints admin requieren siempre `Authorization: Bearer <token>`.
 
-`permisos.json` y `catalogo-scripts.json` usan el contenedor v2, cifrado con AES-256-GCM y firmado con RSA-PSS/SHA-256. La clave AES se recupera de DPAPI de maquina y la clave RSA privada se busca en el almacen de certificados; el EXE solo incorpora el certificado publico. La aplicacion construye ambos nombres dentro de la carpeta configurada y no usa copias junto al EXE. Si falta un archivo, esta manipulado o no se puede validar, la aplicacion bloquea las ejecuciones.
+`permisos.json` y `catalogo-scripts.json` usan el contenedor v2, cifrado con la misma AES-256-GCM y firmado con el mismo certificado RSA-PSS/SHA-256. La clave AES se recupera de DPAPI de maquina o, si falta, del paquete central DPAPI-NG firmado. La clave RSA privada se busca solo en el almacen de certificados de los equipos publicadores; el EXE incorpora el certificado publico. Si falta un archivo, no coinciden los `KeyId`, se ha manipulado una firma o Windows no autoriza la identidad, la aplicacion bloquea las ejecuciones.
 
 La politica editable de permisos conserva solo las opciones operativas:
 
@@ -145,7 +153,7 @@ La politica es fail closed. Los `.ps1`, `.bat` y `.cmd` deben figurar en el cata
 
 Los administradores publican el catalogo desde Ajustes mediante `Firmar scripts y publicar catálogo`. La operacion descubre de nuevo los archivos seleccionados y no modifica su contenido. El modo desarrollo es una excepcion administrativa limitada a la sesion.
 
-La clave AES de los contenedores no esta integrada en el EXE: se recupera del archivo protegido por DPAPI de maquina. El EXE incorpora solo el certificado publico de verificacion; la clave RSA privada permanece en el almacen de certificados de los equipos administradores autorizados.
+La clave AES no esta integrada en el EXE. DPAPI-NG permite distribuirla cifrada para un grupo de Active Directory y DPAPI `LocalMachine` conserva la copia local con ACL administrativa. El EXE incorpora solo el certificado publico de verificacion; la clave RSA privada permanece en el almacen de certificados de los equipos administradores autorizados.
 
 La aplicacion no crea tareas programadas ni registra la apertura con Windows. El operador la abre manualmente y el backend integrado toma la identidad del proceso que ha abierto la app.
 

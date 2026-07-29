@@ -22,6 +22,12 @@ public partial class Aplicacion : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (ServicioGeneracionPaqueteClaveArtefactos.EsSolicitud(e.Args))
+        {
+            Shutdown(ServicioGeneracionPaqueteClaveArtefactos.Ejecutar(e.Args));
+            return;
+        }
+
         if (ServicioGeneracionArtefactosIniciales.EsSolicitud(e.Args))
         {
             Shutdown(ServicioGeneracionArtefactosIniciales.Ejecutar(e.Args));
@@ -45,6 +51,7 @@ public partial class Aplicacion : System.Windows.Application
         try
         {
             ServicioDirectoriosAplicacion.PrepararEstructuraAplicacion();
+            IntentarAprovisionarClaveArtefactos();
         }
         catch (Exception ex)
         {
@@ -64,6 +71,42 @@ public partial class Aplicacion : System.Windows.Application
         _ventanaPrincipal.Show();
         _ = EscucharArgumentosAsync(_cancelacionPipe.Token);
         ProcesarArgumentos(e.Args);
+    }
+
+    private void IntentarAprovisionarClaveArtefactos()
+    {
+        try
+        {
+            var configuracion = new ServicioConfiguracion().Cargar();
+            var resultado = new ServicioAprovisionamientoClaveArtefactos()
+                .IntentarAprovisionar(configuracion.RutaPermisos);
+            if (resultado.Estado == EstadoAprovisionamientoClave.YaDisponible)
+            {
+                return;
+            }
+
+            _servicioLogInicio.RegistrarAsync(
+                resultado.Estado is EstadoAprovisionamientoClave.Aprovisionada
+                    or EstadoAprovisionamientoClave.Actualizada
+                    ? "clave_artefactos.aprovisionada"
+                    : "clave_artefactos.no_aprovisionada",
+                resultado.Mensaje,
+                new Dictionary<string, string?>
+                {
+                    ["estado"] = resultado.Estado.ToString(),
+                    ["keyId"] = resultado.KeyId,
+                    ["tipoError"] = resultado.TipoError,
+                    ["detalleError"] = resultado.DetalleError
+                }).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            _servicioLogInicio.RegistrarExcepcionAsync(
+                "clave_artefactos.aprovisionamiento_error",
+                "arranque",
+                string.Empty,
+                ex).GetAwaiter().GetResult();
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
