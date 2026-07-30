@@ -118,6 +118,12 @@ public sealed class ServidorLocalWeb : IDisposable
 
     public string TokenApiInterno => _tokenApiInterno;
 
+    public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas()
+    {
+        // Expone solo los datos necesarios para confirmar el cierre.
+        return _gestorEjecuciones.ObtenerEjecucionesActivas();
+    }
+
     public static ServidorLocalWeb Iniciar()
     {
         var servidor = new ServidorLocalWeb(ReservarPuertoLibre());
@@ -293,7 +299,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/salud", StringComparison.OrdinalIgnoreCase))
         {
-            var configuracion = CargarConfiguracion();
+        var configuracion = CargarConfiguracion();
             var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
             var emergencia = ObtenerEmergenciaActiva();
             var auditoriaCorrecta = string.IsNullOrWhiteSpace(_servicioAuditoria.UltimoError);

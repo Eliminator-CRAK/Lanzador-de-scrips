@@ -44,7 +44,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("$cabTemporal = \"$cab.$PID.tmp\"", publicacion, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $cabTemporal -Destination $cab -Force", publicacion, StringComparison.Ordinal);
         Assert.Contains("status --porcelain --untracked-files=all", publicacion, StringComparison.Ordinal);
-        Assert.Contains("Assert-PublishedExecutable -RutaExe $exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("Assert-PublishedExecutable", publicacion, StringComparison.Ordinal);
+        Assert.Contains("-SufijoProducto $sufijoProducto", publicacion, StringComparison.Ordinal);
         Assert.Contains("obj\\PublicacionStaging", publicacion, StringComparison.Ordinal);
         Assert.Contains("Sustituye la publicacion solo despues de validar todo el staging", publicacion, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $stagingCompleta -Destination $salidaCompleta", publicacion, StringComparison.Ordinal);
@@ -57,13 +58,15 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion149()
+    public void ProyectoPublicaVersion150()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
 
-        Assert.Contains("<Version>1.4.9</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.4.9.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.4.9.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.5.0</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.5.0.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.5.0.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
     }
 
@@ -76,8 +79,8 @@ public sealed class PruebasPublicacionWebView2
         var plantillaRecursos = File.ReadAllText(ObtenerRutaProyecto("LanzadorNativo", "LanzadorNativo.rc.in"));
 
         var firmaRuntime = publicacion.IndexOf("Write-Host 'Firmando runtime .NET interno...'", StringComparison.Ordinal);
-        var creacionNativa = publicacion.IndexOf("Write-Host 'Creando lanzador nativo sin AppData...'", StringComparison.Ordinal);
-        var firmaFinal = publicacion.IndexOf("Write-Host 'Firmando lanzador portable final...'", StringComparison.Ordinal);
+        var creacionNativa = publicacion.IndexOf("Write-Host 'Creando lanzadores nativos normal y portable...'", StringComparison.Ordinal);
+        var firmaFinal = publicacion.IndexOf("Write-Host 'Firmando los dos lanzadores finales...'", StringComparison.Ordinal);
 
         Assert.True(firmaRuntime >= 0);
         Assert.True(creacionNativa > firmaRuntime);
@@ -95,6 +98,11 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("FOLDERID_ProgramData", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Runtime.exe", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_DISTRIBUTION_EXE", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("LANZADOR_LIMPIEZA_COMPLETA", codigoNativo, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("-Variante normal", publicacion, StringComparison.Ordinal);
+        Assert.Contains("-Variante portable", publicacion, StringComparison.Ordinal);
+        Assert.Contains("__RUTA_ICONO__", plantillaRecursos, StringComparison.Ordinal);
         Assert.DoesNotContain("FOLDERID_LocalAppData", codigoNativo, StringComparison.Ordinal);
         Assert.DoesNotContain("LocalApplicationData", codigoNativo, StringComparison.Ordinal);
     }

@@ -318,7 +318,9 @@ function New-NativeLauncher {
     param(
         [string]$RutaPayload,
         [string]$HashPayload,
-        [string]$RutaSalida
+        [string]$RutaSalida,
+        [ValidateSet('normal', 'portable')]
+        [string]$Variante
     )
 
     # Genera el lanzador que prepara las rutas antes de iniciar .NET.
@@ -326,7 +328,8 @@ function New-NativeLauncher {
     $fuente = Join-Path $carpetaFuentes 'LanzadorNativo.cpp'
     $plantillaRecursos = Join-Path $carpetaFuentes 'LanzadorNativo.rc.in'
     $cabeceraRecursos = Join-Path $carpetaFuentes 'RecursosLanzador.h'
-    foreach ($archivo in @($fuente, $plantillaRecursos, $cabeceraRecursos, (Join-Path $raiz 'manifiesto.manifest'))) {
+    $icono = Join-Path $raiz 'Recursos\IconoLanzador.ico'
+    foreach ($archivo in @($fuente, $plantillaRecursos, $cabeceraRecursos, $icono, (Join-Path $raiz 'manifiesto.manifest'))) {
         if (-not (Test-Path -LiteralPath $archivo -PathType Leaf)) {
             throw "No se encontro un archivo del lanzador nativo: $archivo"
         }
@@ -349,11 +352,23 @@ function New-NativeLauncher {
         throw "La version de archivo no es valida para VERSIONINFO: $versionArchivoEsperada"
     }
 
-    $producto = "$versionProductoEsperada+$revisionGitEsperada"
+    $esLimpiezaCompleta = $Variante -eq 'portable'
+    $valorLimpiezaCompleta = if ($esLimpiezaCompleta) { 1 } else { 0 }
+    $nombreArchivo = Split-Path -Leaf $RutaSalida
+    $nombreInterno = [System.IO.Path]::GetFileNameWithoutExtension($nombreArchivo)
+    $descripcionArchivo = if ($esLimpiezaCompleta) {
+        'Lanzador de Scripts Portable'
+    } else {
+        'Lanzador de Scripts'
+    }
+    $producto = "$versionProductoEsperada+$revisionGitEsperada.$Variante"
     $contenidoRecursos = Get-Content -LiteralPath $plantillaRecursos -Raw
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__RUTA_MANIFIESTO__',
         (ConvertTo-RcLiteral (Join-Path $raiz 'manifiesto.manifest')))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__RUTA_ICONO__',
+        (ConvertTo-RcLiteral $icono))
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__RUTA_PAYLOAD__',
         (ConvertTo-RcLiteral $RutaPayload))
@@ -369,6 +384,15 @@ function New-NativeLauncher {
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__VERSION_PRODUCTO__',
         $producto)
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__DESCRIPCION_ARCHIVO__',
+        $descripcionArchivo)
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__NOMBRE_INTERNO__',
+        $nombreInterno)
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__NOMBRE_ARCHIVO__',
+        $nombreArchivo)
     $archivoRecursos = Join-Path $lanzadorNativoCompleta 'LanzadorNativo.rc'
     [System.IO.File]::WriteAllText(
         $archivoRecursos,
@@ -381,7 +405,7 @@ function New-NativeLauncher {
     $vsDevCmd = Get-VisualStudioDeveloperCommand
     $lineaCompilacion = @(
         'cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf',
-        '/DUNICODE /D_UNICODE',
+        "/DUNICODE /D_UNICODE /DLANZADOR_LIMPIEZA_COMPLETA=$valorLimpiezaCompleta",
         "/Fo:`"$objetoCompilado`"",
         "/Fe:`"$RutaSalida`"",
         "`"$fuente`"",
@@ -409,7 +433,7 @@ function New-NativeLauncher {
     }
 
     if (-not (Test-Path -LiteralPath $RutaSalida -PathType Leaf)) {
-        throw 'La compilacion nativa no genero LanzadorScripts.exe.'
+        throw "La compilacion nativa no genero $nombreArchivo."
     }
 
     $arquitectura = Get-PortableExecutableMachine -Ruta $RutaSalida
@@ -782,7 +806,8 @@ function Assert-WebView2EmbeddedResource {
 function Assert-PublishedExecutable {
     param(
         [string]$RutaExe,
-        [bool]$DebeEstarFirmado
+        [bool]$DebeEstarFirmado,
+        [string]$SufijoProducto = ''
     )
 
     # Comprueba que el EXE corresponde al proyecto y al commit actuales.
@@ -791,7 +816,7 @@ function Assert-PublishedExecutable {
         throw "La version de archivo del EXE no coincide. Esperada: $versionArchivoEsperada. Detectada: $($version.FileVersion)."
     }
 
-    $productoEsperado = "$versionProductoEsperada+$revisionGitEsperada"
+    $productoEsperado = "$versionProductoEsperada+$revisionGitEsperada$SufijoProducto"
     if (-not $version.ProductVersion.Equals($productoEsperado, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "ProductVersion no identifica el commit publicado. Esperado: $productoEsperado. Detectado: $($version.ProductVersion)."
     }
@@ -892,24 +917,35 @@ $hashRuntimeExe = Assert-PublishedExecutable `
     -RutaExe $runtimeExe `
     -DebeEstarFirmado ($null -ne $certificadoFirma)
 
-Write-Host 'Creando lanzador nativo sin AppData...'
+Write-Host 'Creando lanzadores nativos normal y portable...'
 New-Item -ItemType Directory -Path $stagingCompleta | Out-Null
-$exe = Join-Path $stagingCompleta 'LanzadorScripts.exe'
+$exeNormal = Join-Path $stagingCompleta 'LanzadorScripts.exe'
+$exePortable = Join-Path $stagingCompleta 'LanzadorScripts_Portable.exe'
 New-NativeLauncher `
     -RutaPayload $runtimeExe `
     -HashPayload $hashRuntimeExe `
-    -RutaSalida $exe
-Assert-NativeLauncherPayload `
-    -RutaLanzador $exe `
+    -RutaSalida $exeNormal `
+    -Variante normal
+New-NativeLauncher `
     -RutaPayload $runtimeExe `
-    -HashPayload $hashRuntimeExe
+    -HashPayload $hashRuntimeExe `
+    -RutaSalida $exePortable `
+    -Variante portable
+foreach ($exePublicado in @($exeNormal, $exePortable)) {
+    Assert-NativeLauncherPayload `
+        -RutaLanzador $exePublicado `
+        -RutaPayload $runtimeExe `
+        -HashPayload $hashRuntimeExe
+}
 
 if ($null -ne $certificadoFirma) {
-    Write-Host 'Firmando lanzador portable final...'
-    Set-ExecutableSignature `
-        -RutaExe $exe `
-        -Certificado $certificadoFirma `
-        -Descripcion 'el lanzador portable final'
+    Write-Host 'Firmando los dos lanzadores finales...'
+    foreach ($exePublicado in @($exeNormal, $exePortable)) {
+        Set-ExecutableSignature `
+            -RutaExe $exePublicado `
+            -Certificado $certificadoFirma `
+            -Descripcion (Split-Path -Leaf $exePublicado)
+    }
 }
 
 if ($InicializarArtefactos) {
@@ -958,10 +994,11 @@ if ($InicializarArtefactos) {
 }
 
 $archivosPublicados = @(Get-ChildItem -LiteralPath $stagingCompleta -Recurse -File)
+$rutasEsperadas = @($exeNormal, $exePortable)
 $inesperados = @($archivosPublicados | Where-Object {
-    $_.FullName -ne $exe
+    $_.FullName -notin $rutasEsperadas
 })
-if ($archivosPublicados.Count -ne 1 -or $inesperados.Count -gt 0) {
+if ($archivosPublicados.Count -ne 2 -or $inesperados.Count -gt 0) {
     $lista = ($archivosPublicados | ForEach-Object { $_.FullName }) -join [Environment]::NewLine
     throw "La publicacion contiene archivos no permitidos. Archivos encontrados:$([Environment]::NewLine)$lista"
 }
@@ -977,12 +1014,19 @@ if ($archivosLaterales.Count -gt 0) {
     throw "La publicacion contiene archivos laterales de .NET:$([Environment]::NewLine)$lista"
 }
 
-$tamanoExe = (Get-Item -LiteralPath $exe).Length
-if ($tamanoExe -lt $tamanoMinimoExe) {
-    throw "El EXE generado parece incompleto. Tamano detectado: $tamanoExe bytes."
-}
+$hashesValidados = @{}
+foreach ($exePublicado in @($exeNormal, $exePortable)) {
+    $tamanoExe = (Get-Item -LiteralPath $exePublicado).Length
+    if ($tamanoExe -lt $tamanoMinimoExe) {
+        throw "El EXE generado parece incompleto. Archivo: $exePublicado. Tamano: $tamanoExe bytes."
+    }
 
-$hashExeValidado = Assert-PublishedExecutable -RutaExe $exe -DebeEstarFirmado ($null -ne $certificadoFirma)
+    $sufijoProducto = if ($exePublicado -eq $exePortable) { '.portable' } else { '.normal' }
+    $hashesValidados[(Split-Path -Leaf $exePublicado)] = Assert-PublishedExecutable `
+        -RutaExe $exePublicado `
+        -DebeEstarFirmado ($null -ne $certificadoFirma) `
+        -SufijoProducto $sufijoProducto
+}
 
 # Sustituye la publicacion solo despues de validar todo el staging.
 $habiaPublicacionAnterior = Test-Path -LiteralPath $salidaCompleta
@@ -995,10 +1039,13 @@ try {
     Move-Item -LiteralPath $stagingCompleta -Destination $salidaCompleta
     $publicacionNuevaInstalada = $true
 
-    $exeFinal = Join-Path $salidaCompleta 'LanzadorScripts.exe'
-    $hashExeFinal = (Get-FileHash -LiteralPath $exeFinal -Algorithm SHA256).Hash
-    if (-not $hashExeFinal.Equals($hashExeValidado, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "El EXE cambio durante la sustitucion final. Esperado: $hashExeValidado. Detectado: $hashExeFinal."
+    foreach ($nombreExe in $hashesValidados.Keys) {
+        $exeFinal = Join-Path $salidaCompleta $nombreExe
+        $hashExeFinal = (Get-FileHash -LiteralPath $exeFinal -Algorithm SHA256).Hash
+        $hashEsperado = $hashesValidados[$nombreExe]
+        if (-not $hashExeFinal.Equals($hashEsperado, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "El EXE $nombreExe cambio durante la sustitucion final. Esperado: $hashEsperado. Detectado: $hashExeFinal."
+        }
     }
 } catch {
     $errorPublicacion = $_.Exception
@@ -1037,7 +1084,8 @@ foreach ($temporalPublicacion in @($runtimeStagingCompleta, $lanzadorNativoCompl
     }
 }
 
-Write-Host "EXE generado: $exeFinal"
+Write-Host "EXE normal generado: $(Join-Path $salidaCompleta 'LanzadorScripts.exe')"
+Write-Host "EXE portable generado: $(Join-Path $salidaCompleta 'LanzadorScripts_Portable.exe')"
 Write-Host "Carpeta operativa de permisos: $RutaCarpetaPermisos"
 if (-not $InicializarArtefactos) {
     Write-Host 'Los archivos operativos existentes no se han modificado.'

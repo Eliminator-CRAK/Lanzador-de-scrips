@@ -36,7 +36,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 ## Permisos
 
-`permisos.json` y `catalogo-scripts.json` son contenedores cifrados y firmados. Ambos emplean la misma AES-256-GCM y la misma identidad de firma RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos. La version 1.4.9 conserva lectura verificada de los dos v1 corporativos cuyas huellas estan fijadas para la migracion y escribe exclusivamente v2.
+`permisos.json` y `catalogo-scripts.json` son contenedores cifrados y firmados. Ambos emplean la misma AES-256-GCM y la misma identidad de firma RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos. La version 1.5.0 conserva lectura verificada de los dos v1 corporativos cuyas huellas estan fijadas para la migracion y escribe exclusivamente v2.
 
 La clave AES no forma parte del EXE. Se distribuye en `clave-artefactos.dpng.json`, cifrada con DPAPI-NG para un grupo de Active Directory y firmada con RSA-PSS/SHA-256. En el primer arranque autorizado se guarda con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
 
@@ -65,12 +65,21 @@ Reglas:
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
 
-## Migracion A La Version 1.4.9
+## Migracion A La Version 1.5.0
+
+1. No cambie `configuracion.dat`, `permisos.json`, `catalogo-scripts.json`, `clave-artefactos.dpng.json` ni `artefactos.key`.
+2. Distribuya `LanzadorScripts.exe` para conservar solo los runtimes actuales o `LanzadorScripts_Portable.exe` para eliminar toda la raiz de `Program Files` al salir.
+3. Explique que cerrar la ventana deja la aplicacion en segundo plano y que el cierre definitivo se realiza desde la bandeja.
+4. Verifique en un equipo piloto el progreso nativo, la restauracion de segunda instancia y el cierre con scripts activos.
+
+Los dos EXE contienen el mismo payload firmado. `ProgramData` se conserva con ambas variantes.
+
+## Migracion A La Version 1.5.0
 
 1. Conserve juntos los `permisos.json` y `catalogo-scripts.json` v1 existentes; sus firmas historicas y su `KeyId` deben coincidir.
 2. En el equipo publicador, restaure la AES original en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` una sola vez. No genere otra clave.
 3. Cree `clave-artefactos.dpng.json` para el grupo de Active Directory autorizado mediante `CrearPaqueteAprovisionamientoClave.ps1`.
-4. Sustituya el EXE por la version 1.4.9. Cada cliente autorizado recuperara la AES automaticamente al arrancar y podra leer los dos artefactos v1.
+4. Sustituya el EXE por la version 1.5.0. Cada cliente autorizado recuperara la AES automaticamente al arrancar y podra leer los dos artefactos v1.
 5. Cuando un administrador vuelva a guardar permisos o publique el catalogo, los archivos nuevos se escribiran como v2 y se firmaran con el certificado actual.
 6. No mezcle un archivo v1 con otro v2 que tenga un `KeyId` distinto. El aprovisionamiento y la ejecucion fallan de forma cerrada.
 
@@ -208,11 +217,11 @@ Para pruebas locales sin firma:
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
 ```
 
-La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
+La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe` y `LanzadorScripts_Portable.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
 
 Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida, se reemplaza si fue alterada y se conceden los permisos de lectura y ejecucion requeridos por AppContainer. El runtime se ejecuta solo desde `Program Files`; un bloqueo explicito de WDAC o AppLocker requiere una regla corporativa.
 
-El publicador firma primero el runtime .NET interno y despues lo incluye como recurso de un lanzador nativo x64. El EXE exterior valida la huella SHA-256 del recurso y establece `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de que .NET pueda extraer archivos. La aplicacion interna y la extraccion nativa quedan en `Program Files`; los temporales privados quedan en `ProgramData`. No se utiliza AppData.
+El publicador firma primero el runtime .NET interno y despues lo incluye como recurso de dos lanzadores nativos x64. Ambos validan la misma huella SHA-256 y establecen `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de que .NET pueda extraer archivos. La variante normal conserva solo las versiones actuales; la portable elimina la raiz completa al recibir el cierre definitivo. La aplicacion interna y la extraccion nativa quedan en `Program Files`; los temporales privados, perfiles, configuracion y logs permanecen en `ProgramData`. No se utiliza AppData.
 
 La publicacion exige `pwsh 7.6.x` y las herramientas C++ x64 de Visual Studio; la cache de WebView2 queda en `Recursos\WebView2` y no se versiona.
 

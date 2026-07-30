@@ -11,6 +11,7 @@
         MinHeight="640"
         WindowStyle="None"
         ResizeMode="CanResize"
+        Icon="Recursos/IconoLanzador.ico"
         Background="#0F1115"
         BorderThickness="0"
         SnapsToDevicePixels="True"
@@ -145,6 +146,32 @@
                             Visibility="Collapsed"
                             Click="BotonReintentarArranque_Click"
                             AutomationProperties.Name="Reintentar arranque del cliente web" />
+                </StackPanel>
+            </Border>
+            <Border x:Name="PanelCierre"
+                    Background="#0F1115"
+                    Padding="32"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="20">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Width="480">
+                    <TextBlock Text="Cerrando LanzadorScripts"
+                               Foreground="#F9FAFB"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center" />
+                    <TextBlock Text="Deteniendo scripts, backend local y WebView2..."
+                               Foreground="#9CA3AF"
+                               FontSize="13"
+                               Margin="0,14,0,0"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <ProgressBar IsIndeterminate="True"
+                                 Height="6"
+                                 Margin="0,22,0,0"
+                                 Foreground="#F59E0B"
+                                 Background="#1F2937" />
                 </StackPanel>
             </Border>
         </Grid>

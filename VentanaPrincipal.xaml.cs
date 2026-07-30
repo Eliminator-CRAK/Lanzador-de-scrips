@@ -2,6 +2,7 @@
 // Descripcion: Inicializa el cliente web y su backend local.
 
 using System.Runtime.InteropServices;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -14,15 +15,22 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
 using LanzadorScripts.Servicios;
+using Clipboard = System.Windows.Clipboard;
+using MessageBox = System.Windows.MessageBox;
+using Panel = System.Windows.Controls.Panel;
+using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 
 namespace LanzadorScripts;
 
 public partial class VentanaPrincipal : Window
 {
+    internal const int CodigoSalidaCierreDefinitivo = 42;
+
     private const int WmNcHitTest = 0x0084;
     private const int HtLeft = 10;
     private const int HtRight = 11;
@@ -39,22 +47,66 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioExecutionPolicy _servicioExecutionPolicy = new();
     private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly Stopwatch _cronometroNavegacion = new();
+    private readonly ServicioIconoBandeja _servicioIconoBandeja;
     private ServidorLocalWeb? _servidorLocalIntegrado;
     private EndpointServicioLanzador? _endpointServicio;
     private CoreWebView2? _webViewConfigurada;
     private ulong _idNavegacionActual;
     private string _origenNavegacionActual = string.Empty;
+    private WindowState _estadoAntesOcultar = WindowState.Normal;
+    private bool _inicioProgramado;
+    private bool _cargaClienteEnCurso;
+    private bool _cierreDefinitivo;
+    private bool _cierreEnCurso;
+    private bool _confirmacionCierreAbierta;
+    private int _recursosLiberados;
 
     public VentanaPrincipal()
     {
         InitializeComponent();
-        CargarClienteAsync();
+        _servicioIconoBandeja = new ServicioIconoBandeja(
+            Dispatcher,
+            RestaurarDesdeBandeja,
+            MaximizarDesdeBandeja,
+            MinimizarDesdeBandeja,
+            SolicitarCierreDesdeBandeja);
+        _ = _servicioLogInicio.RegistrarAsync(
+            "aplicacion.bandeja_lista",
+            "El icono de la bandeja quedo disponible.");
+    }
+
+    protected override void OnContentRendered(EventArgs e)
+    {
+        // Inicia los componentes pesados cuando la ventana ya es visible.
+        base.OnContentRendered(e);
+        if (_inicioProgramado)
+        {
+            return;
+        }
+
+        _inicioProgramado = true;
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(CargarClienteAsync));
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        // El cierre normal mantiene la aplicacion en segundo plano.
+        if (!_cierreDefinitivo)
+        {
+            e.Cancel = true;
+            OcultarEnSegundoPlano();
+            return;
+        }
+
+        base.OnClosing(e);
     }
 
     protected override void OnClosed(EventArgs e)
     {
-        _servidorLocalIntegrado?.Dispose();
-        _servidorLocalIntegrado = null;
+        // Libera cualquier recurso restante en un cierre definitivo.
+        LiberarRecursosSincronos();
         base.OnClosed(e);
     }
 
@@ -67,6 +119,12 @@ public partial class VentanaPrincipal : Window
 
     private async void CargarClienteAsync()
     {
+        if (_cargaClienteEnCurso || _cierreEnCurso)
+        {
+            return;
+        }
+
+        _cargaClienteEnCurso = true;
         try
         {
             PanelArranque.Visibility = Visibility.Visible;
@@ -133,6 +191,10 @@ public partial class VentanaPrincipal : Window
                 {
                     ["tipoExcepcion"] = ex.GetType().Name
                 });
+        }
+        finally
+        {
+            _cargaClienteEnCurso = false;
         }
     }
 
@@ -278,7 +340,7 @@ public partial class VentanaPrincipal : Window
 
     private void BotonMinimizar_Click(object sender, RoutedEventArgs e)
     {
-        WindowState = WindowState.Minimized;
+        MinimizarDesdeBandeja();
     }
 
     private void BotonMaximizar_Click(object sender, RoutedEventArgs e)
@@ -289,6 +351,239 @@ public partial class VentanaPrincipal : Window
     private void BotonCerrar_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    public void MostrarDesdeInstanciaSecundaria()
+    {
+        // Restaura una ventana oculta o minimizada por una segunda ejecucion.
+        MostrarVentana(WindowState.Normal);
+    }
+
+    public void PrepararCierrePorSistema()
+    {
+        // No bloquea el cierre de sesion de Windows con dialogos.
+        _cierreDefinitivo = true;
+        _cierreEnCurso = true;
+        LiberarRecursosSincronos();
+    }
+
+    private void RestaurarDesdeBandeja()
+    {
+        // Recupera el estado anterior cuando sea util para el usuario.
+        var estado = _estadoAntesOcultar == WindowState.Maximized
+            ? WindowState.Maximized
+            : WindowState.Normal;
+        MostrarVentana(estado);
+    }
+
+    private void MaximizarDesdeBandeja()
+    {
+        // Muestra la ventana directamente maximizada.
+        MostrarVentana(WindowState.Maximized);
+    }
+
+    private void MinimizarDesdeBandeja()
+    {
+        // Conserva la entrada de la barra de tareas y el icono de bandeja.
+        ShowInTaskbar = true;
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        WindowState = WindowState.Minimized;
+    }
+
+    private void OcultarEnSegundoPlano()
+    {
+        // Oculta la ventana sin detener scripts ni backend.
+        if (WindowState != WindowState.Minimized)
+        {
+            _estadoAntesOcultar = WindowState;
+        }
+
+        ShowInTaskbar = false;
+        Hide();
+        _ = _servicioLogInicio.RegistrarAsync(
+            "aplicacion.segundo_plano",
+            "La ventana se oculto y la aplicacion sigue disponible en la bandeja.");
+    }
+
+    private void MostrarVentana(WindowState estado)
+    {
+        // Hace visible y activa la ventana desde cualquier estado.
+        ShowInTaskbar = true;
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        WindowState = estado;
+        Activate();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero)
+        {
+            SetForegroundWindow(hwnd);
+        }
+    }
+
+    private async void SolicitarCierreDesdeBandeja()
+    {
+        // Confirma siempre el cierre y enumera las ejecuciones afectadas.
+        if (_cierreEnCurso || _confirmacionCierreAbierta)
+        {
+            return;
+        }
+
+        _confirmacionCierreAbierta = true;
+        IReadOnlyList<EjecucionActivaResumen> ejecuciones;
+        try
+        {
+            ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
+                ?? Array.Empty<EjecucionActivaResumen>();
+            while (true)
+            {
+                var dialogo = new DialogoCerrarAplicacion(ejecuciones);
+                if (IsVisible && WindowState != WindowState.Minimized)
+                {
+                    dialogo.Owner = this;
+                    dialogo.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                }
+
+                if (dialogo.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                var actuales = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
+                    ?? Array.Empty<EjecucionActivaResumen>();
+                if (ejecuciones.Select(ejecucion => ejecucion.Id)
+                    .SequenceEqual(actuales.Select(ejecucion => ejecucion.Id)))
+                {
+                    break;
+                }
+
+                ejecuciones = actuales;
+            }
+        }
+        finally
+        {
+            _confirmacionCierreAbierta = false;
+        }
+
+        _cierreEnCurso = true;
+        _cierreDefinitivo = true;
+        MostrarVentana(WindowState.Normal);
+        PanelCierre.Visibility = Visibility.Visible;
+        PanelCierre.IsHitTestVisible = true;
+        await Dispatcher.Yield(DispatcherPriority.Render);
+        await _servicioLogInicio.RegistrarAsync(
+            "aplicacion.cierre_confirmado",
+            "El usuario confirmo el cierre definitivo.",
+            new Dictionary<string, string?>
+            {
+                ["ejecucionesActivas"] = ejecuciones.Count.ToString()
+            });
+        try
+        {
+            await LiberarRecursosAsync();
+        }
+        catch (Exception ex)
+        {
+            await _servicioLogInicio.RegistrarExcepcionAsync(
+                "aplicacion.cierre_liberacion_error",
+                "cierre",
+                string.Empty,
+                ex);
+        }
+        finally
+        {
+            System.Windows.Application.Current.Shutdown(CodigoSalidaCierreDefinitivo);
+        }
+    }
+
+    private async Task LiberarRecursosAsync()
+    {
+        // Detiene el backend fuera del hilo visual y libera WebView2.
+        if (Interlocked.Exchange(ref _recursosLiberados, 1) != 0)
+        {
+            return;
+        }
+
+        var servidor = _servidorLocalIntegrado;
+        _servidorLocalIntegrado = null;
+        Exception? errorLiberacion = null;
+        try
+        {
+            if (servidor is not null)
+            {
+                await Task.Run(servidor.Dispose);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorLiberacion = ex;
+        }
+
+        try
+        {
+            VistaCliente.Dispose();
+        }
+        catch (Exception ex)
+        {
+            errorLiberacion ??= ex;
+        }
+
+        try
+        {
+            _servicioIconoBandeja.Dispose();
+        }
+        catch (Exception ex)
+        {
+            errorLiberacion ??= ex;
+        }
+
+        if (errorLiberacion is not null)
+        {
+            throw new InvalidOperationException(
+                "No se pudieron liberar todos los recursos de la aplicacion.",
+                errorLiberacion);
+        }
+    }
+
+    private void LiberarRecursosSincronos()
+    {
+        // Aplica la misma limpieza cuando no se puede esperar de forma asincrona.
+        if (Interlocked.Exchange(ref _recursosLiberados, 1) != 0)
+        {
+            return;
+        }
+
+        var servidor = _servidorLocalIntegrado;
+        _servidorLocalIntegrado = null;
+        try
+        {
+            servidor?.Dispose();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            VistaCliente.Dispose();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            _servicioIconoBandeja.Dispose();
+        }
+        catch
+        {
+        }
     }
 
     private void AlternarMaximizado()
@@ -362,13 +657,13 @@ public partial class VentanaPrincipal : Window
         return new IntPtr(codigo);
     }
 
-    private static Point ObtenerPuntoPantalla(IntPtr lParam)
+    private static System.Windows.Point ObtenerPuntoPantalla(IntPtr lParam)
     {
         // Extrae coordenadas firmadas del mensaje de Windows.
         var valor = lParam.ToInt64();
         var x = unchecked((short)(valor & 0xFFFF));
         var y = unchecked((short)((valor >> 16) & 0xFFFF));
-        return new Point(x, y);
+        return new System.Windows.Point(x, y);
     }
 
     private async void VistaCliente_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -2613,4 +2908,8 @@ public partial class VentanaPrincipal : Window
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
 }

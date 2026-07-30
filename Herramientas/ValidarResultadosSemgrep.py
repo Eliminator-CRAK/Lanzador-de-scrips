@@ -53,7 +53,7 @@ EXCEPCIONES_ERRORES = (
         ruta="VentanaPrincipal.xaml.cs",
         tipo="Syntax error",
         lineas=(1,),
-        sha256="98D2D4E8147418E56A54E003819A9EBC8245EE82145B8D951B55DDEE8D5EE45A",
+        sha256="982BA4D408997AD2DE389FE1544C5CBA7318F280D0725B7776F32A8890C78BC9",
         motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
     ),
     ExcepcionErrorSemgrep(
@@ -73,8 +73,8 @@ EXCEPCIONES_ERRORES = (
     ExcepcionErrorSemgrep(
         ruta="Servicios/GestorEjecucionesWeb.cs",
         tipo="PartialParsing",
-        lineas=(953, 960, 1094),
-        sha256="D456658787E753E2E781F286B983D00EFF8705FA4712FAADB24B1D94D5E5E067",
+        lineas=(967, 974, 1108),
+        sha256="0BC39186560C9EA2011AA55B6315F27F125E3EF17A3A8C5F8CE62BF1C8D0A1A8",
         motivo="El parser C# de Semgrep no admite el constructor primario de la clase interna.",
     ),
 )

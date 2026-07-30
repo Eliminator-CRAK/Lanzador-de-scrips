@@ -8,12 +8,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>manifiesto.manifest</ApplicationManifest>
+    <ApplicationIcon>Recursos\IconoLanzador.ico</ApplicationIcon>
     <AssemblyName>LanzadorScripts</AssemblyName>
     <RootNamespace>LanzadorScripts</RootNamespace>
-    <Version>1.4.9</Version>
-    <AssemblyVersion>1.4.9.0</AssemblyVersion>
-    <FileVersion>1.4.9.0</FileVersion>
+    <Version>1.5.0</Version>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
@@ -40,6 +42,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="ConfiguracionPredeterminada.json" />
+    <Resource Include="Recursos\IconoLanzador.ico" />
     <EmbeddedResource Include="ClienteWeb\**\*">
       <LogicalName>ClienteWeb.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>

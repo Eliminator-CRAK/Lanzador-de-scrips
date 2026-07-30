@@ -147,23 +147,32 @@ function Publicar-Aplicacion {
 }
 
 function Verificar-Artefacto {
-    # Comprueba que la publicacion contiene un unico ejecutable con firma valida.
-    $exe = Join-Path $raizRepositorio 'publicacion\LanzadorScripts.exe'
-    if (-not (Test-Path -LiteralPath $exe)) {
-        throw 'No se genero LanzadorScripts.exe.'
+    # Comprueba los dos ejecutables y sus firmas.
+    $carpeta = Join-Path $raizRepositorio 'publicacion'
+    $ejecutablesEsperados = @(
+        (Join-Path $carpeta 'LanzadorScripts.exe'),
+        (Join-Path $carpeta 'LanzadorScripts_Portable.exe')
+    )
+    foreach ($exe in $ejecutablesEsperados) {
+        if (-not (Test-Path -LiteralPath $exe)) {
+            throw "No se genero $(Split-Path -Leaf $exe)."
+        }
     }
 
-    $archivos = @(Get-ChildItem -LiteralPath (Split-Path $exe) -Recurse -File)
-    if ($archivos.Count -ne 1) {
-        throw "La publicacion debe generar un unico EXE. Archivos: $($archivos.Count)"
+    $archivos = @(Get-ChildItem -LiteralPath $carpeta -Recurse -File)
+    if ($archivos.Count -ne 2 -or
+        @($archivos | Where-Object { $_.FullName -notin $ejecutablesEsperados }).Count -gt 0) {
+        throw "La publicacion debe generar exactamente los dos EXE esperados. Archivos: $($archivos.Count)"
     }
 
-    $firma = Get-AuthenticodeSignature -LiteralPath $exe
-    if ($env:EVENT_NAME -ne 'pull_request' -and $firma.Status -ne 'Valid') {
-        throw "La firma del artefacto no es valida: $($firma.Status)."
-    }
+    foreach ($exe in $ejecutablesEsperados) {
+        $firma = Get-AuthenticodeSignature -LiteralPath $exe
+        if ($env:EVENT_NAME -ne 'pull_request' -and $firma.Status -ne 'Valid') {
+            throw "La firma de $(Split-Path -Leaf $exe) no es valida: $($firma.Status)."
+        }
 
-    Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
+        Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
+    }
 }
 
 Push-Location $raizRepositorio

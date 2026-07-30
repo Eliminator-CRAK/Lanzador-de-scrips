@@ -54,6 +54,20 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
+    public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas()
+    {
+        // Devuelve una instantanea estable para confirmar el cierre.
+        PurgarFinalizadasAntiguas();
+        return _ejecuciones.Values
+            .Where(ejecucion => !ejecucion.Finalizada)
+            .Select(ejecucion => new EjecucionActivaResumen(
+                ejecucion.Id,
+                ejecucion.Script.Nombre))
+            .OrderBy(ejecucion => ejecucion.NombreScript, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(ejecucion => ejecucion.Id)
+            .ToArray();
+    }
+
     public Guid Iniciar(
         ScriptInterno script,
         string rutaLogs,

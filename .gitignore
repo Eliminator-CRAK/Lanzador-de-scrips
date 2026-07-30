@@ -6,6 +6,7 @@ bin/
 obj/
 Pruebas/bin/
 Pruebas/obj/
+__pycache__/
 Recursos/WebView2/
 publicacion/
 publicacion_*/

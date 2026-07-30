@@ -20,7 +20,7 @@ public sealed class ServicioRuntimeWebView2Embebido
     internal const string HashContenidoRuntimeFijado = "3345CEC7106D6A8EB3A5770DFF97DF36CB0750DF005331B54AB551CDF11E3DFB";
 
     private const int TamanoBuffer = 1048576;
-    private const int MaximoVersionesConservadas = 2;
+    private const int MaximoVersionesConservadas = 1;
     private const string NombreEjecutableWebView2 = "msedgewebview2.exe";
     private const string NombreArchivoHash = ".lanzador-webview2.sha256";
     private const string PrefijoCarpetaRuntime = "runtime-";
@@ -380,12 +380,59 @@ public sealed class ServicioRuntimeWebView2Embebido
 
             foreach (var carpeta in antiguas)
             {
-                EliminarDirectorioSiExiste(carpeta.FullName);
+                if (!RuntimeEstaEnUso(carpeta.FullName))
+                {
+                    EliminarDirectorioSiExiste(carpeta.FullName);
+                }
             }
         }
         catch
         {
         }
+    }
+
+    private static bool RuntimeEstaEnUso(string carpeta)
+    {
+        // Evita retirar un runtime usado por otra sesion de Windows.
+        var raiz = Path.GetFullPath(carpeta).TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        foreach (var proceso in Process.GetProcesses())
+        {
+            using (proceso)
+            {
+                try
+                {
+                    var ejecutable = proceso.MainModule?.FileName;
+                    if (string.IsNullOrWhiteSpace(ejecutable))
+                    {
+                        continue;
+                    }
+
+                    var ruta = Path.GetFullPath(ejecutable);
+                    if (ruta.Equals(raiz, StringComparison.OrdinalIgnoreCase)
+                        || ruta.StartsWith(
+                            raiz + Path.DirectorySeparatorChar,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException
+                    or System.ComponentModel.Win32Exception
+                    or NotSupportedException)
+                {
+                    if (proceso.ProcessName.Equals(
+                        "msedgewebview2",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool IntentarAplicarPermisosRuntime(string carpeta, out string error)

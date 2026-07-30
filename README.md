@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.9 |
+| Version | 1.5.0 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -65,7 +65,7 @@ Las rutas antiguas que apuntaban directamente a `permisos.json` se migran a la c
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>"
 ```
 
-El proceso usa WebView2 Fixed Version Runtime x64 `150.0.4078.48`, valida su version, arquitectura, firma y hashes, genera un ZIP reproducible y lo embebe como recurso dentro del EXE. Tambien crea un lanzador nativo x64 que contiene el runtime .NET firmado. Ese lanzador fija `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de iniciar .NET, por lo que el proceso no depende de `%LocalAppData%\Temp\.net`. La publicacion exige `pwsh 7.6.x` y las herramientas C++ x64 de Visual Studio. No instala servicios, certificados, cuentas, tareas ni puertos en los equipos cliente.
+El proceso usa WebView2 Fixed Version Runtime x64 `150.0.4078.48`, valida su version, arquitectura, firma y hashes, genera un ZIP reproducible y lo embebe como recurso dentro del EXE. Tambien crea dos lanzadores nativos x64 que contienen el mismo runtime .NET firmado. Los lanzadores fijan `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de iniciar .NET, por lo que el proceso no depende de `%LocalAppData%\Temp\.net`. La publicacion exige `pwsh 7.6.x` y las herramientas C++ x64 de Visual Studio. No instala servicios, certificados, cuentas, tareas ni puertos en los equipos cliente.
 
 Para firmar el EXE final, usar:
 
@@ -75,7 +75,7 @@ pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUM
 
 Tambien se puede usar `-CertPath` y `-CertPassword` con un certificado PFX. Si no se indica certificado, el script bloquea la publicacion salvo que se use `-AllowUnsignedForDev` para pruebas locales.
 
-La carpeta `publicacion` contiene unicamente `LanzadorScripts.exe`. `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json` permanecen en `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`.
+La carpeta `publicacion` contiene unicamente `LanzadorScripts.exe` y `LanzadorScripts_Portable.exe`. El primero conserva solo los runtimes actuales; el segundo elimina `%ProgramFiles%\LanzadorScripts` al salir expresamente desde la bandeja. `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json` permanecen en `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`.
 
 El parametro `-RutaRuntimeWebView2Portable` permite usar una carpeta de Fixed Runtime ya descargada como origen local. Si no se indica, la publicacion descarga la URL oficial fijada de `150.0.4078.48`, guarda la cache en `Recursos\WebView2` y deja esa cache fuera de Git.
 
@@ -100,9 +100,13 @@ pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
 
 La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. En cada equipo cliente, la aplicacion intenta leer ese paquete al arrancar, verifica las tres firmas, exige que los dos `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente.
 
-La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON son contenedores cifrados y firmados: no se editan directamente con un editor de texto. La version 1.4.9 puede leer durante la migracion unicamente los dos contenedores v1 corporativos cuyas huellas estan fijadas en el binario; cualquier v1 distinto queda bloqueado. Toda publicacion nueva se guarda como v2 y se firma con el certificado actual. Cualquier cambio en un script exige volver a publicar el catalogo.
+La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON son contenedores cifrados y firmados: no se editan directamente con un editor de texto. La version 1.5.0 puede leer durante la migracion unicamente los dos contenedores v1 corporativos cuyas huellas estan fijadas en el binario; cualquier v1 distinto queda bloqueado. Toda publicacion nueva se guarda como v2 y se firma con el certificado actual. Cualquier cambio en un script exige volver a publicar el catalogo.
 
-La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
+Los dos ejecutables finales deben ser self-contained y x64. Cada EXE exterior comprueba la huella SHA-256 del mismo componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante, la publicacion no es valida o se esta ejecutando un binario incorrecto.
+
+## Ventana Y Bandeja
+
+El lanzador nativo muestra progreso durante la validacion, extraccion e inicio, antes de que WPF pueda abrirse. La ventana WPF se muestra antes de iniciar backend y WebView2. Al minimizar permanece en la barra de tareas y en la bandeja; al cerrar o usar `Alt+F4` se oculta y los scripts siguen ejecutandose. El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente. El cierre definitivo exige confirmacion y enumera los scripts que se cancelaran. Una segunda apertura del EXE restaura la instancia existente.
 
 GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 
@@ -114,7 +118,7 @@ El workflow de publicacion en GitHub actua como respaldo para compilacion, prueb
 
 ## Recuperacion WebView2
 
-La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. La extraccion solo se reutiliza cuando coinciden el hash del ZIP, el ejecutable y la huella completa de sus 260 archivos; una copia local alterada se sustituye automaticamente. Un bloqueo explicito de WDAC o AppLocker debe autorizarse mediante la politica corporativa.
+La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2\<hash-version>`. Conserva solo la version actual. La extraccion solo se reutiliza cuando coinciden el hash del ZIP, el ejecutable y la huella completa de sus 260 archivos; una copia local alterada se sustituye automaticamente. Un bloqueo explicito de WDAC o AppLocker debe autorizarse mediante la politica corporativa.
 
 Cada extraccion concede lectura y ejecucion a `ALL APPLICATION PACKAGES` y `ALL RESTRICTED APPLICATION PACKAGES`, requeridos por el aislamiento de WebView2 Fixed Runtime. Los usuarios normales no reciben permisos de escritura sobre los binarios.
 
