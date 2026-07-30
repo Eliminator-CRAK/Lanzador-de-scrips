@@ -5,7 +5,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.4.8 |
+| Version | 1.4.9 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -100,7 +100,7 @@ pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
 
 La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. En cada equipo cliente, la aplicacion intenta leer ese paquete al arrancar, verifica las tres firmas, exige que los dos `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente.
 
-La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON v2 son contenedores cifrados y firmados: no se editan directamente con un editor de texto. Cualquier cambio en un script exige volver a publicar el catalogo.
+La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON son contenedores cifrados y firmados: no se editan directamente con un editor de texto. La version 1.4.9 puede leer durante la migracion unicamente los dos contenedores v1 corporativos cuyas huellas estan fijadas en el binario; cualquier v1 distinto queda bloqueado. Toda publicacion nueva se guarda como v2 y se firma con el certificado actual. Cualquier cambio en un script exige volver a publicar el catalogo.
 
 La publicacion final debe ser self-contained, de un unico EXE y x64. El EXE exterior comprueba la huella SHA-256 del componente .NET embebido, lo reutiliza solo si coincide y lo ejecuta desde `Program Files`. Si un equipo muestra un error de .NET Desktop Runtime faltante al abrir el portable, la publicacion no es valida o se esta ejecutando un binario incorrecto.
 
@@ -134,7 +134,7 @@ Solo se conservan las ultimas 3 copias de diagnostico de perfiles dañados o de 
 
 La API local exige cookie de sesion y token interno aleatorio por arranque. Los endpoints admin requieren siempre `Authorization: Bearer <token>`.
 
-`permisos.json` y `catalogo-scripts.json` usan el contenedor v2, cifrado con la misma AES-256-GCM y firmado con el mismo certificado RSA-PSS/SHA-256. La clave AES se recupera de DPAPI de maquina o, si falta, del paquete central DPAPI-NG firmado. La clave RSA privada se busca solo en el almacen de certificados de los equipos publicadores; el EXE incorpora el certificado publico. Si falta un archivo, no coinciden los `KeyId`, se ha manipulado una firma o Windows no autoriza la identidad, la aplicacion bloquea las ejecuciones.
+`permisos.json` y `catalogo-scripts.json` se cifran con la misma AES-256-GCM y se firman como pareja con RSA-PSS/SHA-256. El lector admite v1 solo con la clave publica historica y las huellas exactas de los dos archivos autorizados para la migracion; genera siempre v2 con el certificado actual. La clave AES se recupera de DPAPI de maquina o, si falta, del paquete central DPAPI-NG firmado. Las claves RSA privadas permanecen fuera del EXE; este incorpora unicamente los certificados o claves publicas necesarios para verificar. Si falta un archivo, no coinciden los `KeyId`, se ha manipulado una firma o Windows no autoriza la identidad, la aplicacion bloquea las ejecuciones.
 
 La politica editable de permisos conserva solo las opciones operativas:
 

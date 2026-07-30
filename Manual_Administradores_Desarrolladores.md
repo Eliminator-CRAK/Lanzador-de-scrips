@@ -36,7 +36,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 ## Permisos
 
-`permisos.json` es un contenedor v2 cifrado y firmado. El catalogo usa la misma proteccion en `catalogo-scripts.json`. Ambos emplean AES-256-GCM y RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos.
+`permisos.json` y `catalogo-scripts.json` son contenedores cifrados y firmados. Ambos emplean la misma AES-256-GCM y la misma identidad de firma RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos. La version 1.4.9 conserva lectura verificada de los dos v1 corporativos cuyas huellas estan fijadas para la migracion y escribe exclusivamente v2.
 
 La clave AES no forma parte del EXE. Se distribuye en `clave-artefactos.dpng.json`, cifrada con DPAPI-NG para un grupo de Active Directory y firmada con RSA-PSS/SHA-256. En el primer arranque autorizado se guarda con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
 
@@ -64,6 +64,17 @@ Reglas:
 - Solo un administrador puede seleccionar scripts y publicar el catalogo.
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
+
+## Migracion A La Version 1.4.9
+
+1. Conserve juntos los `permisos.json` y `catalogo-scripts.json` v1 existentes; sus firmas historicas y su `KeyId` deben coincidir.
+2. En el equipo publicador, restaure la AES original en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` una sola vez. No genere otra clave.
+3. Cree `clave-artefactos.dpng.json` para el grupo de Active Directory autorizado mediante `CrearPaqueteAprovisionamientoClave.ps1`.
+4. Sustituya el EXE por la version 1.4.9. Cada cliente autorizado recuperara la AES automaticamente al arrancar y podra leer los dos artefactos v1.
+5. Cuando un administrador vuelva a guardar permisos o publique el catalogo, los archivos nuevos se escribiran como v2 y se firmaran con el certificado actual.
+6. No mezcle un archivo v1 con otro v2 que tenga un `KeyId` distinto. El aprovisionamiento y la ejecucion fallan de forma cerrada.
+
+La compatibilidad v1 contiene solo la clave publica historica de verificacion y las huellas SHA-256 exactas de los dos archivos autorizados. Un v1 distinto se bloquea aunque presente una firma historica valida. El EXE no recupera ni incorpora la clave AES antigua ni ninguna clave RSA privada.
 
 ## Migracion A La Version 1.4.8
 

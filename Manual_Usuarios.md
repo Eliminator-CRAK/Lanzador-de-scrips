@@ -14,7 +14,7 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
-## Cambios En La Version 1.4.8
+## Cambios En La Version 1.4.9
 
 - El usuario no debe modificar `permisos.json`, `catalogo-scripts.json` ni crear carpetas de configuracion.
 - La aplicacion ya no se abre automaticamente con Windows; debe iniciarse desde el EXE distribuido.
@@ -23,6 +23,7 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 - WebView2 usa un perfil nuevo con permisos compatibles con sus procesos aislados; el usuario no debe modificar la carpeta.
 - Si un script cambia, queda bloqueado hasta que un administrador publique de nuevo el catalogo.
 - Si falta la clave local, la aplicacion intenta recuperarla automaticamente del paquete corporativo autorizado. No pide al usuario la clave AES.
+- Los permisos y el catalogo corporativos antiguos se pueden leer durante la migracion si conservan sus firmas validas y comparten la misma clave.
 - Si el paquete no existe, la cuenta no pertenece al grupo autorizado o los permisos no se pueden validar, la aplicacion bloquea la ejecucion y el usuario debe comunicar el mensaje exacto.
 
 ## Ejecutar Un Script
@@ -55,7 +56,7 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 | Permisos ausentes o no validos | No ejecutar y comunicar el mensaje exacto al administrador. |
 | Falta `artefactos.key` | Reiniciar conectado a la red corporativa. La app debe aprovisionarla automaticamente; si falla, comunicar el mensaje al administrador. |
 | WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
-| El error muestra una ruta dentro de AppData | El EXE no corresponde a la version 1.4.8 o se ha abierto el componente interno. Cierre la app y use el `LanzadorScripts.exe` distribuido. |
+| El error muestra una ruta dentro de AppData | El EXE no corresponde a la version 1.4.9 o se ha abierto el componente interno. Cierre la app y use el `LanzadorScripts.exe` distribuido. |
 
 ## Logs
 

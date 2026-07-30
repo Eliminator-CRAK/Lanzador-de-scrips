@@ -14,13 +14,16 @@ public sealed class ServicioArtefactosProtegidos
     public const string TipoPermisos = "permissions";
     public const string TipoCatalogoScripts = "script-catalog";
 
-    private const int Version = 2;
+    private const int VersionActual = 2;
+    private const int VersionLegada = 1;
     private const string Algoritmo = "AES-256-GCM+RSA-PSS-SHA256";
     private const string AutorContenedor = "Alex Roman";
     private const string DescripcionContenedor = "Artefacto cifrado y firmado de LanzadorScripts.";
     private const int LongitudMaximaCifrada = 16 * 1024 * 1024;
     private const int LongitudMaximaArchivo = 24 * 1024 * 1024;
     private const int LongitudMaximaFirma = 16 * 1024;
+    private const string HuellaPermisosLegados = "254A705978A7CBFF43445B8381B4570B6AB017408AA4134BD58379E5FE3FBEBD";
+    private const string HuellaCatalogoLegado = "684FECAD77099A7773B9714919DB3BCC746273A739D7C71871B3D9A12F7901D2";
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -32,14 +35,38 @@ public sealed class ServicioArtefactosProtegidos
     private readonly ServicioClaveArtefactos? _servicioClave;
     private readonly ServicioFirmaArtefactos _servicioFirma;
     private readonly byte[]? _clavePruebas;
+    private readonly string _huellaPermisosLegados;
+    private readonly string _huellaCatalogoLegado;
 
     public ServicioArtefactosProtegidos()
     {
         _servicioClave = new ServicioClaveArtefactos();
         _servicioFirma = new ServicioFirmaArtefactos();
+        _huellaPermisosLegados = HuellaPermisosLegados;
+        _huellaCatalogoLegado = HuellaCatalogoLegado;
     }
 
     internal ServicioArtefactosProtegidos(byte[] claveAes, RSA claveFirma, RSA claveVerificacion)
+        : this(claveAes, new ServicioFirmaArtefactos(claveFirma, claveVerificacion))
+    {
+    }
+
+    internal ServicioArtefactosProtegidos(
+        byte[] claveAes,
+        ServicioFirmaArtefactos servicioFirma)
+        : this(
+            claveAes,
+            servicioFirma,
+            HuellaPermisosLegados,
+            HuellaCatalogoLegado)
+    {
+    }
+
+    internal ServicioArtefactosProtegidos(
+        byte[] claveAes,
+        ServicioFirmaArtefactos servicioFirma,
+        string huellaPermisosLegados,
+        string huellaCatalogoLegado)
     {
         if (claveAes.Length != 32)
         {
@@ -47,7 +74,13 @@ public sealed class ServicioArtefactosProtegidos
         }
 
         _clavePruebas = claveAes.ToArray();
-        _servicioFirma = new ServicioFirmaArtefactos(claveFirma, claveVerificacion);
+        _servicioFirma = servicioFirma;
+        _huellaPermisosLegados = ValidarHuellaLegada(
+            huellaPermisosLegados,
+            nameof(huellaPermisosLegados));
+        _huellaCatalogoLegado = ValidarHuellaLegada(
+            huellaCatalogoLegado,
+            nameof(huellaCatalogoLegado));
     }
 
     internal ServicioArtefactosProtegidos(
@@ -56,6 +89,8 @@ public sealed class ServicioArtefactosProtegidos
     {
         _servicioClave = servicioClave;
         _servicioFirma = servicioFirma;
+        _huellaPermisosLegados = HuellaPermisosLegados;
+        _huellaCatalogoLegado = HuellaCatalogoLegado;
     }
 
     public string KeyId
@@ -75,7 +110,7 @@ public sealed class ServicioArtefactosProtegidos
         var claro = Encoding.UTF8.GetBytes(texto);
         var cifrado = new byte[claro.Length];
         var etiqueta = new byte[16];
-        var datosAsociados = ObtenerDatosAsociados(tipo, material.KeyId);
+        var datosAsociados = ObtenerDatosAsociados(tipo, material.KeyId, VersionActual);
         try
         {
             using (var aes = new AesGcm(material.Clave, etiqueta.Length))
@@ -91,11 +126,12 @@ public sealed class ServicioArtefactosProtegidos
                 material.KeyId,
                 nonceBase64,
                 etiquetaBase64,
-                datosBase64));
+                datosBase64,
+                VersionActual));
             var contenedor = new ContenedorProtegido(
                 AutorContenedor,
                 DescripcionContenedor,
-                Version,
+                VersionActual,
                 tipo,
                 Algoritmo,
                 material.KeyId,
@@ -144,7 +180,7 @@ public sealed class ServicioArtefactosProtegidos
                         cifrado,
                         etiqueta,
                         claroBytes,
-                        ObtenerDatosAsociados(tipo, material.KeyId));
+                        ObtenerDatosAsociados(tipo, material.KeyId, contenedor.Version));
                 }
 
                 claro = Encoding.UTF8.GetString(claroBytes);
@@ -257,9 +293,10 @@ public sealed class ServicioArtefactosProtegidos
             : new MaterialClaveArtefactos(_clavePruebas.ToArray());
     }
 
-    private static byte[] ObtenerDatosAsociados(string tipo, string keyId)
+    private static byte[] ObtenerDatosAsociados(string tipo, string keyId, int version)
     {
-        return Encoding.UTF8.GetBytes($"LanzadorScripts|artefacto|v{Version}|{tipo}|{Algoritmo}|{keyId}");
+        return Encoding.UTF8.GetBytes(
+            $"LanzadorScripts|artefacto|v{version}|{tipo}|{Algoritmo}|{keyId}");
     }
 
     private static byte[] ObtenerBytesFirma(
@@ -267,10 +304,11 @@ public sealed class ServicioArtefactosProtegidos
         string keyId,
         string nonce,
         string etiqueta,
-        string datos)
+        string datos,
+        int version)
     {
         return Encoding.UTF8.GetBytes(
-            $"LanzadorScripts|firma|{AutorContenedor}|{DescripcionContenedor}|v{Version}|{tipo}|{Algoritmo}|{keyId}|{nonce}|{etiqueta}|{datos}");
+            $"LanzadorScripts|firma|{AutorContenedor}|{DescripcionContenedor}|v{version}|{tipo}|{Algoritmo}|{keyId}|{nonce}|{etiqueta}|{datos}");
     }
 
     private bool IntentarCargarDesdeRuta(string ruta, string tipo, out string claro, out string error)
@@ -338,7 +376,7 @@ public sealed class ServicioArtefactosProtegidos
             if (contenedor is null
                 || !string.Equals(contenedor.Autor, AutorContenedor, StringComparison.Ordinal)
                 || !string.Equals(contenedor.Descripcion, DescripcionContenedor, StringComparison.Ordinal)
-                || contenedor.Version != Version
+                || contenedor.Version is not VersionActual and not VersionLegada
                 || !string.Equals(contenedor.Tipo, tipo, StringComparison.Ordinal)
                 || !string.Equals(contenedor.Algoritmo, Algoritmo, StringComparison.Ordinal)
                 || string.IsNullOrEmpty(contenedor.KeyId)
@@ -357,6 +395,13 @@ public sealed class ServicioArtefactosProtegidos
                 return false;
             }
 
+            if (contenedor.Version == VersionLegada
+                && !EsContenedorLegadoAutorizado(tipo, texto))
+            {
+                error = "El contenedor v1 no pertenece a la migracion autorizada.";
+                return false;
+            }
+
             var nonce = Convert.FromBase64String(contenedor.Nonce);
             var etiqueta = Convert.FromBase64String(contenedor.Etiqueta);
             var cifrado = Convert.FromBase64String(contenedor.Datos);
@@ -371,14 +416,17 @@ public sealed class ServicioArtefactosProtegidos
                 return false;
             }
 
-            if (!_servicioFirma.Verificar(
-                ObtenerBytesFirma(
-                    tipo,
-                    contenedor.KeyId,
-                    contenedor.Nonce,
-                    contenedor.Etiqueta,
-                    contenedor.Datos),
-                firma))
+            var bytesFirmados = ObtenerBytesFirma(
+                tipo,
+                contenedor.KeyId,
+                contenedor.Nonce,
+                contenedor.Etiqueta,
+                contenedor.Datos,
+                contenedor.Version);
+            var firmaValida = contenedor.Version == VersionActual
+                ? _servicioFirma.Verificar(bytesFirmados, firma)
+                : _servicioFirma.VerificarLegada(bytesFirmados, firma);
+            if (!firmaValida)
             {
                 error = "La firma del contenedor protegido no es valida.";
                 return false;
@@ -392,6 +440,37 @@ public sealed class ServicioArtefactosProtegidos
             error = "El contenedor protegido esta corrupto o fue modificado.";
             return false;
         }
+    }
+
+    private bool EsContenedorLegadoAutorizado(string tipo, string texto)
+    {
+        var huellaEsperada = tipo == TipoPermisos
+            ? _huellaPermisosLegados
+            : _huellaCatalogoLegado;
+        var bytes = Encoding.UTF8.GetBytes(texto);
+        try
+        {
+            return string.Equals(
+                Convert.ToHexString(SHA256.HashData(bytes)),
+                huellaEsperada,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
+    private static string ValidarHuellaLegada(string huella, string nombreParametro)
+    {
+        if (huella.Length != 64 || !huella.All(Uri.IsHexDigit))
+        {
+            throw new ArgumentException(
+                "La huella SHA-256 legada no tiene un formato valido.",
+                nombreParametro);
+        }
+
+        return huella.ToUpperInvariant();
     }
 
     private static void ValidarTipo(string tipo)
