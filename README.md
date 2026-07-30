@@ -3,9 +3,11 @@
 
 # LanzadorScripts
 
+<img src="Recursos/IconoLanzador.png" alt="Logo de LanzadorScripts" width="128">
+
 | Campo | Valor |
 |---|---|
-| Version | 1.5.0 |
+| Version | 1.5.1 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -107,6 +109,8 @@ Los dos ejecutables finales deben ser self-contained y x64. Cada EXE exterior co
 ## Ventana Y Bandeja
 
 El lanzador nativo muestra progreso durante la validacion, extraccion e inicio, antes de que WPF pueda abrirse. La ventana WPF se muestra antes de iniciar backend y WebView2. Al minimizar permanece en la barra de tareas y en la bandeja; al cerrar o usar `Alt+F4` se oculta y los scripts siguen ejecutandose. El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente. El cierre definitivo exige confirmacion y enumera los scripts que se cancelaran. Una segunda apertura del EXE restaura la instancia existente.
+
+La version 1.5.1 incorpora una identidad visual propia inspirada en las herramientas de consola. El icono contiene resoluciones nativas entre 16 y 256 pixeles para conservar nitidez en la ventana, la barra de tareas, la bandeja y el ejecutable.
 
 GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 

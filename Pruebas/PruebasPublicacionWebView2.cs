@@ -58,16 +58,47 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion150()
+    public void ProyectoPublicaVersion151()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
 
-        Assert.Contains("<Version>1.5.0</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.5.0.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.5.0.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.5.1</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.5.1.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.5.1.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
+    }
+
+    // Comprueba que el icono conserva resoluciones adecuadas para Windows.
+    [Fact]
+    public void IconoAplicacionIncluyeResolucionesDeVentanaYBandeja()
+    {
+        var contenido = File.ReadAllBytes(ObtenerRutaProyecto("Recursos", "IconoLanzador.ico"));
+
+        Assert.True(contenido.Length > 6);
+        Assert.Equal((ushort)0, BitConverter.ToUInt16(contenido, 0));
+        Assert.Equal((ushort)1, BitConverter.ToUInt16(contenido, 2));
+
+        var cantidad = BitConverter.ToUInt16(contenido, 4);
+        Assert.True(cantidad >= 9);
+
+        var resoluciones = Enumerable.Range(0, cantidad)
+            .Select(indice =>
+            {
+                var ancho = contenido[6 + (indice * 16)];
+                return ancho == 0 ? 256 : ancho;
+            })
+            .ToHashSet();
+
+        Assert.Contains(16, resoluciones);
+        Assert.Contains(20, resoluciones);
+        Assert.Contains(24, resoluciones);
+        Assert.Contains(32, resoluciones);
+        Assert.Contains(48, resoluciones);
+        Assert.Contains(64, resoluciones);
+        Assert.Contains(128, resoluciones);
+        Assert.Contains(256, resoluciones);
     }
 
     // Comprueba que el lanzador prepara .NET antes del codigo administrado.
