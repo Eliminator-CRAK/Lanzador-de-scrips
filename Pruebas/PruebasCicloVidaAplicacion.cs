@@ -89,6 +89,22 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("MaximoVersionesConservadas = 1", servicio, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void LogDeArranqueNoCapturaElContextoVisual()
+    {
+        var servicio = File.ReadAllText(
+            ObtenerRutaProyecto("Servicios", "ServicioLogInicio.cs"));
+
+        Assert.Contains(
+            "await Bloqueo.WaitAsync().ConfigureAwait(false)",
+            servicio,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".ConfigureAwait(false);",
+            servicio,
+            StringComparison.Ordinal);
+    }
+
     private static string ObtenerRutaProyecto(params string[] partes)
     {
         var directorio = new DirectoryInfo(AppContext.BaseDirectory);

@@ -60,10 +60,11 @@ public sealed class ServicioLogInicio
                 ServicioRedaccionSecretos.Sanitizar(datos));
             var json = JsonSerializer.Serialize(entrada, OpcionesJson);
 
-            await Bloqueo.WaitAsync();
+            await Bloqueo.WaitAsync().ConfigureAwait(false);
             try
             {
-                await File.AppendAllTextAsync(ruta, json + Environment.NewLine, Encoding.UTF8);
+                await File.AppendAllTextAsync(ruta, json + Environment.NewLine, Encoding.UTF8)
+                    .ConfigureAwait(false);
             }
             finally
             {
