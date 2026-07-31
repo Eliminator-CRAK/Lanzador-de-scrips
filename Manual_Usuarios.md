@@ -14,6 +14,10 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
+## Cambios En La Version 1.5.2
+
+- El nuevo icono de consola utiliza un fondo negro opaco en el ejecutable, la ventana, la barra de tareas y la bandeja.
+
 ## Cambios En La Version 1.5.1
 
 - LanzadorScripts utiliza un nuevo icono propio de consola, mas reconocible en el ejecutable, la ventana, la barra de tareas y la bandeja.
