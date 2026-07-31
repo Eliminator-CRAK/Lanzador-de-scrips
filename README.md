@@ -7,7 +7,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.5.4 |
+| Version | 1.5.5 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -100,7 +100,7 @@ pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
   -GrupoDominio 'MAD00\<GRUPO_SEGURIDAD>'
 ```
 
-La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. En cada equipo cliente, la aplicacion intenta leer ese paquete al arrancar, verifica las tres firmas, exige que los dos `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente.
+La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. La carpeta central debe contener siempre el conjunto completo: `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`. En cada equipo cliente, la aplicacion intenta leer el paquete al arrancar, reintenta durante tres minutos si la red aun no esta disponible, verifica las tres firmas, exige que los `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente y la interfaz no permite introducirla manualmente.
 
 La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON son contenedores cifrados y firmados: no se editan directamente con un editor de texto. La version 1.5.0 puede leer durante la migracion unicamente los dos contenedores v1 corporativos cuyas huellas estan fijadas en el binario; cualquier v1 distinto queda bloqueado. Toda publicacion nueva se guarda como v2 y se firma con el certificado actual. Cualquier cambio en un script exige volver a publicar el catalogo.
 
@@ -110,7 +110,7 @@ Los dos ejecutables finales deben ser self-contained y x64. Cada EXE exterior co
 
 El lanzador nativo valida y extrae los componentes sin abrir consolas ni dialogos de progreso separados. La ventana WPF se muestra antes de iniciar backend y WebView2. Al minimizar permanece en la barra de tareas y en la bandeja; al cerrar o usar `Alt+F4` se oculta y los scripts siguen ejecutandose. El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente. Si hay scripts activos, el cierre definitivo exige confirmacion y enumera los que se cancelaran; sin ejecuciones, cierra directamente. Una segunda apertura del EXE restaura la instancia existente.
 
-La version 1.5.4 mueve exclusivamente los perfiles temporales de WebView2 a `LocalAppData`, conserva sus ACL predeterminadas y permite que Edge cree cada carpeta final por sesion. La configuracion, las claves, los logs y la auditoria siguen en `ProgramData`.
+La version 1.5.5 elimina la instalacion manual de la AES y reintenta automaticamente el aprovisionamiento desde el paquete central firmado. Los perfiles temporales de WebView2 permanecen en `LocalAppData`; la configuracion, las claves, los logs y la auditoria siguen en `ProgramData`.
 
 GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 

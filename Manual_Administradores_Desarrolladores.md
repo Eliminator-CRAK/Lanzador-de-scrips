@@ -45,7 +45,7 @@ La configuracion predeterminada apunta a:
 - Scripts: `\\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS`
 - Permisos: `\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS`
 
-La ruta de permisos siempre representa una carpeta. La aplicacion busca dentro `permisos.json` y `catalogo-scripts.json`; no usa copias junto al EXE. Las configuraciones antiguas que incluian el nombre del archivo se migran a su carpeta.
+La ruta de permisos siempre representa una carpeta. La aplicacion busca dentro `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`; no usa copias junto al EXE. Los tres archivos son obligatorios en equipos nuevos y deben compartir el mismo `KeyId`. Las configuraciones antiguas que incluian el nombre del archivo se migran a su carpeta.
 
 La politica operativa vive en `seguridadScripts`:
 
@@ -64,6 +64,14 @@ Reglas:
 - Solo un administrador puede seleccionar scripts y publicar el catalogo.
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
+
+## Migracion A La Version 1.5.5
+
+1. Sustituya ambos ejecutables por la version 1.5.5.
+2. Compruebe que `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json` estan juntos en la carpeta central.
+3. No distribuya `artefactos.key`: cada cliente autorizado lo crea automaticamente con DPAPI local.
+4. La aplicacion realiza doce intentos separados por quince segundos y recarga la interfaz si consigue la clave.
+5. Ya no existe entrada manual de AES ni boton de instalacion de clave.
 
 ## Migracion A La Version 1.5.4
 
@@ -108,7 +116,7 @@ pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
 6. En el primer arranque, la aplicacion valida las firmas y los `KeyId`, usa la identidad de dominio para abrir DPAPI-NG y crea automaticamente la copia local.
 7. Pruebe primero un equipo piloto conectado al dominio. Si Windows no autoriza el grupo o no hay acceso al controlador de dominio, el sistema permanece bloqueado y no instala una clave distinta.
 
-El boton `Instalar clave` se conserva solo para recuperacion administrativa. No es necesario introducir la AES en cada cliente cuando el paquete central esta desplegado.
+La AES no se introduce en los clientes. El paquete central firmado es el unico mecanismo de aprovisionamiento admitido.
 
 ## Migracion A La Version 1.4.7
 
@@ -131,7 +139,7 @@ No edite directamente los dos JSON: en v2 son contenedores cifrados y firmados. 
 
 La clave debe crearse una sola vez y custodiarse en el gestor de secretos corporativo. El aviso de clave ausente no se resuelve generando una clave nueva en ese cliente. Si se rota la AES, regenere y firme los dos contenedores y el paquete DPAPI-NG desde el equipo publicador; cada cliente reemplazara la copia local solo cuando las tres firmas y los `KeyId` coincidan.
 
-En la version actual, los clientes aprovisionan la clave automaticamente desde el paquete DPAPI-NG. El boton `Instalar clave` permite una recuperacion excepcional: la entrada queda enmascarada, no pasa por JavaScript y se protege con DPAPI `LocalMachine`; el resultado y el `KeyId` quedan auditados. Si ya existe una clave, la aplicacion exige confirmar el reemplazo.
+En la version actual, los clientes aprovisionan o rotan la clave automaticamente desde el paquete DPAPI-NG firmado. No existe entrada manual de AES. Si el paquete no esta disponible al arrancar, la aplicacion reintenta durante tres minutos y mantiene la ejecucion bloqueada hasta validar el conjunto completo.
 
 La version 1.4.6 serializa el acceso a `configuracion.dat`, reintenta bloqueos transitorios y usa reemplazo atomico con copia `.bak`. Una carga ordinaria ya no reescribe el archivo. Si el archivo existente no se puede descifrar o validar, la aplicacion falla sin sustituirlo por rutas predeterminadas.
 
@@ -224,11 +232,11 @@ Para pruebas locales sin firma:
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 -AllowUnsignedForDev
 ```
 
-La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe` y `LanzadorScripts_Portable.exe`. Los dos contenedores protegidos permanecen en la carpeta operativa de permisos.
+La carpeta `publicacion` debe contener unicamente `LanzadorScripts.exe` y `LanzadorScripts_Portable.exe`. Los dos contenedores protegidos y `clave-artefactos.dpng.json` permanecen juntos en la carpeta operativa de permisos.
 
 Durante la publicacion se descarga o reutiliza WebView2 Fixed Version Runtime x64 `150.0.4078.48`. Se validan los hashes del CAB, ZIP, ejecutable y contenido completo, la arquitectura x64 y la firma de Microsoft antes de embeber el recurso. Al arrancar se vuelve a comprobar la huella completa de la copia extraida, se reemplaza si fue alterada y se conceden los permisos de lectura y ejecucion requeridos por AppContainer. El runtime se ejecuta solo desde `Program Files`; un bloqueo explicito de WDAC o AppLocker requiere una regla corporativa.
 
-El publicador firma primero el runtime .NET interno y despues lo incluye como recurso de dos lanzadores nativos x64. Ambos validan la misma huella SHA-256 y establecen `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de que .NET pueda extraer archivos. La variante normal conserva solo las versiones actuales; la portable elimina la raiz completa al recibir el cierre definitivo. La aplicacion interna y la extraccion nativa quedan en `Program Files`; los temporales privados, perfiles, configuracion y logs permanecen en `ProgramData`. No se utiliza AppData.
+El publicador firma primero el runtime .NET interno y despues lo incluye como recurso de dos lanzadores nativos x64. Ambos validan la misma huella SHA-256 y establecen `DOTNET_BUNDLE_EXTRACT_BASE_DIR`, `TEMP` y `TMP` antes de que .NET pueda extraer archivos. La variante normal conserva solo las versiones actuales; la portable elimina la raiz completa al recibir el cierre definitivo. La aplicacion interna y la extraccion nativa quedan en `Program Files`; los temporales privados, la configuracion y los logs permanecen en `ProgramData`. Solo los perfiles temporales de WebView2 usan `LocalAppData`.
 
 La publicacion exige `pwsh 7.6.x` y las herramientas C++ x64 de Visual Studio; la cache de WebView2 queda en `Recursos\WebView2` y no se versiona.
 
@@ -244,7 +252,7 @@ Antes de ejecutar `-InicializarArtefactos`, aprovisione la clave de 32 bytes en 
 powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
 ```
 
-La entrada es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Despues cree `clave-artefactos.dpng.json` una sola vez con `CrearPaqueteAprovisionamientoClave.ps1`; los clientes no reciben la AES manualmente. Los contenedores v1 no son compatibles con la version 1.4.4 o posteriores: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
+La entrada se usa solo en el equipo publicador y es interactiva y segura. No introduzca la clave en argumentos, archivos de texto, Git ni historiales de consola. Despues cree `clave-artefactos.dpng.json` una sola vez con `CrearPaqueteAprovisionamientoClave.ps1`; los clientes no reciben la AES manualmente. Los contenedores v1 no son compatibles con la version 1.4.4 o posteriores: exporte primero la configuracion con la version anterior, haga copia de seguridad de los dos JSON, aprovisione la clave v2, importe el paquete y vuelva a publicar el catalogo.
 
 No se instala ningun servicio, cuenta, tarea ni puerto. El certificado privado de artefactos solo debe instalarse en los equipos autorizados para publicar cambios.
 

@@ -14,6 +14,12 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
+## Cambios En La Version 1.5.5
+
+- La clave de artefactos se instala automaticamente desde el servidor al arrancar.
+- Si la red tarda en estar disponible, la aplicacion reintenta durante tres minutos y actualiza los permisos sin pedir una clave.
+- Se ha eliminado el boton para instalar manualmente la clave AES.
+
 ## Cambios En La Version 1.5.4
 
 - WebView2 guarda su perfil temporal en `LocalAppData` y crea una carpeta nueva en cada arranque.
@@ -80,7 +86,7 @@ Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo 
 | Carpeta remota de scripts no disponible | Esperar recuperacion de red; la interfaz seguira visible pero los scripts quedan bloqueados. |
 | Carpeta remota de permisos no disponible | No ejecutar. Solo administracion puede activar emergencia temporal; los cambios de permisos quedan bloqueados mientras la carpeta siga inaccesible. |
 | Permisos ausentes o no validos | No ejecutar y comunicar el mensaje exacto al administrador. |
-| Falta `artefactos.key` | Reiniciar conectado a la red corporativa. La app debe aprovisionarla automaticamente; si falla, comunicar el mensaje al administrador. |
+| Falta `artefactos.key` | Mantener la app abierta y conectada a la red corporativa mientras reintenta. Si falla, el administrador debe comprobar que los tres archivos centrales estan desplegados. |
 | WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
 | El error muestra una ruta dentro de AppData | El EXE es anterior a la version 1.5.0 o se ha abierto el componente interno. Cierre la app y use uno de los EXE distribuidos. |
 

@@ -205,24 +205,19 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PantallaPrincipalPermiteAprovisionarClaveSinExponerlaAlCliente()
+    public void PantallaPrincipalSoloUsaAprovisionamientoAutomaticoDeClave()
     {
         var raiz = ObtenerRaizProyecto();
         var rutaVentana = Path.Combine(raiz, "VentanaPrincipal.xaml.cs");
         var rutaDialogo = Path.Combine(raiz, "DialogoClaveArtefactos.xaml");
         var rutaCodigoDialogo = Path.Combine(raiz, "DialogoClaveArtefactos.xaml.cs");
         var ventana = File.ReadAllText(rutaVentana);
-        var dialogo = File.ReadAllText(rutaDialogo);
-        var codigoDialogo = File.ReadAllText(rutaCodigoDialogo);
 
-        Assert.Contains("Instalar clave", ventana, StringComparison.Ordinal);
-        Assert.Contains("aprovisionarClaveArtefactos", ventana, StringComparison.Ordinal);
-        Assert.Contains("ServicioClaveArtefactos.Aprovisionar", ventana, StringComparison.Ordinal);
-        Assert.Contains("CryptographicOperations.ZeroMemory(clave)", ventana, StringComparison.Ordinal);
-        Assert.Contains("<PasswordBox", dialogo, StringComparison.Ordinal);
-        Assert.Contains("SecurePassword", codigoDialogo, StringComparison.Ordinal);
-        Assert.DoesNotContain("claveBase64", ventana, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("localStorage", codigoDialogo, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Instalar clave", ventana, StringComparison.Ordinal);
+        Assert.DoesNotContain("aprovisionarClaveArtefactos", ventana, StringComparison.Ordinal);
+        Assert.DoesNotContain("ServicioClaveArtefactos.Aprovisionar", ventana, StringComparison.Ordinal);
+        Assert.False(File.Exists(rutaDialogo));
+        Assert.False(File.Exists(rutaCodigoDialogo));
     }
 
     [Fact]

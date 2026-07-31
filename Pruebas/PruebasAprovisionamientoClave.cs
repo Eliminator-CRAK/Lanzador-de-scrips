@@ -206,6 +206,25 @@ public sealed class PruebasAprovisionamientoClave
         Assert.DoesNotContain("Read-Host", herramienta, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData((int)EstadoAprovisionamientoClave.PaqueteAusente, true, false)]
+    [InlineData((int)EstadoAprovisionamientoClave.Error, true, false)]
+    [InlineData((int)EstadoAprovisionamientoClave.YaDisponible, false, true)]
+    [InlineData((int)EstadoAprovisionamientoClave.Aprovisionada, false, true)]
+    [InlineData((int)EstadoAprovisionamientoClave.Actualizada, false, true)]
+    public void ArranqueReintentaSoloHastaQueLaClaveEsteDisponible(
+        int valorEstado,
+        bool debeReintentar,
+        bool claveDisponible)
+    {
+        // Comprueba la decision del ciclo automatico de aprovisionamiento.
+        var estado = (EstadoAprovisionamientoClave)valorEstado;
+        var resultado = new ResultadoAprovisionamientoClave(estado, "prueba");
+
+        Assert.Equal(debeReintentar, Aplicacion.DebeReintentarAprovisionamiento(resultado));
+        Assert.Equal(claveDisponible, Aplicacion.ClaveDisponible(resultado));
+    }
+
     private static ServicioArtefactosProtegidos CrearArtefactos(
         string carpeta,
         byte[] clave,

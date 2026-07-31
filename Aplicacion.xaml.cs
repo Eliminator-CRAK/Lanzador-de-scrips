@@ -16,6 +16,8 @@ public partial class Aplicacion : System.Windows.Application
     private const string NombreMutex = "Local\\LanzadorScripts_AlexRoman";
     private const string NombrePipe = "LanzadorScripts_AlexRoman_ConfigPipe";
     private const int IntentosConexionInstancia = 20;
+    private const int IntentosAprovisionamientoClave = 12;
+    private static readonly TimeSpan IntervaloAprovisionamientoClave = TimeSpan.FromSeconds(15);
 
     private Mutex? _mutex;
     private CancellationTokenSource? _cancelacionPipe;
@@ -59,10 +61,11 @@ public partial class Aplicacion : System.Windows.Application
             return;
         }
 
+        ResultadoAprovisionamientoClave resultadoAprovisionamiento;
         try
         {
             ServicioDirectoriosAplicacion.PrepararEstructuraAplicacion();
-            IntentarAprovisionarClaveArtefactos();
+            resultadoAprovisionamiento = IntentarAprovisionarClaveArtefactos();
         }
         catch (Exception ex)
         {
@@ -85,6 +88,9 @@ public partial class Aplicacion : System.Windows.Application
             "aplicacion.ventana_mostrada",
             "La ventana principal se mostro antes de iniciar los componentes pesados.");
         _ = EscucharArgumentosAsync(_cancelacionPipe.Token);
+        _ = ReintentarAprovisionamientoClaveArtefactosAsync(
+            resultadoAprovisionamiento,
+            _cancelacionPipe.Token);
         ProcesarArgumentos(e.Args);
     }
 
@@ -95,8 +101,9 @@ public partial class Aplicacion : System.Windows.Application
         base.OnSessionEnding(e);
     }
 
-    private void IntentarAprovisionarClaveArtefactos()
+    private ResultadoAprovisionamientoClave IntentarAprovisionarClaveArtefactos()
     {
+        // Intenta obtener la clave desde el paquete central firmado.
         try
         {
             var configuracion = new ServicioConfiguracion().Cargar();
@@ -104,7 +111,7 @@ public partial class Aplicacion : System.Windows.Application
                 .IntentarAprovisionar(configuracion.RutaPermisos);
             if (resultado.Estado == EstadoAprovisionamientoClave.YaDisponible)
             {
-                return;
+                return resultado;
             }
 
             _servicioLogInicio.RegistrarAsync(
@@ -120,6 +127,7 @@ public partial class Aplicacion : System.Windows.Application
                     ["tipoError"] = resultado.TipoError,
                     ["detalleError"] = resultado.DetalleError
                 }).GetAwaiter().GetResult();
+            return resultado;
         }
         catch (Exception ex)
         {
@@ -128,7 +136,75 @@ public partial class Aplicacion : System.Windows.Application
                 "arranque",
                 string.Empty,
                 ex).GetAwaiter().GetResult();
+            return new ResultadoAprovisionamientoClave(
+                EstadoAprovisionamientoClave.Error,
+                "No se pudo completar el aprovisionamiento automatico de la clave.",
+                TipoError: ex.GetType().Name,
+                DetalleError: ServicioRedaccionSecretos.Sanitizar(ex.Message));
         }
+    }
+
+    private async Task ReintentarAprovisionamientoClaveArtefactosAsync(
+        ResultadoAprovisionamientoClave resultadoInicial,
+        CancellationToken cancelacion)
+    {
+        // Reintenta mientras la red o el paquete central aun no esten disponibles.
+        if (!DebeReintentarAprovisionamiento(resultadoInicial))
+        {
+            return;
+        }
+
+        var ultimoResultado = resultadoInicial;
+        for (var intento = 2; intento <= IntentosAprovisionamientoClave; intento++)
+        {
+            try
+            {
+                await Task.Delay(IntervaloAprovisionamientoClave, cancelacion);
+                ultimoResultado = await Task.Run(IntentarAprovisionarClaveArtefactos, cancelacion);
+            }
+            catch (OperationCanceledException) when (cancelacion.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (DebeReintentarAprovisionamiento(ultimoResultado))
+            {
+                continue;
+            }
+
+            if (ClaveDisponible(ultimoResultado))
+            {
+                await Dispatcher.InvokeAsync(
+                    () => _ventanaPrincipal?.ActualizarTrasAprovisionamientoClave());
+            }
+
+            return;
+        }
+
+        await _servicioLogInicio.RegistrarAsync(
+            "clave_artefactos.reintentos_agotados",
+            "No se pudo obtener la clave durante los reintentos automaticos.",
+            new Dictionary<string, string?>
+            {
+                ["estado"] = ultimoResultado.Estado.ToString(),
+                ["tipoError"] = ultimoResultado.TipoError,
+                ["detalleError"] = ultimoResultado.DetalleError
+            });
+    }
+
+    internal static bool DebeReintentarAprovisionamiento(ResultadoAprovisionamientoClave resultado)
+    {
+        // Solo reintenta estados que todavia pueden resolverse desde el servidor.
+        return resultado.Estado is EstadoAprovisionamientoClave.PaqueteAusente
+            or EstadoAprovisionamientoClave.Error;
+    }
+
+    internal static bool ClaveDisponible(ResultadoAprovisionamientoClave resultado)
+    {
+        // Identifica los resultados que permiten volver a cargar permisos y catalogo.
+        return resultado.Estado is EstadoAprovisionamientoClave.YaDisponible
+            or EstadoAprovisionamientoClave.Aprovisionada
+            or EstadoAprovisionamientoClave.Actualizada;
     }
 
     protected override void OnExit(ExitEventArgs e)

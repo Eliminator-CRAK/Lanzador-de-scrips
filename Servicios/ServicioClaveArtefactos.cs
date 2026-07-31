@@ -50,8 +50,8 @@ public sealed class ServicioClaveArtefactos
             throw new ClaveArtefactosNoDisponibleException(
                 $"No se ha aprovisionado la clave de artefactos en {_rutaClave}. "
                 + $"La aplicacion intenta instalarla al arrancar desde {ServicioAprovisionamientoClaveArtefactos.NombrePaquete} "
-                + "en la carpeta central de permisos. Un administrador puede usar el boton 'Instalar clave' "
-                + "solo como recuperacion; no se debe crear una clave distinta en cada equipo.");
+                + "en la carpeta central de permisos. El administrador debe desplegar ese paquete junto a "
+                + "permisos.json y catalogo-scripts.json; no se debe crear una clave distinta en cada equipo.");
         }
 
         try

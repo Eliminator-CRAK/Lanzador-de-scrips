@@ -53,7 +53,7 @@ EXCEPCIONES_ERRORES = (
         ruta="VentanaPrincipal.xaml.cs",
         tipo="Syntax error",
         lineas=(1,),
-        sha256="DD1F6C0E292C45BA4CFF8EAAFB581157498AA1604DE319FB6CDFEBE0AC022BE1",
+        sha256="1078897CC4BC8CCA77ABF546A76421880C5D99E16AA1E56752C66204036194D1",
         motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
     ),
     ExcepcionErrorSemgrep(

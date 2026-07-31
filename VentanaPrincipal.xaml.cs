@@ -7,8 +7,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Security.Cryptography;
-using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
@@ -45,7 +43,6 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioArranqueWebView2 _servicioArranqueWebView2 = new();
     private readonly ServicioLogInicio _servicioLogInicio = new();
     private readonly ServicioExecutionPolicy _servicioExecutionPolicy = new();
-    private readonly ServicioAuditoria _servicioAuditoria = new();
     private readonly Stopwatch _cronometroNavegacion = new();
     private readonly ServicioIconoBandeja _servicioIconoBandeja;
     private ServidorLocalWeb? _servidorLocalIntegrado;
@@ -73,6 +70,12 @@ public partial class VentanaPrincipal : Window
         _ = _servicioLogInicio.RegistrarAsync(
             "aplicacion.bandeja_lista",
             "El icono de la bandeja quedo disponible.");
+    }
+
+    internal void ActualizarTrasAprovisionamientoClave()
+    {
+        // Recarga el cliente para que vuelva a evaluar permisos y catalogo.
+        VistaCliente.CoreWebView2?.Reload();
     }
 
     protected override void OnContentRendered(EventArgs e)
@@ -699,11 +702,6 @@ public partial class VentanaPrincipal : Window
             return;
         }
 
-        if (mensaje == "aprovisionarClaveArtefactos")
-        {
-            await AprovisionarClaveArtefactosAsync();
-            return;
-        }
     }
 
     private static bool IntentarLeerErrorCliente(
@@ -918,103 +916,6 @@ public partial class VentanaPrincipal : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
-    }
-
-    private async Task AprovisionarClaveArtefactosAsync()
-    {
-        // Instala la clave compartida sin exponerla al cliente web.
-        var reemplazo = File.Exists(RutasAplicacion.RutaClaveArtefactos);
-        if (reemplazo)
-        {
-            var confirmacion = MessageBox.Show(
-                "Ya existe una clave de artefactos en este equipo.\n\n"
-                + "Reemplazarla por una clave diferente impedirá leer los permisos y el catálogo actuales. "
-                + "Continúa solo si estás rotando la clave en toda la instalación.",
-                "Reemplazar clave de artefactos",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning,
-                MessageBoxResult.No);
-            if (confirmacion != MessageBoxResult.Yes)
-            {
-                EnviarResultadoClaveArtefactos(false, "Operación cancelada.", cancelado: true);
-                return;
-            }
-        }
-
-        var dialogo = new DialogoClaveArtefactos
-        {
-            Owner = this
-        };
-        if (dialogo.ShowDialog() != true)
-        {
-            EnviarResultadoClaveArtefactos(false, "Operación cancelada.", cancelado: true);
-            return;
-        }
-
-        byte[]? clave = null;
-        try
-        {
-            clave = dialogo.TomarClave();
-            ServicioClaveArtefactos.Aprovisionar(RutasAplicacion.RutaClaveArtefactos, clave);
-            using var material = new ServicioClaveArtefactos().ObtenerMaterial();
-            var usuario = WindowsIdentity.GetCurrent().Name;
-            await _servicioAuditoria.RegistrarEventoSeguridadAsync(
-                "seguridad.clave_artefactos.aprovisionar",
-                usuario,
-                null,
-                "correcto",
-                $"KeyId: {material.KeyId}; Reemplazo: {reemplazo}");
-            await _servicioLogInicio.RegistrarAsync(
-                "seguridad.clave_artefactos.aprovisionada",
-                "La clave compartida de artefactos quedó protegida para este equipo.",
-                new Dictionary<string, string?>
-                {
-                    ["keyId"] = material.KeyId,
-                    ["reemplazo"] = reemplazo.ToString()
-                });
-            EnviarResultadoClaveArtefactos(true, "Clave instalada y verificada.", cancelado: false);
-            MessageBox.Show(
-                "La clave compartida se instaló y verificó correctamente. La aplicación actualizará los permisos.",
-                "Clave de artefactos",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            VistaCliente.CoreWebView2?.Reload();
-        }
-        catch (Exception ex)
-        {
-            var detalle = ServicioRedaccionSecretos.Sanitizar(ex.Message);
-            await _servicioAuditoria.RegistrarEventoSeguridadAsync(
-                "seguridad.clave_artefactos.aprovisionar",
-                WindowsIdentity.GetCurrent().Name,
-                null,
-                "error",
-                $"{ex.GetType().Name}: {detalle}");
-            EnviarResultadoClaveArtefactos(false, detalle, cancelado: false);
-            MessageBox.Show(
-                detalle,
-                "No se pudo instalar la clave de artefactos",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
-        finally
-        {
-            if (clave is not null)
-            {
-                CryptographicOperations.ZeroMemory(clave);
-            }
-        }
-    }
-
-    private void EnviarResultadoClaveArtefactos(bool exito, string mensaje, bool cancelado)
-    {
-        var json = JsonSerializer.Serialize(new
-        {
-            tipo = "claveArtefactosResultado",
-            exito,
-            cancelado,
-            mensaje
-        });
-        VistaCliente.CoreWebView2?.PostWebMessageAsJson(json);
     }
 
     private static async Task<HttpClient> CrearClienteServicioAsync(EndpointServicioLanzador endpoint)
@@ -1414,7 +1315,6 @@ public partial class VentanaPrincipal : Window
                 const idEstilosVisuales = 'ls-estilos-visuales';
                 const idBotonRefresco = 'ls-boton-refrescar-scripts';
                 const idBotonExecutionPolicyPrincipal = 'ls-boton-execution-policy-principal';
-                const idBotonClaveArtefactos = 'ls-boton-clave-artefactos';
                 const claveCarpetaScripts = 'ls-carpeta-scripts-activa';
                 const opcionesObservadorInterfaz = { childList: true, subtree: true };
                 let scriptsClienteActuales = [];
@@ -1442,8 +1342,6 @@ public partial class VentanaPrincipal : Window
                         .ls-accion-refrescar:hover:not(:disabled) { background: rgba(14, 165, 233, .22) !important; color: #e0f2fe !important; }
                         .ls-accion-policy { background: rgba(245, 158, 11, .14) !important; border-color: rgba(251, 191, 36, .28) !important; color: #fcd34d !important; }
                         .ls-accion-policy:hover:not(:disabled) { background: rgba(245, 158, 11, .24) !important; color: #fffbeb !important; }
-                        .ls-accion-clave { background: rgba(16, 185, 129, .14) !important; border-color: rgba(52, 211, 153, .28) !important; color: #6ee7b7 !important; }
-                        .ls-accion-clave:hover:not(:disabled) { background: rgba(16, 185, 129, .24) !important; color: #ecfdf5 !important; }
                         .ls-accion-parar { background: rgba(239, 68, 68, .13) !important; border-color: rgba(248, 113, 113, .3) !important; color: #f87171 !important; }
                         .ls-accion-parar:hover:not(:disabled) { background: rgba(239, 68, 68, .24) !important; color: #fee2e2 !important; }
                         .ls-tarjeta-carpeta { border-color: rgba(56, 189, 248, .22) !important; background: rgba(14, 165, 233, .08) !important; }
@@ -1578,24 +1476,6 @@ public partial class VentanaPrincipal : Window
                 function instalarRespuestaExecutionPolicy() {
                     window.chrome?.webview?.addEventListener('message', evento => {
                         const datos = evento.data || {};
-                        if (datos.tipo === 'claveArtefactosResultado') {
-                            const botonClave = document.getElementById(idBotonClaveArtefactos);
-                            if (!botonClave) {
-                                return;
-                            }
-
-                            botonClave.disabled = false;
-                            botonClave.textContent = datos.exito
-                                ? 'Clave instalada'
-                                : (datos.cancelado ? 'Instalar clave' : 'Error de clave');
-                            botonClave.title = datos.mensaje || 'Instalar clave AES compartida';
-                            window.setTimeout(() => {
-                                botonClave.textContent = 'Instalar clave';
-                                botonClave.title = 'Instalar o rotar la clave AES compartida de artefactos';
-                            }, 2600);
-                            return;
-                        }
-
                         if (datos.tipo !== 'executionPolicyResultado') {
                             return;
                         }
@@ -1664,15 +1544,13 @@ public partial class VentanaPrincipal : Window
                     const botonDetener = encontrarBotonDetenerTodo();
                     const botonRefresco = document.getElementById(idBotonRefresco);
                     const botonExecutionPolicy = document.getElementById(idBotonExecutionPolicyPrincipal);
-                    const botonClave = document.getElementById(idBotonClaveArtefactos);
                     aplicarClaseAccion(botonRefresco, 'ls-accion-refrescar');
                     aplicarClaseAccion(botonExecutionPolicy, 'ls-accion-policy');
-                    aplicarClaseAccion(botonClave, 'ls-accion-clave');
                     aplicarClaseAccion(botonDetener, 'ls-accion-parar');
 
                     const contador = Array.from(barra.children)
                         .find(elemento => textoNormalizado(elemento).includes('ejecutando:'));
-                    const botonesOrdenados = [botonRefresco, botonClave, botonExecutionPolicy, botonDetener].filter(Boolean);
+                    const botonesOrdenados = [botonRefresco, botonExecutionPolicy, botonDetener].filter(Boolean);
                     const hijos = Array.from(barra.children);
                     const limite = contador ? hijos.indexOf(contador) : hijos.length;
                     const botonesActuales = hijos.slice(0, limite);
@@ -2011,34 +1889,6 @@ public partial class VentanaPrincipal : Window
                     organizarAccionesPrincipales();
                 }
 
-                function crearBotonClaveArtefactos() {
-                    if (document.getElementById(idBotonClaveArtefactos)) {
-                        organizarAccionesPrincipales();
-                        return;
-                    }
-
-                    const botonDetener = encontrarBotonDetenerTodo();
-                    if (!botonDetener || !botonDetener.parentElement) {
-                        return;
-                    }
-
-                    const boton = document.createElement('button');
-                    boton.id = idBotonClaveArtefactos;
-                    boton.type = 'button';
-                    boton.textContent = 'Instalar clave';
-                    boton.title = 'Instalar o rotar la clave AES compartida de artefactos';
-                    boton.className = 'ls-accion-principal ls-accion-clave';
-                    boton.addEventListener('click', () => {
-                        boton.disabled = true;
-                        boton.textContent = 'Esperando clave...';
-                        window.chrome.webview.postMessage('aprovisionarClaveArtefactos');
-                    });
-
-                    const botonPolicy = document.getElementById(idBotonExecutionPolicyPrincipal);
-                    botonDetener.parentElement.insertBefore(boton, botonPolicy ?? botonDetener);
-                    organizarAccionesPrincipales();
-                }
-
                 function protegerDetenerTodo() {
                     const botonDetener = encontrarBotonDetenerTodo();
                     if (!botonDetener || botonDetener.dataset.lsConfirmado === '1') {
@@ -2221,7 +2071,6 @@ public partial class VentanaPrincipal : Window
                     try {
                         crearPanelFirmas();
                         crearBotonRefresco();
-                        crearBotonClaveArtefactos();
                         crearBotonExecutionPolicyPrincipal();
                         organizarAccionesPrincipales();
                         protegerDetenerTodo();
