@@ -27,7 +27,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
 | Paquete central de clave | `<RutaPermisos>\clave-artefactos.dpng.json` |
-| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v3` |
+| Perfiles WebView2 | `%LocalAppData%\LanzadorScripts\WebView2-v4\Sesiones\Sesion-<GUID>` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
 | Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
@@ -64,6 +64,13 @@ Reglas:
 - Solo un administrador puede seleccionar scripts y publicar el catalogo.
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
+
+## Migracion A La Version 1.5.4
+
+1. Sustituya ambos ejecutables por la version 1.5.4; no cambie `configuracion.dat`, `permisos.json`, `catalogo-scripts.json` ni las claves.
+2. WebView2 deja de usar la carpeta antigua de `ProgramData` y crea una UDF nueva por sesion bajo `LocalAppData`.
+3. No precree la carpeta `Sesion-<GUID>` ni modifique sus ACL; WebView2 debe aplicar sus permisos LowIL/AppContainer.
+4. La carpeta antigua `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2` queda sin uso y puede archivarse con la aplicacion cerrada.
 
 ## Migracion A La Version 1.5.0
 
@@ -106,7 +113,7 @@ El boton `Instalar clave` se conserva solo para recuperacion administrativa. No 
 ## Migracion A La Version 1.4.7
 
 1. Sustituya el EXE por la version 1.4.7; no cambie `permisos.json`, `catalogo-scripts.json` ni `artefactos.key`.
-2. La aplicacion crea automaticamente `WebView2\Perfil-v3`, elimina reglas denegadas o heredadas de su ACL y conserva las reglas explicitas que WebView2 necesite para sus procesos aislados.
+2. Esta migracion queda superada por la version 1.5.4, que usa perfiles por sesion en `LocalAppData` y conserva las ACL predeterminadas.
 3. No conceda acceso a `Everyone` ni modifique manualmente las ACL de `ProgramData`.
 4. Tras validar el arranque, un administrador puede archivar el perfil antiguo con la aplicacion cerrada.
 

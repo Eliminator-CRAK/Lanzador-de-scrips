@@ -19,9 +19,11 @@ public static class RutasAplicacion
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "LanzadorScripts");
 
-    public static string RaizLocalAppDataLegada => Path.Combine(
+    public static string RaizLocalAppData => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LanzadorScripts");
+
+    public static string RaizLocalAppDataLegada => RaizLocalAppData;
 
     public static string RaizDatosUsuario => Path.Combine(
         RutaUsuarios,
@@ -51,25 +53,15 @@ public static class RutasAplicacion
 
     public static string RutaStaging => Path.Combine(RaizProgramFiles, "Staging");
 
-    public static string RutaRaizWebView2Usuario => Path.Combine(RaizDatosUsuario, "WebView2");
+    public static string RutaRaizWebView2Usuario => Path.Combine(
+        RaizLocalAppData,
+        "WebView2-v4",
+        "Sesiones");
 
-    public static string RutaPerfilWebView2 => Path.Combine(
-        RutaRaizWebView2Usuario,
-        "Perfil-v3");
-
-    public static string RutaPerfilesWebView2Recuperacion => Path.Combine(
-        RutaRaizWebView2Usuario,
-        "Recuperacion");
-
-    public static string RutaBaseWebView2RecuperacionSistema => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-        "Temp",
-        "LanzadorScripts",
-        "WebView2");
-
-    public static string RutaRaizWebView2RecuperacionSistema => Path.Combine(
-        RutaBaseWebView2RecuperacionSistema,
-        PerfilAplicacion.ObtenerIdentificadorUsuarioActual());
+    public static string RutaRaizWebView2RecuperacionLocal => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "LanzadorScripts-WebView2-Recuperacion-v4",
+        "Sesiones");
 
     public static string RutaRuntimesWebView2 => Path.Combine(
         RaizProgramFiles,

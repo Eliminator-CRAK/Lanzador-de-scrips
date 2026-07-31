@@ -22,8 +22,7 @@ public static class ServicioDirectoriosAplicacion
 
     public static void PrepararDatosWebView2()
     {
-        // Permite que WebView2 configure la ACL de sus procesos aislados.
-        PrepararDatosUsuario();
+        // Prepara solo la raiz y conserva la ACL heredada del perfil de Windows.
         PrepararDirectorioWebView2(RutasAplicacion.RutaRaizWebView2Usuario);
     }
 
@@ -36,14 +35,10 @@ public static class ServicioDirectoriosAplicacion
         PrepararDatosUsuario();
     }
 
-    public static void PrepararRecuperacionWebView2Sistema()
+    public static void PrepararRecuperacionWebView2Local()
     {
-        var raizTemporal = Path.GetDirectoryName(RutasAplicacion.RutaBaseWebView2RecuperacionSistema)
-            ?? throw new IOException("No se pudo resolver la carpeta temporal de WebView2.");
-        PrepararDirectorioBase(raizTemporal);
-        PrepararDirectorioBase(RutasAplicacion.RutaBaseWebView2RecuperacionSistema);
-        PrepararDirectorioPrivado(RutasAplicacion.RutaRaizWebView2RecuperacionSistema);
-        PrepararDirectorioWebView2(RutasAplicacion.RutaRaizWebView2RecuperacionSistema);
+        // Usa una segunda raiz del perfil local sin depender de ProgramData.
+        PrepararDirectorioWebView2(RutasAplicacion.RutaRaizWebView2RecuperacionLocal);
     }
 
     internal static void PrepararDirectorioPrivado(string ruta)
@@ -68,32 +63,10 @@ public static class ServicioDirectoriosAplicacion
 
     internal static void PrepararDirectorioWebView2(string ruta)
     {
-        // Sustituye ACL incompatibles y permite que WebView2 configure sus procesos aislados.
+        // Conserva las ACL predeterminadas requeridas por el aislamiento de WebView2.
         var directorio = new DirectoryInfo(ruta);
         directorio.Create();
         RechazarPuntosReanalisis(directorio.FullName);
-
-        using var identidad = WindowsIdentity.GetCurrent();
-        var usuario = identidad.User
-            ?? throw new InvalidOperationException("No se pudo identificar al usuario actual.");
-        var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-        var seguridad = directorio.GetAccessControl(AccessControlSections.Access);
-        seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        var denegaciones = seguridad
-            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
-            .OfType<FileSystemAccessRule>()
-            .Where(regla => regla.AccessControlType == AccessControlType.Deny)
-            .ToList();
-        foreach (var denegacion in denegaciones)
-        {
-            seguridad.RemoveAccessRuleSpecific(denegacion);
-        }
-
-        seguridad.SetAccessRule(CrearRegla(usuario, FileSystemRights.FullControl, herencia));
-        seguridad.SetAccessRule(CrearRegla(Administradores, FileSystemRights.FullControl, herencia));
-        seguridad.SetAccessRule(CrearRegla(Sistema, FileSystemRights.FullControl, herencia));
-        AsegurarPropietario(seguridad, directorio, usuario, forzarPropietarioAdministrativo: false);
-        directorio.SetAccessControl(seguridad);
     }
 
     internal static void PrepararDirectorioBase(string ruta)

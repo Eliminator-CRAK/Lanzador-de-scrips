@@ -14,6 +14,12 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
+## Cambios En La Version 1.5.4
+
+- WebView2 guarda su perfil temporal en `LocalAppData` y crea una carpeta nueva en cada arranque.
+- Ya no reutiliza la carpeta de navegador de `ProgramData` que provocaba el aviso de lectura o escritura.
+- La configuracion, las claves, los permisos, los logs y la auditoria conservan sus rutas actuales.
+
 ## Cambios En La Version 1.5.3
 
 - WebView2 utiliza un perfil nuevo y repara sus permisos antes de abrir Microsoft Edge.
@@ -38,7 +44,7 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 - Una segunda apertura de LanzadorScripts restaura la ventana existente.
 - El usuario no debe modificar `permisos.json`, `catalogo-scripts.json` ni crear carpetas de configuracion.
 - La aplicacion ya no se abre automaticamente con Windows; debe iniciarse desde el EXE distribuido.
-- La configuracion, WebView2, temporales y logs se guardan en las zonas protegidas de `ProgramData` y `Program Files`, no en el perfil AppData del usuario.
+- La configuracion, los temporales de ejecucion y los logs se guardan en las zonas protegidas de `ProgramData` y `Program Files`; solo la cache temporal de WebView2 usa `LocalAppData`.
 - La configuracion local se guarda de forma atomica y coordina las peticiones paralelas para evitar bloqueos de `configuracion.dat`.
 - WebView2 usa un perfil nuevo con permisos compatibles con sus procesos aislados; el usuario no debe modificar la carpeta.
 - Si un script cambia, queda bloqueado hasta que un administrador publique de nuevo el catalogo.

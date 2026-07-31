@@ -299,7 +299,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
         if (metodo == "GET" && ruta.Equals("/api/salud", StringComparison.OrdinalIgnoreCase))
         {
-        var configuracion = CargarConfiguracion();
+            var configuracion = CargarConfiguracion();
             var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
             var emergencia = ObtenerEmergenciaActiva();
             var auditoriaCorrecta = string.IsNullOrWhiteSpace(_servicioAuditoria.UltimoError);
@@ -332,7 +332,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     permisos = diagnosticoPermisos.Ruta,
                     logs = configuracion.RutaLogs,
                     auditoria = RutasAplicacion.RutaAuditoria,
-                    perfilWebView2 = RutasAplicacion.RutaPerfilWebView2
+                    perfilWebView2 = RutasAplicacion.RutaRaizWebView2Usuario
                 },
                 permisos = new
                 {
@@ -347,7 +347,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 },
                 webView2 = new
                 {
-                    perfil = RutasAplicacion.RutaPerfilWebView2,
+                    perfil = RutasAplicacion.RutaRaizWebView2Usuario,
                     runtimeInstalado = new ServicioDisponibilidadWebView2().Comprobar().Exito
                 },
                 ejecuciones = new
@@ -995,7 +995,7 @@ public sealed class ServidorLocalWeb : IDisposable
     private async Task ProcesarDiagnosticoEjecucionAsync(HttpListenerContext contexto)
     {
         var scriptId = contexto.Request.QueryString["scriptId"] ?? string.Empty;
-            var configuracion = CargarConfiguracion();
+        var configuracion = CargarConfiguracion();
         var validacion = _servicioValidacionScripts.ValidarScriptParaEjecucion(configuracion.RutaScripts, scriptId);
         if (!validacion.EsValido)
         {
