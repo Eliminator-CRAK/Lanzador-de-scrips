@@ -84,6 +84,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1 -D
 
 El script detecta la carpeta corporativa `ACTUALES`, valida los 37 scripts y pide confirmacion antes de crear el respaldo y sustituir el conjunto central. Use `-RutaScripts` cuando la carpeta se encuentre en otra ubicacion. Sin `-Desplegar`, solo genera una copia validada bajo `obj`.
 
+La cuenta firmante local no tiene que coincidir con la cuenta administradora incluida en permisos. La primera aporta la clave RSA privada y la segunda, junto con su SID, define el destinatario DPAPI-NG. El certificado privado actual no es exportable y solo existe en el equipo firmante original; ejecute alli el asistente con conexion al dominio o VPN. Los equipos cliente y el repositorio no deben recibir esa clave privada. Para trasladar la firma a otro equipo seria necesario rotar el certificado, actualizar la clave publica de la aplicacion, recompilar y volver a generar los tres artefactos.
+
 ## Migracion A La Version 1.5.5
 
 1. Sustituya ambos ejecutables por la version 1.5.5.

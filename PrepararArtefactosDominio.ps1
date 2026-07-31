@@ -81,11 +81,10 @@ function Assert-Prerrequisitos {
     param(
         [string]$RaizRepositorio,
         [string]$CuentaEsperada,
-        [string]$SidEsperado,
-        [bool]$RequiereAdministrador
+        [string]$SidEsperado
     )
 
-    # Comprueba Windows, PowerShell, .NET, identidad, dominio y certificado privado.
+    # Comprueba Windows, PowerShell, .NET, dominio y certificado privado.
     if (-not $IsWindows) {
         throw 'Esta herramienta solo puede ejecutarse en Windows.'
     }
@@ -105,19 +104,8 @@ function Assert-Prerrequisitos {
         throw 'No se encontro .NET SDK 10.'
     }
 
-    $identidad = [Security.Principal.WindowsIdentity]::GetCurrent()
-    if (-not [string]::Equals(
-            $identidad.Name,
-            $CuentaEsperada,
-            [StringComparison]::OrdinalIgnoreCase)) {
-        throw "La consola se ejecuta como $($identidad.Name), no como $CuentaEsperada."
-    }
-    if ($RequiereAdministrador) {
-        $principal = [Security.Principal.WindowsPrincipal]::new($identidad)
-        if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-            throw 'Abra PowerShell como administrador usando la misma cuenta de dominio.'
-        }
-    }
+    $identidadFirmante = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    Write-Host "Cuenta firmante local: $identidadFirmante"
 
     if (-not (Get-Command -Name 'nltest.exe' -ErrorAction SilentlyContinue)) {
         throw 'No se encontro nltest.exe. Ejecute la herramienta en una instalacion compatible de Windows.'
@@ -137,6 +125,7 @@ function Assert-Prerrequisitos {
     if (-not [string]::Equals($sidCuenta, $SidEsperado, [StringComparison]::Ordinal)) {
         throw "La cuenta resuelve al SID $sidCuenta, no al SID configurado $SidEsperado."
     }
+    Write-Host "Destinatario de dominio validado: $CuentaEsperada ($SidEsperado)"
 
     $fuenteCertificado = Get-Content -LiteralPath (
         Join-Path $RaizRepositorio 'Servicios\ServicioTokenMaestro.cs') -Raw
@@ -151,8 +140,9 @@ function Assert-Prerrequisitos {
         Where-Object { $_.Thumbprint -eq $huella -and $_.HasPrivateKey } |
         Select-Object -First 1
     if ($null -eq $certificado) {
-        throw "No se encontro el certificado privado de artefactos $huella."
+        throw "Este equipo no contiene el certificado privado de artefactos $huella. La clave privada no se distribuye en el repositorio. Ejecute el script en el equipo firmante original, conectado al dominio o VPN. Para firmar desde otro equipo es obligatorio rotar el certificado y publicar una nueva aplicacion."
     }
+    Write-Host "Certificado privado validado: $huella"
 }
 
 function Get-ResumenConjunto {
@@ -249,8 +239,7 @@ $rutaCentralResuelta = Resolve-RutaCentralValidada -Ruta $RutaCentralPermisos
 Assert-Prerrequisitos `
     -RaizRepositorio $raizRepositorio `
     -CuentaEsperada $Administrador `
-    -SidEsperado $SidAutorizado `
-    -RequiereAdministrador $Desplegar.IsPresent
+    -SidEsperado $SidAutorizado
 
 # Comprueba el inventario antes de generar una clave nueva.
 $scripts = @(

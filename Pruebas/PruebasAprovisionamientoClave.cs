@@ -324,6 +324,8 @@ public sealed class PruebasAprovisionamientoClave
         Assert.Contains("RESPALDO_", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains("Get-FileHash", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains("Get-ResumenConjunto", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("Cuenta firmante local", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("equipo firmante original", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains(@"MAD00\aroperez_micro", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains(
             "S-1-5-21-1979283502-1139295200-817656539-77039",
@@ -332,6 +334,12 @@ public sealed class PruebasAprovisionamientoClave
         Assert.DoesNotContain("ClaveAesBase64", herramientaDominio, StringComparison.Ordinal);
         Assert.DoesNotContain("-ClaveAES", herramientaDominio, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Read-Host", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain("RequiereAdministrador", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain("La consola se ejecuta como", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Abra PowerShell como administrador usando la misma cuenta de dominio",
+            herramientaDominio,
+            StringComparison.Ordinal);
     }
 
     [Theory]

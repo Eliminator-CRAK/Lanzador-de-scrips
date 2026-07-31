@@ -94,13 +94,13 @@ pwsh -NoProfile -File .\Herramientas\GenerarConjuntoArtefactos.ps1 `
 
 La herramienta debe ejecutarse en un equipo conectado al dominio `MAD00`. Antes de cifrar, comprueba que la cuenta resuelve exactamente al SID indicado; despues valida el recuento, las firmas y el `KeyId` comun. La AES no se escribe en texto claro, no se pasa por argumentos y no necesita existir previamente en `ProgramData`. La salida debe permanecer fuera de Git y sustituirse siempre como conjunto, conservando antes una copia de seguridad de los archivos operativos anteriores.
 
-El repositorio incluye tambien un asistente integral en su carpeta raiz. Funciona desde una descarga ZIP llamada `Lanzador-de-scrips-main` porque resuelve el proyecto mediante `$PSScriptRoot`. Comprueba PowerShell 7, .NET SDK 10, la identidad elevada, el controlador de dominio, el SID, el certificado privado y los 37 scripts; despues genera, respalda, despliega y verifica los tres archivos. Su uso normal es:
+El repositorio incluye tambien un asistente integral en su carpeta raiz. Funciona desde una descarga ZIP llamada `Lanzador-de-scrips-main` porque resuelve el proyecto mediante `$PSScriptRoot`. Comprueba PowerShell 7, .NET SDK 10, el controlador de dominio, la correspondencia entre cuenta y SID, el certificado privado del equipo firmante y los 37 scripts; despues genera, respalda, despliega y verifica los tres archivos. La cuenta que firma puede ser distinta de la cuenta de dominio que recibira el paquete DPAPI-NG. Su uso normal es:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1 -Desplegar
 ```
 
-`-Desplegar` solicita confirmacion antes de escribir en la ruta central. Sin ese parametro, genera y valida el conjunto en `obj` sin modificar el servidor. Si `ACTUALES` no esta en OneDrive corporativo ni dentro de la raiz descargada, use `-RutaScripts "<CARPETA_ACTUALES>"`. Ante un fallo durante la copia, la herramienta intenta restaurar los archivos respaldados y conserva el respaldo `RESPALDO_yyyyMMdd-HHmmss`.
+`-Desplegar` solicita confirmacion antes de escribir en la ruta central. Sin ese parametro, genera y valida el conjunto en `obj` sin modificar el servidor. Si `ACTUALES` no esta en OneDrive corporativo ni dentro de la raiz descargada, use `-RutaScripts "<CARPETA_ACTUALES>"`. Ante un fallo durante la copia, la herramienta intenta restaurar los archivos respaldados y conserva el respaldo `RESPALDO_yyyyMMdd-HHmmss`. El certificado privado actual no es exportable: este proceso debe ejecutarse en el equipo firmante original, conectado al dominio o VPN; no debe copiarse una clave privada al repositorio ni a los equipos cliente.
 
 Para mantener una clave existente, la inicializacion explicita de permisos y catalogo sigue disponible mediante:
 
