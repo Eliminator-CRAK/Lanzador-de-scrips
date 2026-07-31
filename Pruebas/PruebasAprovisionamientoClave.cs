@@ -189,6 +189,110 @@ public sealed class PruebasAprovisionamientoClave
     }
 
     [Fact]
+    public void GeneracionCoordinadaUsaUnaClaveUnAdministradorYTodosLosScripts()
+    {
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var rutaScripts = Path.Combine(entorno.Raiz, "scripts");
+        var rutaSalida = Path.Combine(entorno.Raiz, "conjunto");
+        Directory.CreateDirectory(Path.Combine(rutaScripts, "sub"));
+        File.WriteAllText(Path.Combine(rutaScripts, "uno.ps1"), "Write-Output 'uno'", Encoding.UTF8);
+        File.WriteAllText(Path.Combine(rutaScripts, "sub", "dos.bat"), "@echo off", Encoding.UTF8);
+        var protector = new ProtectorDpapiNgPruebas();
+        var firma = new ServicioFirmaArtefactos(rsa, rsa);
+
+        var resultado = ServicioGeneracionConjuntoArtefactos.Generar(
+            rutaScripts,
+            rutaSalida,
+            @"MAD00\aroperez_micro",
+            "SID=S-1-5-21-1-2-3-1001",
+            2,
+            firma,
+            protector);
+
+        Assert.Equal(2, resultado.TotalScripts);
+        var rutaPermisos = Path.Combine(rutaSalida, RutasArtefactosProtegidos.NombrePermisos);
+        var rutaCatalogo = Path.Combine(rutaSalida, RutasArtefactosProtegidos.NombreCatalogo);
+        var rutaPaquete = Path.Combine(
+            rutaSalida,
+            ServicioAprovisionamientoClaveArtefactos.NombrePaquete);
+        var permisosContenedor = JsonNode.Parse(File.ReadAllText(rutaPermisos, Encoding.UTF8))!.AsObject();
+        var catalogoContenedor = JsonNode.Parse(File.ReadAllText(rutaCatalogo, Encoding.UTF8))!.AsObject();
+        var paquete = JsonNode.Parse(File.ReadAllText(rutaPaquete, Encoding.UTF8))!.AsObject();
+        Assert.Equal(resultado.KeyId, permisosContenedor["KeyId"]!.GetValue<string>());
+        Assert.Equal(resultado.KeyId, catalogoContenedor["KeyId"]!.GetValue<string>());
+        Assert.Equal(resultado.KeyId, paquete["KeyId"]!.GetValue<string>());
+
+        var protegida = Convert.FromBase64String(paquete["ClaveProtegida"]!.GetValue<string>());
+        var clave = protector.Desproteger(protegida);
+        try
+        {
+            var artefactos = new ServicioArtefactosProtegidos(clave, rsa, rsa);
+            Assert.True(artefactos.IntentarDesprotegerTexto(
+                ServicioArtefactosProtegidos.TipoPermisos,
+                File.ReadAllText(rutaPermisos, Encoding.UTF8),
+                out var permisosJson,
+                out _));
+            var usuarios = JsonNode.Parse(permisosJson)!["usuarios"]!.AsArray();
+            var administrador = Assert.Single(usuarios);
+            Assert.Equal(
+                @"MAD00\aroperez_micro",
+                administrador?["nombreUsuario"]?.GetValue<string>());
+            Assert.Equal("admin", administrador?["rol"]?.GetValue<string>());
+            Assert.True(new ServicioCatalogoScripts(artefactos).IntentarCargar(
+                rutaCatalogo,
+                out var catalogo,
+                out _));
+            Assert.Equal(2, catalogo!.Scripts.Count);
+            Assert.Contains(catalogo.Scripts, script => script.ScriptId == "uno.ps1");
+            Assert.Contains(catalogo.Scripts, script => script.ScriptId == "sub/dos.bat");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(protegida);
+            CryptographicOperations.ZeroMemory(clave);
+        }
+    }
+
+    [Fact]
+    public void GeneracionCoordinadaFallaCerradaSiFaltaUnScript()
+    {
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var rutaScripts = Path.Combine(entorno.Raiz, "scripts");
+        var rutaSalida = Path.Combine(entorno.Raiz, "conjunto");
+        Directory.CreateDirectory(rutaScripts);
+        File.WriteAllText(Path.Combine(rutaScripts, "uno.ps1"), "Write-Output 'uno'", Encoding.UTF8);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            ServicioGeneracionConjuntoArtefactos.Generar(
+                rutaScripts,
+                rutaSalida,
+                @"MAD00\aroperez_micro",
+                "SID=S-1-5-21-1-2-3-1001",
+                2,
+                new ServicioFirmaArtefactos(rsa, rsa),
+                new ProtectorDpapiNgPruebas()));
+        Assert.False(Directory.Exists(rutaSalida));
+    }
+
+    [Fact]
+    public void ArtefactosEnMemoriaNoSeReutilizanDespuesDeBorrarLaClave()
+    {
+        using var rsa = RSA.Create(3072);
+        var clave = RandomNumberGenerator.GetBytes(32);
+        var artefactos = new ServicioArtefactosProtegidos(clave, rsa, rsa);
+
+        artefactos.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() =>
+            artefactos.ProtegerTexto(
+                ServicioArtefactosProtegidos.TipoPermisos,
+                "{}"));
+        CryptographicOperations.ZeroMemory(clave);
+    }
+
+    [Fact]
     public void ArranqueYHerramientaNoIncluyenLaClaveAes()
     {
         var raiz = ObtenerRaizProyecto();
@@ -198,12 +302,19 @@ public sealed class PruebasAprovisionamientoClave
         var herramienta = File.ReadAllText(
             Path.Combine(raiz, "Herramientas", "CrearPaqueteAprovisionamientoClave.ps1"),
             Encoding.UTF8);
+        var herramientaConjunto = File.ReadAllText(
+            Path.Combine(raiz, "Herramientas", "GenerarConjuntoArtefactos.ps1"),
+            Encoding.UTF8);
 
         Assert.Contains("IntentarAprovisionarClaveArtefactos", aplicacion, StringComparison.Ordinal);
         Assert.Contains("--descriptor-base64", herramienta, StringComparison.Ordinal);
+        Assert.Contains("--generar-conjunto-artefactos", herramientaConjunto, StringComparison.Ordinal);
         Assert.DoesNotContain("ClaveAesBase64", herramienta, StringComparison.Ordinal);
         Assert.DoesNotContain("-ClaveAES", herramienta, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Read-Host", herramienta, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClaveAesBase64", herramientaConjunto, StringComparison.Ordinal);
+        Assert.DoesNotContain("-ClaveAES", herramientaConjunto, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Read-Host", herramientaConjunto, StringComparison.Ordinal);
     }
 
     [Theory]

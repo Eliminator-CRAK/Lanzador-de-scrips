@@ -5,12 +5,18 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace LanzadorScripts.Servicios;
 
 public static class ServicioGeneracionArtefactosIniciales
 {
     public const string ArgumentoGenerar = "--generar-artefactos-iniciales";
+    public const string AdministradorPredeterminado = @"MAD00\aroperez_micro";
+
+    private static readonly Regex PatronCuentaWindows = new(
+        @"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -30,7 +36,11 @@ public static class ServicioGeneracionArtefactosIniciales
         {
             var rutaScripts = DecodificarArgumento(argumentos, "--scripts-base64");
             var rutaSalida = DecodificarArgumento(argumentos, "--salida-base64");
-            Generar(rutaScripts, rutaSalida);
+            var administrador = DecodificarArgumentoOpcional(
+                argumentos,
+                "--administrador-base64",
+                AdministradorPredeterminado);
+            Generar(rutaScripts, rutaSalida, administrador);
             return 0;
         }
         catch (Exception ex)
@@ -42,7 +52,19 @@ public static class ServicioGeneracionArtefactosIniciales
 
     public static void Generar(string rutaScripts, string rutaSalida)
     {
-        Generar(rutaScripts, rutaSalida, new ServicioArtefactosProtegidos());
+        Generar(rutaScripts, rutaSalida, AdministradorPredeterminado);
+    }
+
+    public static void Generar(
+        string rutaScripts,
+        string rutaSalida,
+        string administrador)
+    {
+        Generar(
+            rutaScripts,
+            rutaSalida,
+            new ServicioArtefactosProtegidos(),
+            administrador);
     }
 
     internal static void Generar(
@@ -50,6 +72,17 @@ public static class ServicioGeneracionArtefactosIniciales
         string rutaSalida,
         ServicioArtefactosProtegidos artefactos)
     {
+        Generar(rutaScripts, rutaSalida, artefactos, AdministradorPredeterminado);
+    }
+
+    internal static void Generar(
+        string rutaScripts,
+        string rutaSalida,
+        ServicioArtefactosProtegidos artefactos,
+        string administrador)
+    {
+        // Valida la identidad antes de crear los artefactos.
+        var administradorValidado = ValidarAdministrador(administrador);
         var validador = new ServicioValidacionScripts();
         var scripts = validador.DescubrirScripts(rutaScripts);
         if (scripts.Count == 0)
@@ -67,30 +100,38 @@ public static class ServicioGeneracionArtefactosIniciales
             }
         }
 
-        Directory.CreateDirectory(rutaSalida);
-        var permisos = CrearPermisosIniciales();
+        var rutaSalidaValidada = ServicioRutasSeguras.ResolverCarpetaAbsoluta(
+            rutaSalida,
+            "salida de artefactos iniciales");
+        Directory.CreateDirectory(rutaSalidaValidada);
+        var permisos = CrearPermisosIniciales(administradorValidado);
         artefactos.GuardarTextoProtegido(
-            Path.Combine(rutaSalida, RutasArtefactosProtegidos.NombrePermisos),
+            Path.Combine(rutaSalidaValidada, RutasArtefactosProtegidos.NombrePermisos),
             ServicioArtefactosProtegidos.TipoPermisos,
             permisos.ToJsonString(OpcionesJson));
 
         var servicioCatalogo = new ServicioCatalogoScripts(artefactos);
         var catalogo = servicioCatalogo.Crear(scripts, scripts.Select(script => script.Id));
         servicioCatalogo.Guardar(
-            Path.Combine(rutaSalida, ServicioCatalogoScripts.NombreArchivo),
+            Path.Combine(rutaSalidaValidada, ServicioCatalogoScripts.NombreArchivo),
             catalogo);
-        ValidarResultado(rutaSalida, scripts.Count, artefactos, servicioCatalogo);
+        ValidarResultado(
+            rutaSalidaValidada,
+            scripts.Count,
+            artefactos,
+            servicioCatalogo,
+            administradorValidado);
     }
 
-    internal static JsonObject CrearPermisosIniciales()
+    internal static JsonObject CrearPermisosIniciales(string administrador)
     {
+        // Crea un unico administrador principal para el paquete inicial.
         return new JsonObject
         {
             ["scriptsAdmin"] = new JsonArray(),
             ["usuarios"] = new JsonArray
             {
-                CrearAdministrador("pcera-alero", @"PCERA\alero"),
-                CrearAdministrador("mad00-aroperez-micro", @"MAD00\aroperez_micro")
+                CrearAdministrador("administrador-principal", administrador)
             },
             ["seguridadScripts"] = new JsonObject
             {
@@ -118,7 +159,8 @@ public static class ServicioGeneracionArtefactosIniciales
         string rutaSalida,
         int totalScripts,
         ServicioArtefactosProtegidos artefactos,
-        ServicioCatalogoScripts servicioCatalogo)
+        ServicioCatalogoScripts servicioCatalogo,
+        string administradorEsperado)
     {
         var rutaPermisos = Path.Combine(rutaSalida, RutasArtefactosProtegidos.NombrePermisos);
         var permisosProtegidos = File.ReadAllText(rutaPermisos, Encoding.UTF8);
@@ -141,9 +183,10 @@ public static class ServicioGeneracionArtefactosIniciales
             .Where(usuario => !string.IsNullOrWhiteSpace(usuario))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (administradores is null
-            || !administradores.SetEquals(new[] { @"PCERA\alero", @"MAD00\aroperez_micro" }))
+            || !administradores.SetEquals([administradorEsperado]))
         {
-            throw new InvalidOperationException("Los permisos iniciales no contienen los administradores requeridos.");
+            throw new InvalidOperationException(
+                "Los permisos iniciales no contienen exclusivamente el administrador requerido.");
         }
 
         var rutaCatalogo = Path.Combine(rutaSalida, ServicioCatalogoScripts.NombreArchivo);
@@ -165,5 +208,35 @@ public static class ServicioGeneracionArtefactosIniciales
         }
 
         return Encoding.UTF8.GetString(Convert.FromBase64String(argumentos[indice + 1]));
+    }
+
+    private static string DecodificarArgumentoOpcional(
+        string[] argumentos,
+        string nombre,
+        string valorPredeterminado)
+    {
+        // Conserva compatibilidad con publicaciones que no indican administrador.
+        var indice = Array.FindIndex(
+            argumentos,
+            argumento => string.Equals(argumento, nombre, StringComparison.OrdinalIgnoreCase));
+        return indice < 0
+            ? valorPredeterminado
+            : indice + 1 < argumentos.Length
+                ? Encoding.UTF8.GetString(Convert.FromBase64String(argumentos[indice + 1]))
+                : throw new InvalidOperationException($"Falta el valor requerido para {nombre}.");
+    }
+
+    internal static string ValidarAdministrador(string administrador)
+    {
+        // Acepta solo el formato DOMINIO\\usuario sin caracteres de control o ruta.
+        var valor = administrador?.Trim() ?? string.Empty;
+        if (!PatronCuentaWindows.IsMatch(valor))
+        {
+            throw new ArgumentException(
+                "El administrador debe usar el formato DOMINIO\\usuario.",
+                nameof(administrador));
+        }
+
+        return valor;
     }
 }

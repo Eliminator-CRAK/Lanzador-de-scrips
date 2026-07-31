@@ -170,22 +170,38 @@ internal sealed class ServicioAprovisionamientoClaveArtefactos
 
     public void CrearPaquete(string rutaCarpetaPermisos, string descriptorDpapiNg)
     {
-        ServicioDpapiNg.ValidarDescriptor(descriptorDpapiNg);
-        var rutas = RutasArtefactosProtegidos.Resolver(rutaCarpetaPermisos);
+        // Reutiliza la clave local cuando se crea solo el paquete central.
         using var material = _claveLocal.ObtenerMaterial();
-        ValidarKeyIdArtefactos(rutas, material.KeyId);
+        _ = CrearPaquete(rutaCarpetaPermisos, descriptorDpapiNg, material.Clave);
+    }
 
-        var claveProtegida = _dpapiNg.Proteger(material.Clave, descriptorDpapiNg);
+    internal string CrearPaquete(
+        string rutaCarpetaPermisos,
+        string descriptorDpapiNg,
+        ReadOnlySpan<byte> clave)
+    {
+        // Firma el paquete con la misma identidad usada por permisos y catalogo.
+        ServicioDpapiNg.ValidarDescriptor(descriptorDpapiNg);
+        if (clave.Length != LongitudClave)
+        {
+            throw new ArgumentException("La clave AES debe tener 32 bytes.", nameof(clave));
+        }
+
+        var rutas = RutasArtefactosProtegidos.Resolver(rutaCarpetaPermisos);
+        var keyId = ObtenerKeyId(clave);
+        ValidarKeyIdArtefactos(rutas, keyId);
+
+        var claveProtegida = _dpapiNg.Proteger(clave, descriptorDpapiNg);
         try
         {
             var claveProtegidaBase64 = Convert.ToBase64String(claveProtegida);
-            var firma = _firma.Firmar(ObtenerBytesFirma(material.KeyId, claveProtegidaBase64));
+            var firma = _firma.Firmar(ObtenerBytesFirma(keyId, claveProtegidaBase64));
             var paquete = new PaqueteClaveArtefactos(
                 Autor,
                 Descripcion,
                 VersionFormato,
                 Algoritmo,
-                material.KeyId,
+                keyId,
                 claveProtegidaBase64,
                 Convert.ToBase64String(firma));
             var rutaPaquete = ServicioRutasSeguras.ResolverArchivoEnCarpeta(
@@ -197,7 +213,14 @@ internal sealed class ServicioAprovisionamientoClaveArtefactos
             ServicioArtefactosProtegidos.GuardarTextoAtomico(
                 rutaPaquete,
                 JsonSerializer.Serialize(paquete, OpcionesJson));
-            _ = LeerYValidarPaquete(rutaPaquete);
+            var paqueteValidado = LeerYValidarPaquete(rutaPaquete);
+            if (!string.Equals(paqueteValidado.KeyId, keyId, StringComparison.Ordinal))
+            {
+                throw new CryptographicException(
+                    "El paquete guardado no conserva el identificador de la clave AES.");
+            }
+
+            return keyId;
         }
         finally
         {

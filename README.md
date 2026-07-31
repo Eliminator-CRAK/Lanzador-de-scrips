@@ -7,7 +7,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.5.5 |
+| Version | 1.5.6 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -81,23 +81,30 @@ La carpeta `publicacion` contiene unicamente `LanzadorScripts.exe` y `LanzadorSc
 
 El parametro `-RutaRuntimeWebView2Portable` permite usar una carpeta de Fixed Runtime ya descargada como origen local. Si no se indica, la publicacion descarga la URL oficial fijada de `150.0.4078.48`, guarda la cache en `Recursos\WebView2` y deja esa cache fuera de Git.
 
-La inicializacion explicita de ambos archivos operativos se realiza con:
+La rotacion completa genera una AES aleatoria solo en memoria y crea los tres archivos como un conjunto coordinado:
+
+```powershell
+pwsh -NoProfile -File .\Herramientas\GenerarConjuntoArtefactos.ps1 `
+  -RutaScripts "<CARPETA_SCRIPTS>" `
+  -RutaSalida "<CARPETA_VACIA>" `
+  -Administrador 'MAD00\aroperez_micro' `
+  -SidAutorizado 'S-1-5-21-1979283502-1139295200-817656539-77039' `
+  -TotalScriptsEsperado 37
+```
+
+La herramienta debe ejecutarse en un equipo conectado al dominio `MAD00`. Antes de cifrar, comprueba que la cuenta resuelve exactamente al SID indicado; despues valida el recuento, las firmas y el `KeyId` comun. La AES no se escribe en texto claro, no se pasa por argumentos y no necesita existir previamente en `ProgramData`. La salida debe permanecer fuera de Git y sustituirse siempre como conjunto, conservando antes una copia de seguridad de los archivos operativos anteriores.
+
+Para mantener una clave existente, la inicializacion explicita de permisos y catalogo sigue disponible mediante:
 
 ```powershell
 .\Herramientas\PublicarPortable.ps1 -CertThumbprint "<THUMBPRINT>" -InicializarArtefactos
 ```
 
-Antes de inicializar, la clave AES debe aprovisionarse una sola vez en el equipo administrador que publica los artefactos:
-
-```powershell
-powershell.exe -NoProfile -File .\Herramientas\AprovisionarClaveArtefactos.ps1
-```
-
-El script solicita la clave de 32 bytes en Base64 mediante entrada segura, la protege con DPAPI `LocalMachine` y aplica una ACL limitada a `SYSTEM` y `Administrators`. La clave no se acepta como argumento. Despues de generar `permisos.json` y `catalogo-scripts.json`, cree una unica copia de distribucion para un grupo de Active Directory:
+Este modo heredado necesita la AES ya aprovisionada en el equipo administrador. Para crear solo el paquete de una clave local existente, use:
 
 ```powershell
 pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
-  -GrupoDominio 'MAD00\<GRUPO_SEGURIDAD>'
+  -GrupoDominio 'MAD00\<CUENTA_O_GRUPO>'
 ```
 
 La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. La carpeta central debe contener siempre el conjunto completo: `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`. En cada equipo cliente, la aplicacion intenta leer el paquete al arrancar, reintenta durante tres minutos si la red aun no esta disponible, verifica las tres firmas, exige que los `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente y la interfaz no permite introducirla manualmente.
@@ -110,7 +117,7 @@ Los dos ejecutables finales deben ser self-contained y x64. Cada EXE exterior co
 
 El lanzador nativo valida y extrae los componentes sin abrir consolas ni dialogos de progreso separados. La ventana WPF se muestra antes de iniciar backend y WebView2. Al minimizar permanece en la barra de tareas y en la bandeja; al cerrar o usar `Alt+F4` se oculta y los scripts siguen ejecutandose. El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente. Si hay scripts activos, el cierre definitivo exige confirmacion y enumera los que se cancelaran; sin ejecuciones, cierra directamente. Una segunda apertura del EXE restaura la instancia existente.
 
-La version 1.5.5 elimina la instalacion manual de la AES y reintenta automaticamente el aprovisionamiento desde el paquete central firmado. Los perfiles temporales de WebView2 permanecen en `LocalAppData`; la configuracion, las claves, los logs y la auditoria siguen en `ProgramData`.
+La version 1.5.6 anade la rotacion coordinada de los tres artefactos, valida la correspondencia entre cuenta y SID y genera permisos iniciales con un unico administrador. La version 1.5.5 elimino la instalacion manual de la AES y anadio el aprovisionamiento automatico desde el paquete central firmado.
 
 GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 

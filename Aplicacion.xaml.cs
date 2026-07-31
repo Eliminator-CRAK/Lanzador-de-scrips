@@ -27,6 +27,12 @@ public partial class Aplicacion : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (ServicioGeneracionConjuntoArtefactos.EsSolicitud(e.Args))
+        {
+            Shutdown(ServicioGeneracionConjuntoArtefactos.Ejecutar(e.Args));
+            return;
+        }
+
         if (ServicioGeneracionPaqueteClaveArtefactos.EsSolicitud(e.Args))
         {
             Shutdown(ServicioGeneracionPaqueteClaveArtefactos.Ejecutar(e.Args));

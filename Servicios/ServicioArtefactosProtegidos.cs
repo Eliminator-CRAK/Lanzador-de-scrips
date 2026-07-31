@@ -9,7 +9,7 @@ using System.Text.Json.Serialization;
 
 namespace LanzadorScripts.Servicios;
 
-public sealed class ServicioArtefactosProtegidos
+public sealed class ServicioArtefactosProtegidos : IDisposable
 {
     public const string TipoPermisos = "permissions";
     public const string TipoCatalogoScripts = "script-catalog";
@@ -37,6 +37,7 @@ public sealed class ServicioArtefactosProtegidos
     private readonly byte[]? _clavePruebas;
     private readonly string _huellaPermisosLegados;
     private readonly string _huellaCatalogoLegado;
+    private bool _descartado;
 
     public ServicioArtefactosProtegidos()
     {
@@ -286,8 +287,22 @@ public sealed class ServicioArtefactosProtegidos
         }
     }
 
+    public void Dispose()
+    {
+        // Borra la copia de la AES usada por generadores y pruebas.
+        if (!_descartado && _clavePruebas is not null)
+        {
+            CryptographicOperations.ZeroMemory(_clavePruebas);
+        }
+
+        _descartado = true;
+        GC.SuppressFinalize(this);
+    }
+
     private MaterialClaveArtefactos ObtenerMaterialClave()
     {
+        // Impide reutilizar una clave que ya fue borrada de memoria.
+        ObjectDisposedException.ThrowIf(_descartado, this);
         return _clavePruebas is null
             ? _servicioClave!.ObtenerMaterial()
             : new MaterialClaveArtefactos(_clavePruebas.ToArray());

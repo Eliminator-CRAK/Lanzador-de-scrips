@@ -18,6 +18,7 @@ internal interface IProtectorDpapiNg
 internal sealed class ServicioDpapiNg : IProtectorDpapiNg
 {
     private const int CodigoCorrecto = 0;
+    private const int CodigoFalloCifrado = unchecked((int)0x80090034);
     private const uint BanderaSilenciosa = 0x00000040;
     private const int LongitudMaximaResultado = 1024 * 1024;
 
@@ -157,8 +158,12 @@ internal sealed class ServicioDpapiNg : IProtectorDpapiNg
     {
         if (codigo != CodigoCorrecto)
         {
+            // Explica el fallo habitual cuando el dominio no esta disponible.
+            var detalleDominio = codigo == CodigoFalloCifrado
+                ? " Compruebe la conexion al dominio y la disponibilidad de un controlador de dominio."
+                : string.Empty;
             throw new CryptographicException(
-                $"Windows no pudo {operacion}. Codigo 0x{unchecked((uint)codigo):X8}.");
+                $"Windows no pudo {operacion}. Codigo 0x{unchecked((uint)codigo):X8}.{detalleDominio}");
         }
     }
 

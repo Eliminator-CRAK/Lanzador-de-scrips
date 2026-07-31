@@ -65,6 +65,17 @@ Reglas:
 - `scriptsElevadosPermitidos` se conserva por compatibilidad, pero con la app elevada todos los scripts permitidos salen del proceso principal.
 - Los permisos por defecto solo sirven para formularios vacios y nunca autorizan ejecucion.
 
+## Migracion A La Version 1.5.6
+
+1. Ejecute `GenerarConjuntoArtefactos.ps1` en un equipo conectado al dominio y con el certificado privado de artefactos.
+2. Indique la cuenta administradora, su SID de Active Directory, la carpeta de scripts y una carpeta de salida vacia.
+3. La herramienta crea una AES en memoria y genera `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json` con el mismo `KeyId`.
+4. Conserve una copia de seguridad del conjunto anterior y sustituya siempre los tres archivos a la vez.
+5. No copie `artefactos.key` al servidor ni entre equipos; cada cliente autorizado lo aprovisiona automaticamente.
+6. Sustituya ambos ejecutables por la version 1.5.6.
+
+La herramienta comprueba que la cuenta resuelve exactamente al SID indicado y que el catalogo contiene el numero esperado de scripts. Sin acceso a un controlador del dominio, DPAPI-NG no puede crear el paquete y no se genera ningun conjunto parcial.
+
 ## Migracion A La Version 1.5.5
 
 1. Sustituya ambos ejecutables por la version 1.5.5.

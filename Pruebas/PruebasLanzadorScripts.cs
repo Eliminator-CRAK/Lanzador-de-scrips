@@ -1125,7 +1125,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void GeneracionInicialIncluyeAdministradoresYCatalogoProtegido()
+    public void GeneracionInicialIncluyeSoloAdministradorYCatalogoProtegido()
     {
         using var entorno = EntornoPruebas.Crear();
         var salida = Path.Combine(entorno.Raiz, "salida-publicacion");
@@ -1140,8 +1140,8 @@ public sealed class PruebasLanzadorScripts
             out _));
         var permisos = JsonNode.Parse(permisosJson)!.AsObject();
         var usuarios = permisos["usuarios"]!.AsArray();
-        Assert.Contains(usuarios, usuario => usuario?["nombreUsuario"]?.GetValue<string>() == @"PCERA\alero");
-        Assert.Contains(usuarios, usuario => usuario?["nombreUsuario"]?.GetValue<string>() == @"MAD00\aroperez_micro");
+        var usuario = Assert.Single(usuarios);
+        Assert.Equal(@"MAD00\aroperez_micro", usuario?["nombreUsuario"]?.GetValue<string>());
         Assert.All(usuarios, usuario => Assert.Equal("admin", usuario?["rol"]?.GetValue<string>()));
 
         var rutaCatalogo = Path.Combine(salida, ServicioCatalogoScripts.NombreArchivo);

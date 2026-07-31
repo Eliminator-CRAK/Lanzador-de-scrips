@@ -14,6 +14,12 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
+## Cambios En La Version 1.5.6
+
+- Los permisos, el catalogo y la clave central se publican como un unico conjunto validado.
+- La configuracion inicial contiene una sola cuenta administradora autorizada.
+- Si no hay conexion al dominio durante una rotacion, la aplicacion conserva el bloqueo sin instalar una clave incompleta.
+
 ## Cambios En La Version 1.5.5
 
 - La clave de artefactos se instala automaticamente desde el servidor al arrancar.
