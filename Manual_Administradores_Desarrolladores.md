@@ -76,6 +76,14 @@ Reglas:
 
 La herramienta comprueba que la cuenta resuelve exactamente al SID indicado y que el catalogo contiene el numero esperado de scripts. Sin acceso a un controlador del dominio, DPAPI-NG no puede crear el paquete y no se genera ningun conjunto parcial.
 
+Desde una descarga de GitLab extraida como `Lanzador-de-scrips-main`, el proceso completo se puede ejecutar desde la propia raiz:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1 -Desplegar
+```
+
+El script detecta la carpeta corporativa `ACTUALES`, valida los 37 scripts y pide confirmacion antes de crear el respaldo y sustituir el conjunto central. Use `-RutaScripts` cuando la carpeta se encuentre en otra ubicacion. Sin `-Desplegar`, solo genera una copia validada bajo `obj`.
+
 ## Migracion A La Version 1.5.5
 
 1. Sustituya ambos ejecutables por la version 1.5.5.

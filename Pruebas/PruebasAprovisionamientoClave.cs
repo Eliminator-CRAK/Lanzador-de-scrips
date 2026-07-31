@@ -305,6 +305,9 @@ public sealed class PruebasAprovisionamientoClave
         var herramientaConjunto = File.ReadAllText(
             Path.Combine(raiz, "Herramientas", "GenerarConjuntoArtefactos.ps1"),
             Encoding.UTF8);
+        var herramientaDominio = File.ReadAllText(
+            Path.Combine(raiz, "PrepararArtefactosDominio.ps1"),
+            Encoding.UTF8);
 
         Assert.Contains("IntentarAprovisionarClaveArtefactos", aplicacion, StringComparison.Ordinal);
         Assert.Contains("--descriptor-base64", herramienta, StringComparison.Ordinal);
@@ -315,6 +318,20 @@ public sealed class PruebasAprovisionamientoClave
         Assert.DoesNotContain("ClaveAesBase64", herramientaConjunto, StringComparison.Ordinal);
         Assert.DoesNotContain("-ClaveAES", herramientaConjunto, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Read-Host", herramientaConjunto, StringComparison.Ordinal);
+        Assert.Contains("$PSScriptRoot", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("GenerarConjuntoArtefactos.ps1", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("SupportsShouldProcess", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("RESPALDO_", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("Get-FileHash", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("Get-ResumenConjunto", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains(@"MAD00\aroperez_micro", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains(
+            "S-1-5-21-1979283502-1139295200-817656539-77039",
+            herramientaDominio,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ClaveAesBase64", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain("-ClaveAES", herramientaDominio, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Read-Host", herramientaDominio, StringComparison.Ordinal);
     }
 
     [Theory]
