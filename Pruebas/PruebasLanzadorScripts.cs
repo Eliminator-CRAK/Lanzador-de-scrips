@@ -326,7 +326,7 @@ public sealed class PruebasLanzadorScripts
             "Usuarios",
             PerfilAplicacion.ObtenerIdentificadorUsuarioActual(),
             "WebView2",
-            "Perfil-v2");
+            "Perfil-v3");
         var raizLocalAppData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "LanzadorScripts",
@@ -338,14 +338,18 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void WebView2CreaElPerfilDespuesDePrepararSuDirectorioPadre()
+    public void WebView2PreparaElPerfilExactoAntesDeEntregarloAEdge()
     {
         var rutaArranque = Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioArranqueWebView2.cs");
         var codigo = File.ReadAllText(rutaArranque);
 
         Assert.Contains("PrepararDatosWebView2()", codigo, StringComparison.Ordinal);
+        Assert.Contains(
+            "PrepararRutaPerfilWebView2(RutasAplicacion.RutaPerfilWebView2)",
+            codigo,
+            StringComparison.Ordinal);
+        Assert.Contains("ProbarEscrituraDirectorio(rutaPerfil)", codigo, StringComparison.Ordinal);
         Assert.Contains("CoreWebView2Environment.CreateAsync(runtimeFijo, rutaPerfil)", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("Directory.CreateDirectory(rutaPerfil)", codigo, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -400,18 +404,26 @@ public sealed class PruebasLanzadorScripts
 
         ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(carpeta);
 
-        var reglas = new DirectoryInfo(carpeta)
-            .GetAccessControl(AccessControlSections.Access)
+        var seguridad = new DirectoryInfo(carpeta)
+            .GetAccessControl(AccessControlSections.Access);
+        var reglas = seguridad
             .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
             .OfType<FileSystemAccessRule>()
             .Where(regla => regla.AccessControlType == AccessControlType.Allow)
             .ToList();
         var usuario = WindowsIdentity.GetCurrent().User?.Value;
+        Assert.True(seguridad.AreAccessRulesProtected);
         Assert.Contains(reglas, regla =>
             string.Equals(regla.IdentityReference.Value, usuario, StringComparison.Ordinal)
             && regla.FileSystemRights.HasFlag(FileSystemRights.FullControl)
             && regla.InheritanceFlags.HasFlag(InheritanceFlags.ContainerInherit)
             && regla.InheritanceFlags.HasFlag(InheritanceFlags.ObjectInherit));
+        Assert.Contains(reglas, regla =>
+            string.Equals(regla.IdentityReference.Value, "S-1-5-32-544", StringComparison.Ordinal)
+            && regla.FileSystemRights.HasFlag(FileSystemRights.FullControl));
+        Assert.Contains(reglas, regla =>
+            string.Equals(regla.IdentityReference.Value, "S-1-5-18", StringComparison.Ordinal)
+            && regla.FileSystemRights.HasFlag(FileSystemRights.FullControl));
         Assert.DoesNotContain(reglas, regla =>
             string.Equals(regla.IdentityReference.Value, "S-1-5-32-545", StringComparison.Ordinal));
     }

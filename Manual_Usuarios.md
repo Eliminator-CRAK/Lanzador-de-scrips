@@ -14,6 +14,12 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 3. Espere a que finalice la pantalla de preparacion.
 4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
 
+## Cambios En La Version 1.5.3
+
+- WebView2 utiliza un perfil nuevo y repara sus permisos antes de abrir Microsoft Edge.
+- El arranque y la limpieza ya no muestran ventanas de progreso separadas.
+- Cerrar desde la bandeja es directo cuando no hay scripts activos; la confirmacion aparece solo si se cancelara alguna ejecucion.
+
 ## Cambios En La Version 1.5.2
 
 - El nuevo icono de consola utiliza un fondo negro opaco en el ejecutable, la ventana, la barra de tareas y la bandeja.
@@ -28,7 +34,7 @@ LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. L
 - El icono de LanzadorScripts permanece en la bandeja mientras la aplicacion este ejecutandose.
 - Minimizar conserva la aplicacion en la barra de tareas. Cerrar la ventana la deja en segundo plano sin detener scripts.
 - El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente.
-- El cierre definitivo solicita confirmacion y muestra los scripts que se cancelaran.
+- El cierre definitivo solicita confirmacion y muestra los scripts que se cancelaran cuando existen ejecuciones activas.
 - Una segunda apertura de LanzadorScripts restaura la ventana existente.
 - El usuario no debe modificar `permisos.json`, `catalogo-scripts.json` ni crear carpetas de configuracion.
 - La aplicacion ya no se abre automaticamente con Windows; debe iniciarse desde el EXE distribuido.

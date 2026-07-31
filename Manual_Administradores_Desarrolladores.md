@@ -27,7 +27,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
 | Paquete central de clave | `<RutaPermisos>\clave-artefactos.dpng.json` |
-| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` |
+| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v3` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
 | Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
@@ -106,7 +106,7 @@ El boton `Instalar clave` se conserva solo para recuperacion administrativa. No 
 ## Migracion A La Version 1.4.7
 
 1. Sustituya el EXE por la version 1.4.7; no cambie `permisos.json`, `catalogo-scripts.json` ni `artefactos.key`.
-2. La aplicacion crea automaticamente `WebView2\Perfil-v2` con control total para el SID actual y conserva `WebView2\Perfil` sin usar.
+2. La aplicacion crea automaticamente `WebView2\Perfil-v3`, elimina reglas denegadas o heredadas de su ACL y conserva las reglas explicitas que WebView2 necesite para sus procesos aislados.
 3. No conceda acceso a `Everyone` ni modifique manualmente las ACL de `ProgramData`.
 4. Tras validar el arranque, un administrador puede archivar el perfil antiguo con la aplicacion cerrada.
 

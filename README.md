@@ -7,7 +7,7 @@
 
 | Campo | Valor |
 |---|---|
-| Version | 1.5.2 |
+| Version | 1.5.3 |
 | Tipo | WPF + WebView2 |
 | Runtime | .NET 10 Windows x64 |
 | Uso | Descubrimiento y ejecucion controlada de scripts PowerShell |
@@ -41,7 +41,7 @@ flowchart TD
 | Auditoria | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Auditoria` |
 | Clave de artefactos | `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` |
 | Paquete central de clave | `<RutaPermisos>\clave-artefactos.dpng.json` |
-| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` |
+| Perfil WebView2 | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v3` |
 | Temporales de proceso | `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Temporales` |
 | Aplicacion .NET interna | `%ProgramFiles%\LanzadorScripts\Aplicacion\runtime-<hash>` |
 | Extraccion nativa .NET | `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet\runtime-<hash>` |
@@ -108,9 +108,9 @@ Los dos ejecutables finales deben ser self-contained y x64. Cada EXE exterior co
 
 ## Ventana Y Bandeja
 
-El lanzador nativo muestra progreso durante la validacion, extraccion e inicio, antes de que WPF pueda abrirse. La ventana WPF se muestra antes de iniciar backend y WebView2. Al minimizar permanece en la barra de tareas y en la bandeja; al cerrar o usar `Alt+F4` se oculta y los scripts siguen ejecutandose. El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente. El cierre definitivo exige confirmacion y enumera los scripts que se cancelaran. Una segunda apertura del EXE restaura la instancia existente.
+El lanzador nativo valida y extrae los componentes sin abrir consolas ni dialogos de progreso separados. La ventana WPF se muestra antes de iniciar backend y WebView2. Al minimizar permanece en la barra de tareas y en la bandeja; al cerrar o usar `Alt+F4` se oculta y los scripts siguen ejecutandose. El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente. Si hay scripts activos, el cierre definitivo exige confirmacion y enumera los que se cancelaran; sin ejecuciones, cierra directamente. Una segunda apertura del EXE restaura la instancia existente.
 
-La version 1.5.2 incorpora una identidad visual propia inspirada en las herramientas de consola, con fondo negro opaco. El icono contiene resoluciones nativas entre 16 y 256 pixeles para conservar nitidez en la ventana, la barra de tareas, la bandeja y el ejecutable.
+La version 1.5.3 corrige el perfil de WebView2 usado por el lanzador portable, prepara su ACL antes de iniciar Edge y elimina los dialogos nativos de progreso. Mantiene la identidad visual de consola con fondo negro opaco y resoluciones entre 16 y 256 pixeles.
 
 GitLab (`micro2822131/Lanzador-de-scrips`) y GitHub (`Eliminator-CRAK/Lanzador-de-scrips`) mantienen el mismo historial de `main`. Cada cambio se publica y verifica en ambos remotos.
 
@@ -126,7 +126,7 @@ La aplicacion extrae WebView2 Fixed Runtime x64 `150.0.4078.48` en `%ProgramFile
 
 Cada extraccion concede lectura y ejecucion a `ALL APPLICATION PACKAGES` y `ALL RESTRICTED APPLICATION PACKAGES`, requeridos por el aislamiento de WebView2 Fixed Runtime. Los usuarios normales no reciben permisos de escritura sobre los binarios.
 
-La aplicacion usa `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v2` como perfil local de WebView2. El identificador se obtiene del hash completo del SID; las raices impiden que otro usuario precree carpetas. El subarbol WebView2 concede control total al SID actual para que el runtime pueda configurar las ACL de sus procesos LowIL/AppContainer, mientras administradores y sistema conservan su acceso. El perfil `Perfil` de versiones anteriores queda sin uso y no se borra automaticamente. Si el perfil falla, la aplicacion intenta recuperarlo dentro de su zona privada y, como ultimo recurso, en `C:\Windows\Temp\LanzadorScripts` sin ejecutar binarios desde esa ruta.
+La aplicacion usa `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\WebView2\Perfil-v3` como perfil local de WebView2. El identificador se obtiene del hash completo del SID; las raices impiden que otro usuario precree carpetas. La ruta exacta se crea, se sanea de reglas denegadas o heredadas y se prueba antes de iniciar Edge. El SID actual, administradores y sistema conservan control total, junto con las reglas explicitas que WebView2 agregue para sus procesos LowIL/AppContainer. El lanzador nativo no define `WEBVIEW2_USER_DATA_FOLDER`, por lo que no puede desviar el runtime al perfil legado `Perfil`. Si el perfil falla, la aplicacion intenta recuperarlo dentro de su zona privada y, como ultimo recurso, en `C:\Windows\Temp\LanzadorScripts` sin ejecutar binarios desde esa ruta.
 
 Antes de arrancar .NET, el lanzador nativo dirige la extraccion del bundle a `%ProgramFiles%\LanzadorScripts\Runtimes\DotNet` y los temporales a la carpeta privada del usuario en `%ProgramData%`. Ninguna de esas rutas utiliza AppData.
 

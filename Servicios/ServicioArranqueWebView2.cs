@@ -221,8 +221,7 @@ public sealed class ServicioArranqueWebView2
         try
         {
             ServicioDirectoriosAplicacion.PrepararDatosWebView2();
-            ProbarEscrituraDirectorio(RutasAplicacion.RutaRaizWebView2Usuario);
-            return RutasAplicacion.RutaPerfilWebView2;
+            return PrepararRutaPerfilWebView2(RutasAplicacion.RutaPerfilWebView2);
         }
         catch (Exception ex)
         {
@@ -246,7 +245,7 @@ public sealed class ServicioArranqueWebView2
 
         if (!Directory.Exists(rutaPerfil))
         {
-            return rutaPerfil;
+            return PrepararRutaPerfilWebView2(rutaPerfil);
         }
 
         var marcaTiempo = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
@@ -261,7 +260,7 @@ public sealed class ServicioArranqueWebView2
                 ["destino"] = rutaDanada
             });
             LimpiarCopiasDiagnostico(raiz);
-            return rutaPerfil;
+            return PrepararRutaPerfilWebView2(rutaPerfil);
         }
         catch (Exception ex)
         {
@@ -276,7 +275,7 @@ public sealed class ServicioArranqueWebView2
                     ["rutaRecuperacion"] = rutaRecuperacion
                 });
             LimpiarCopiasDiagnostico(raiz);
-            return rutaRecuperacion;
+            return PrepararRutaPerfilWebView2(rutaRecuperacion);
         }
     }
 
@@ -302,7 +301,8 @@ public sealed class ServicioArranqueWebView2
 
                 ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(candidato.Raiz);
                 ProbarEscrituraDirectorio(candidato.Raiz);
-                return Path.Combine(candidato.Raiz, Guid.NewGuid().ToString("N"));
+                var rutaPerfil = Path.Combine(candidato.Raiz, Guid.NewGuid().ToString("N"));
+                return PrepararRutaPerfilWebView2(rutaPerfil);
             }
             catch (Exception ex) when (ex is IOException
                 or UnauthorizedAccessException
@@ -313,6 +313,14 @@ public sealed class ServicioArranqueWebView2
         }
 
         throw new IOException("No se pudo crear el perfil de recuperacion de WebView2. " + string.Join(" ", errores));
+    }
+
+    private static string PrepararRutaPerfilWebView2(string rutaPerfil)
+    {
+        // Crea la ruta exacta con una ACL conocida antes de entregarla a Edge.
+        ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(rutaPerfil);
+        ProbarEscrituraDirectorio(rutaPerfil);
+        return rutaPerfil;
     }
 
     internal static string? ResolverRuntimeFijoPortable()

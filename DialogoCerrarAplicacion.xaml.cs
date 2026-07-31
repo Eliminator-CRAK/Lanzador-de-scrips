@@ -10,15 +10,15 @@ public partial class DialogoCerrarAplicacion : Window
 {
     public DialogoCerrarAplicacion(IReadOnlyList<EjecucionActivaResumen> ejecuciones)
     {
+        ArgumentNullException.ThrowIfNull(ejecuciones);
+        if (ejecuciones.Count == 0)
+        {
+            throw new ArgumentException("El dialogo requiere al menos una ejecucion activa.", nameof(ejecuciones));
+        }
+
         InitializeComponent();
         Ejecuciones = ejecuciones;
         DataContext = this;
-        TextoSinEjecuciones.Visibility = ejecuciones.Count == 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ListaEjecuciones.Visibility = ejecuciones.Count == 0
-            ? Visibility.Collapsed
-            : Visibility.Visible;
     }
 
     public IReadOnlyList<EjecucionActivaResumen> Ejecuciones { get; }

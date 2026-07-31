@@ -37,33 +37,25 @@
                 BorderThickness="1"
                 CornerRadius="6"
                 Padding="12">
-            <Grid>
-                <TextBlock x:Name="TextoSinEjecuciones"
-                           Text="No hay scripts activos."
-                           Foreground="#9CA3AF"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Visibility="Collapsed" />
-                <ListBox x:Name="ListaEjecuciones"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         ItemsSource="{Binding Ejecuciones}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Margin="4,5">
-                                <TextBlock Text="{Binding NombreScript}"
-                                           FontWeight="SemiBold"
-                                           TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding Id}"
-                                           Margin="0,3,0,0"
-                                           Foreground="#6B7280"
-                                           FontFamily="Consolas"
-                                           FontSize="11" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Grid>
+            <ListBox x:Name="ListaEjecuciones"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     ItemsSource="{Binding Ejecuciones}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="4,5">
+                            <TextBlock Text="{Binding NombreScript}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Id}"
+                                       Margin="0,3,0,0"
+                                       Foreground="#6B7280"
+                                       FontFamily="Consolas"
+                                       FontSize="11" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Border>
 
         <StackPanel Grid.Row="3"

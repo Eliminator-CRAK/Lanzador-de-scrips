@@ -9,7 +9,6 @@
 #include <sddl.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <shobjidl.h>
 #include <tlhelp32.h>
 
 #include <algorithm>
@@ -32,7 +31,6 @@ namespace
 {
     constexpr DWORD TamanoBloque = 1024 * 1024;
     constexpr DWORD CodigoCierreDefinitivo = 42;
-    constexpr ULONGLONG TiempoAvisoInicioLentoMs = 60000;
     constexpr ULONGLONG TiempoMaximoLimpiezaMs = 20000;
     constexpr wchar_t NombreMutexLimpieza[] = L"Global\\LanzadorScripts_RuntimeCleanup_v1";
     constexpr wchar_t NombreBloqueoUso[] = L".runtime-use.lock";
@@ -77,89 +75,6 @@ namespace
         std::wstring versionDotNet;
         std::wstring rutaPayload;
         HANDLE bloqueoUso = INVALID_HANDLE_VALUE;
-    };
-
-    // Muestra el progreso nativo antes y despues de WPF.
-    class DialogoProgreso
-    {
-    public:
-        DialogoProgreso(
-            const std::wstring& titulo,
-            const std::wstring& mensaje,
-            bool permitirCancelar)
-        {
-            const HRESULT inicializacion = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-            comInicializado_ = SUCCEEDED(inicializacion);
-            if (FAILED(CoCreateInstance(
-                    CLSID_ProgressDialog,
-                    nullptr,
-                    CLSCTX_INPROC_SERVER,
-                    IID_PPV_ARGS(&dialogo_))))
-            {
-                dialogo_ = nullptr;
-                return;
-            }
-
-            dialogo_->SetTitle(titulo.c_str());
-            dialogo_->SetLine(1, mensaje.c_str(), FALSE, nullptr);
-            DWORD opciones = PROGDLG_MARQUEEPROGRESS | PROGDLG_NOMINIMIZE;
-            if (!permitirCancelar)
-            {
-                opciones |= PROGDLG_NOCANCEL;
-            }
-
-            dialogo_->StartProgressDialog(nullptr, nullptr, opciones, nullptr);
-            iniciado_ = true;
-        }
-
-        DialogoProgreso(const DialogoProgreso&) = delete;
-        DialogoProgreso& operator=(const DialogoProgreso&) = delete;
-
-        ~DialogoProgreso()
-        {
-            Ocultar();
-            if (dialogo_ != nullptr)
-            {
-                dialogo_->Release();
-            }
-
-            if (comInicializado_)
-            {
-                CoUninitialize();
-            }
-        }
-
-        void Actualizar(const std::wstring& mensaje)
-        {
-            // Cambia el texto sin recrear el dialogo.
-            if (dialogo_ != nullptr && iniciado_)
-            {
-                dialogo_->SetLine(1, mensaje.c_str(), FALSE, nullptr);
-            }
-        }
-
-        bool Cancelado() const
-        {
-            // Consulta la cancelacion solicitada por el usuario.
-            return dialogo_ != nullptr
-                && iniciado_
-                && dialogo_->HasUserCancelled() != FALSE;
-        }
-
-        void Ocultar()
-        {
-            // Retira el dialogo cuando WPF ya puede informar del estado.
-            if (dialogo_ != nullptr && iniciado_)
-            {
-                dialogo_->StopProgressDialog();
-                iniciado_ = false;
-            }
-        }
-
-    private:
-        IProgressDialog* dialogo_ = nullptr;
-        bool iniciado_ = false;
-        bool comInicializado_ = false;
     };
 
     // Convierte un codigo de Windows en texto.
@@ -1242,35 +1157,8 @@ namespace
         return ObtenerRutaCompleta(std::wstring(buffer.data(), longitud));
     }
 
-    // Localiza una ventana visible perteneciente al proceso administrado.
-    BOOL CALLBACK BuscarVentanaVisible(HWND ventana, LPARAM parametro)
-    {
-        auto datos = reinterpret_cast<std::pair<DWORD, bool>*>(parametro);
-        DWORD procesoVentana = 0;
-        GetWindowThreadProcessId(ventana, &procesoVentana);
-        if (procesoVentana == datos->first
-            && IsWindowVisible(ventana)
-            && GetWindow(ventana, GW_OWNER) == nullptr)
-        {
-            datos->second = true;
-            return FALSE;
-        }
-
-        return TRUE;
-    }
-
-    // Comprueba si WPF o uno de sus dialogos ya puede informar al usuario.
-    bool TieneVentanaVisible(DWORD proceso)
-    {
-        std::pair<DWORD, bool> datos(proceso, false);
-        EnumWindows(BuscarVentanaVisible, reinterpret_cast<LPARAM>(&datos));
-        return datos.second;
-    }
-
     // Inicia el componente .NET y devuelve su codigo final.
-    DWORD EjecutarAplicacion(
-        const std::wstring& ejecutable,
-        DialogoProgreso& progreso)
+    DWORD EjecutarAplicacion(const std::wstring& ejecutable)
     {
         std::wstring comando = CitarArgumento(ejecutable) + ObtenerArgumentos();
         std::vector<wchar_t> buffer(comando.begin(), comando.end());
@@ -1285,7 +1173,7 @@ namespace
                 nullptr,
                 nullptr,
                 FALSE,
-                0,
+                CREATE_NO_WINDOW,
                 nullptr,
                 nullptr,
                 &inicio,
@@ -1298,43 +1186,7 @@ namespace
         RegistrarLog(
             L"proceso.dotnet.iniciado",
             L"pid=" + std::to_wstring(proceso.dwProcessId));
-        const ULONGLONG tiempoInicio = GetTickCount64();
-        bool ventanaDetectada = false;
-        bool avisoLento = false;
-        DWORD espera = WAIT_TIMEOUT;
-        while (espera == WAIT_TIMEOUT)
-        {
-            espera = WaitForSingleObject(proceso.hProcess, 100);
-            if (!ventanaDetectada && TieneVentanaVisible(proceso.dwProcessId))
-            {
-                ventanaDetectada = true;
-                progreso.Ocultar();
-                RegistrarLog(L"proceso.dotnet.ventana_visible");
-            }
-
-            if (!ventanaDetectada
-                && !avisoLento
-                && GetTickCount64() - tiempoInicio >= TiempoAvisoInicioLentoMs)
-            {
-                avisoLento = true;
-                progreso.Actualizar(
-                    L"El inicio esta tardando. Puede esperar o cancelar. "
-                    L"Los detalles quedan registrados en ProgramData.");
-                RegistrarLog(L"proceso.dotnet.inicio_lento");
-            }
-
-            if (!ventanaDetectada && progreso.Cancelado())
-            {
-                RegistrarLog(L"proceso.dotnet.cancelado");
-                TerminateProcess(proceso.hProcess, ERROR_CANCELLED);
-                WaitForSingleObject(proceso.hProcess, 5000);
-                progreso.Ocultar();
-                CloseHandle(proceso.hProcess);
-                return ERROR_CANCELLED;
-            }
-        }
-
-        progreso.Ocultar();
+        const DWORD espera = WaitForSingleObject(proceso.hProcess, INFINITE);
         if (espera != WAIT_OBJECT_0)
         {
             const DWORD error = espera == WAIT_FAILED ? GetLastError() : ERROR_GEN_FAILURE;
@@ -1383,7 +1235,6 @@ namespace
         const std::wstring raizUsuarios = UnirRuta(raizDatos, L"Usuarios");
         const std::wstring raizUsuario = UnirRuta(raizUsuarios, identificador);
         const std::wstring temporales = UnirRuta(raizUsuario, L"Temporales");
-        const std::wstring perfilWebView2 = UnirRuta(raizUsuario, L"WebView2\\Perfil");
         const std::wstring logsUsuario = UnirRuta(raizUsuario, L"Logs");
 
         CrearDirectorioSeguro(raizDatos, programData);
@@ -1399,7 +1250,6 @@ namespace
             raizUsuario,
             L"O:" + sid + L"D:P(A;OICI;FA;;;" + sid + L")(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)");
         CrearDirectorioSeguro(temporales, programData);
-        CrearDirectorioSeguro(perfilWebView2, programData);
         CrearDirectorioSeguro(logsUsuario, programData);
         RutaLogNativo = UnirRuta(logsUsuario, L"lanzador-nativo.log");
         RegistrarLog(
@@ -1470,7 +1320,6 @@ namespace
         if (!SetEnvironmentVariableW(L"DOTNET_BUNDLE_EXTRACT_BASE_DIR", versionDotNet.c_str())
             || !SetEnvironmentVariableW(L"TEMP", temporales.c_str())
             || !SetEnvironmentVariableW(L"TMP", temporales.c_str())
-            || !SetEnvironmentVariableW(L"WEBVIEW2_USER_DATA_FOLDER", perfilWebView2.c_str())
             || !SetEnvironmentVariableW(
                 L"LANZADOR_DISTRIBUTION_EXE",
                 ObtenerRutaEjecutableActual().c_str())
@@ -1509,10 +1358,6 @@ namespace
     // Aplica la politica elegida despues del cierre confirmado.
     void LimpiarDespuesDelCierre(EntornoPreparado& entorno)
     {
-        DialogoProgreso progreso(
-            L"LanzadorScripts",
-            L"Cerrando LanzadorScripts y limpiando runtimes...",
-            false);
         RegistrarLog(
             L"runtime.limpieza_final.inicio",
             LimpiezaCompleta ? L"variante=portable" : L"variante=normal");
@@ -1592,10 +1437,6 @@ int WINAPI wWinMain(
 {
     try
     {
-        DialogoProgreso progreso(
-            L"LanzadorScripts",
-            L"Validando y preparando LanzadorScripts...",
-            true);
         const Recurso payload = ObtenerRecurso(IDR_APLICACION_DOTNET);
         const std::wstring hashEsperado = LeerHashEsperado();
         const std::wstring hashEmbebido = ConvertirHexadecimal(
@@ -1606,10 +1447,8 @@ int WINAPI wWinMain(
         }
 
         EntornoPreparado entorno = PrepararEntorno(hashEsperado);
-        progreso.Actualizar(L"Extrayendo los componentes firmados...");
         ExtraerPayload(entorno.rutaPayload, payload, hashEsperado);
-        progreso.Actualizar(L"Iniciando la interfaz...");
-        const DWORD codigo = EjecutarAplicacion(entorno.rutaPayload, progreso);
+        const DWORD codigo = EjecutarAplicacion(entorno.rutaPayload);
         if (codigo == CodigoCierreDefinitivo)
         {
             LimpiarDespuesDelCierre(entorno);

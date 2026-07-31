@@ -58,13 +58,13 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion152()
+    public void ProyectoPublicaVersion153()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
 
-        Assert.Contains("<Version>1.5.2</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.5.2.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.5.2.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.5.3</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.5.3.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.5.3.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
@@ -124,7 +124,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("SetEnvironmentVariableW(L\"DOTNET_BUNDLE_EXTRACT_BASE_DIR\"", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("SetEnvironmentVariableW(L\"TEMP\"", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("SetEnvironmentVariableW(L\"TMP\"", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("SetEnvironmentVariableW(L\"WEBVIEW2_USER_DATA_FOLDER\"", codigoNativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("WEBVIEW2_USER_DATA_FOLDER", codigoNativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("L\"WebView2\\\\Perfil\"", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("FOLDERID_ProgramFiles", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("FOLDERID_ProgramData", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Runtime.exe", codigoNativo, StringComparison.Ordinal);

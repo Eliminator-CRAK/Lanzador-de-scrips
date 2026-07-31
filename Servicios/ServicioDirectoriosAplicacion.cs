@@ -68,7 +68,7 @@ public static class ServicioDirectoriosAplicacion
 
     internal static void PrepararDirectorioWebView2(string ruta)
     {
-        // Conserva las reglas existentes y concede control total solo al usuario actual.
+        // Sustituye ACL incompatibles y permite que WebView2 configure sus procesos aislados.
         var directorio = new DirectoryInfo(ruta);
         directorio.Create();
         RechazarPuntosReanalisis(directorio.FullName);
@@ -78,7 +78,21 @@ public static class ServicioDirectoriosAplicacion
             ?? throw new InvalidOperationException("No se pudo identificar al usuario actual.");
         var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
         var seguridad = directorio.GetAccessControl(AccessControlSections.Access);
+        seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        var denegaciones = seguridad
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Deny)
+            .ToList();
+        foreach (var denegacion in denegaciones)
+        {
+            seguridad.RemoveAccessRuleSpecific(denegacion);
+        }
+
         seguridad.SetAccessRule(CrearRegla(usuario, FileSystemRights.FullControl, herencia));
+        seguridad.SetAccessRule(CrearRegla(Administradores, FileSystemRights.FullControl, herencia));
+        seguridad.SetAccessRule(CrearRegla(Sistema, FileSystemRights.FullControl, herencia));
+        AsegurarPropietario(seguridad, directorio, usuario, forzarPropietarioAdministrativo: false);
         directorio.SetAccessControl(seguridad);
     }
 

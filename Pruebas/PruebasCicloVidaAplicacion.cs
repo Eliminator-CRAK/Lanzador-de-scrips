@@ -48,7 +48,11 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("ShowInTaskbar = false;", ventana, StringComparison.Ordinal);
         Assert.Contains("SolicitarCierreDesdeBandeja", ventana, StringComparison.Ordinal);
         Assert.Contains("ObtenerEjecucionesActivas()", ventana, StringComparison.Ordinal);
+        Assert.Contains("while (ejecuciones.Count > 0)", ventana, StringComparison.Ordinal);
         Assert.Contains("Shutdown(CodigoSalidaCierreDefinitivo)", ventana, StringComparison.Ordinal);
+
+        var dialogo = File.ReadAllText(ObtenerRutaProyecto("DialogoCerrarAplicacion.xaml"));
+        Assert.DoesNotContain("TextoSinEjecuciones", dialogo, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,8 +73,11 @@ public sealed class PruebasCicloVidaAplicacion
         var publicacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PublicarPortable.ps1"));
 
         Assert.Contains("constexpr DWORD CodigoCierreDefinitivo = 42", nativo, StringComparison.Ordinal);
-        Assert.Contains("DialogoProgreso", nativo, StringComparison.Ordinal);
-        Assert.Contains("TieneVentanaVisible", nativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("DialogoProgreso", nativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("IProgressDialog", nativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("TieneVentanaVisible", nativo, StringComparison.Ordinal);
+        Assert.Contains("CREATE_NO_WINDOW", nativo, StringComparison.Ordinal);
+        Assert.Contains("WaitForSingleObject(proceso.hProcess, INFINITE)", nativo, StringComparison.Ordinal);
         Assert.Contains("EliminarArbolSeguroConReintentos", nativo, StringComparison.Ordinal);
         Assert.Contains("FILE_ATTRIBUTE_REPARSE_POINT", nativo, StringComparison.Ordinal);
         Assert.Contains("HayProcesoEnRuta", nativo, StringComparison.Ordinal);

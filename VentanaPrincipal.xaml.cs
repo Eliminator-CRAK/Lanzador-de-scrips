@@ -429,7 +429,7 @@ public partial class VentanaPrincipal : Window
 
     private async void SolicitarCierreDesdeBandeja()
     {
-        // Confirma siempre el cierre y enumera las ejecuciones afectadas.
+        // Confirma el cierre solo cuando hay scripts que se cancelaran.
         if (_cierreEnCurso || _confirmacionCierreAbierta)
         {
             return;
@@ -441,7 +441,7 @@ public partial class VentanaPrincipal : Window
         {
             ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
                 ?? Array.Empty<EjecucionActivaResumen>();
-            while (true)
+            while (ejecuciones.Count > 0)
             {
                 var dialogo = new DialogoCerrarAplicacion(ejecuciones);
                 if (IsVisible && WindowState != WindowState.Minimized)
@@ -479,7 +479,7 @@ public partial class VentanaPrincipal : Window
         await Dispatcher.Yield(DispatcherPriority.Render);
         await _servicioLogInicio.RegistrarAsync(
             "aplicacion.cierre_confirmado",
-            "El usuario confirmo el cierre definitivo.",
+            "Se inicio el cierre definitivo desde la bandeja.",
             new Dictionary<string, string?>
             {
                 ["ejecucionesActivas"] = ejecuciones.Count.ToString()
