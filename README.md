@@ -27,7 +27,7 @@ flowchart TD
     H --> J[PowerShell]
     I --> K[permisos.json cifrado]
     I --> L[catalogo-scripts.json cifrado]
-    M[clave-artefactos.dpng.json] --> N[DPAPI-NG y grupo AD]
+    M[clave-artefactos.dpng.json] --> N[DPAPI-NG: grupo AD o usuario local]
     N --> O[artefactos.key con DPAPI local]
 ```
 
@@ -94,13 +94,13 @@ pwsh -NoProfile -File .\Herramientas\GenerarConjuntoArtefactos.ps1 `
 
 La herramienta debe ejecutarse en un equipo conectado al dominio `MAD00`. Antes de cifrar, comprueba que la cuenta resuelve exactamente al SID indicado; despues valida el recuento, las firmas y el `KeyId` comun. La AES no se escribe en texto claro, no se pasa por argumentos y no necesita existir previamente en `ProgramData`. La salida debe permanecer fuera de Git y sustituirse siempre como conjunto, conservando antes una copia de seguridad de los archivos operativos anteriores.
 
-El repositorio incluye tambien un asistente integral en su carpeta raiz. Funciona desde una descarga ZIP llamada `Lanzador-de-scrips-main` porque resuelve el proyecto mediante `$PSScriptRoot`. Comprueba PowerShell 7, .NET SDK 10, el controlador de dominio, la correspondencia entre cuenta y SID, el certificado privado del equipo firmante y los 37 scripts; despues genera, respalda, despliega y verifica los tres archivos. La cuenta que firma puede ser distinta de la cuenta de dominio que recibira el paquete DPAPI-NG. Su uso normal es:
+El repositorio incluye tambien un asistente local en su carpeta raiz. Funciona desde una descarga ZIP llamada `Lanzador-de-scrips-main` porque resuelve el proyecto mediante `$PSScriptRoot`. Debe ejecutarse como `PCERA\alero`, comprueba PowerShell 7, .NET SDK 10, el certificado privado y los 37 scripts, y no necesita dominio ni escribe en el servidor. Su uso normal es:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1 -Desplegar
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1
 ```
 
-`-Desplegar` solicita confirmacion antes de escribir en la ruta central. Sin ese parametro, genera y valida el conjunto en `obj` sin modificar el servidor. Si `ACTUALES` no esta en OneDrive corporativo ni dentro de la raiz descargada, use `-RutaScripts "<CARPETA_ACTUALES>"`. Ante un fallo durante la copia, la herramienta intenta restaurar los archivos respaldados y conserva el respaldo `RESPALDO_yyyyMMdd-HHmmss`. El certificado privado actual no es exportable: este proceso debe ejecutarse en el equipo firmante original, conectado al dominio o VPN; no debe copiarse una clave privada al repositorio ni a los equipos cliente.
+La salida queda en `ArtefactosGenerados\conjunto-<fecha>-<id>` y contiene exactamente `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`. Si `ACTUALES` no esta en OneDrive corporativo ni dentro de la raiz descargada, use `-RutaScripts "<CARPETA_ACTUALES>"`. Copie siempre los tres archivos juntos. El paquete usa `DPAPI-NG LOCAL=user`: despues de copiarlo al servidor solo podra abrirlo la aplicacion ejecutada como `PCERA\alero` en este mismo equipo; no sirve para aprovisionar otros equipos del dominio.
 
 Para mantener una clave existente, la inicializacion explicita de permisos y catalogo sigue disponible mediante:
 
@@ -115,7 +115,7 @@ pwsh -NoProfile -File .\Herramientas\CrearPaqueteAprovisionamientoClave.ps1 `
   -GrupoDominio 'MAD00\<CUENTA_O_GRUPO>'
 ```
 
-La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG para el SID del grupo y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. La carpeta central debe contener siempre el conjunto completo: `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`. En cada equipo cliente, la aplicacion intenta leer el paquete al arrancar, reintenta durante tres minutos si la red aun no esta disponible, verifica las tres firmas, exige que los `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. El primer arranque o una rotacion necesitan acceso al recurso compartido, al dominio y al controlador de dominio. El EXE no contiene la AES ni una contraseña equivalente y la interfaz no permite introducirla manualmente.
+La herramienta recupera la AES local sin recibirla por argumentos, cifra el paquete con DPAPI-NG y lo firma con el mismo certificado RSA-PSS usado por los dos artefactos. El descriptor puede ser un SID de dominio o `LOCAL=user`; este ultimo solo funciona con el mismo usuario y equipo que lo genero. La carpeta central debe contener siempre el conjunto completo: `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`. En cada equipo cliente, la aplicacion intenta leer el paquete al arrancar, reintenta durante tres minutos si la red aun no esta disponible, verifica las tres firmas, exige que los `KeyId` coincidan y guarda automaticamente `artefactos.key` con DPAPI local. Si el paquete firmado contiene una rotacion valida, reemplaza tambien una clave local antigua. Los paquetes de dominio necesitan acceso al recurso compartido y al controlador de dominio; el paquete local no. El EXE no contiene la AES ni una contraseña equivalente y la interfaz no permite introducirla manualmente.
 
 La clave se crea una sola vez en un gestor de secretos corporativo y debe ser identica en todos los equipos que lean los mismos contenedores. No genere una clave diferente para corregir el aviso en un cliente. Los dos JSON son contenedores cifrados y firmados: no se editan directamente con un editor de texto. La version 1.5.0 puede leer durante la migracion unicamente los dos contenedores v1 corporativos cuyas huellas estan fijadas en el binario; cualquier v1 distinto queda bloqueado. Toda publicacion nueva se guarda como v2 y se firma con el certificado actual. Cualquier cambio en un script exige volver a publicar el catalogo.
 
@@ -176,7 +176,7 @@ La politica es fail closed. Los `.ps1`, `.bat` y `.cmd` deben figurar en el cata
 
 Los administradores publican el catalogo desde Ajustes mediante `Firmar scripts y publicar catálogo`. La operacion descubre de nuevo los archivos seleccionados y no modifica su contenido. El modo desarrollo es una excepcion administrativa limitada a la sesion.
 
-La clave AES no esta integrada en el EXE. DPAPI-NG permite distribuirla cifrada para un grupo de Active Directory y DPAPI `LocalMachine` conserva la copia local con ACL administrativa. El EXE incorpora solo el certificado publico de verificacion; la clave RSA privada permanece en el almacen de certificados de los equipos administradores autorizados.
+La clave AES no esta integrada en el EXE. DPAPI-NG permite protegerla para un grupo de Active Directory o para el mismo perfil mediante `LOCAL=user`, y DPAPI `LocalMachine` conserva despues la copia local con ACL administrativa. El EXE incorpora solo el certificado publico de verificacion; la clave RSA privada permanece en el almacen de certificados de los equipos administradores autorizados.
 
 La aplicacion no crea tareas programadas ni registra la apertura con Windows. El operador la abre manualmente y el backend integrado toma la identidad del proceso que ha abierto la app.
 

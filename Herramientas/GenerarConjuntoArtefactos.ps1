@@ -1,7 +1,7 @@
 # (Autor: Alex Roman)
-# Descripcion: Genera de forma coordinada permisos, catalogo y paquete DPAPI-NG.
+# Descripcion: Genera permisos, catalogo y paquete DPAPI-NG para dominio o usuario local.
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Dominio')]
 param(
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
@@ -14,9 +14,12 @@ param(
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')]
     [string]$Administrador = 'MAD00\aroperez_micro',
 
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory, ParameterSetName = 'Dominio')]
     [ValidatePattern('^S-1-5-21-(?:\d+-){2,14}\d+$')]
     [string]$SidAutorizado,
+
+    [Parameter(Mandatory, ParameterSetName = 'Local')]
+    [switch]$ModoLocalUsuario,
 
     [ValidateRange(1, 10000)]
     [int]$TotalScriptsEsperado = 37
@@ -42,30 +45,38 @@ if (Test-Path -LiteralPath $rutaSalidaCompleta) {
     New-Item -ItemType Directory -Path $rutaSalidaCompleta | Out-Null
 }
 
-# Valida que el SID pertenezca a un dominio de Active Directory.
-try {
-    $sid = [Security.Principal.SecurityIdentifier]::new($SidAutorizado)
-} catch {
-    throw "El SID autorizado no es valido: $SidAutorizado"
-}
-if (-not $sid.Value.StartsWith('S-1-5-21-', [StringComparison]::Ordinal)) {
-    throw 'El SID autorizado debe pertenecer a un dominio de Active Directory.'
-}
+# Selecciona una proteccion local o valida la identidad contra Active Directory.
+$descriptor = if ($ModoLocalUsuario) {
+    $identidad = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    if (-not [string]::Equals($identidad, $Administrador, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "La cuenta local $identidad no coincide con el administrador $Administrador."
+    }
+    'LOCAL=user'
+} else {
+    try {
+        $sid = [Security.Principal.SecurityIdentifier]::new($SidAutorizado)
+    } catch {
+        throw "El SID autorizado no es valido: $SidAutorizado"
+    }
+    if (-not $sid.Value.StartsWith('S-1-5-21-', [StringComparison]::Ordinal)) {
+        throw 'El SID autorizado debe pertenecer a un dominio de Active Directory.'
+    }
 
-# Confirma con el dominio que la cuenta y el SID representan la misma identidad.
-$dominio = $Administrador.Split('\')[0]
-& nltest "/dsgetdc:$dominio" *> $null
-if ($LASTEXITCODE -ne 0) {
-    throw "No se encontro un controlador del dominio $dominio. Conecte el equipo a la red corporativa o VPN."
-}
-try {
-    $cuenta = [Security.Principal.NTAccount]::new($Administrador)
-    $sidCuenta = $cuenta.Translate([Security.Principal.SecurityIdentifier])
-} catch {
-    throw "No se pudo resolver la cuenta $Administrador en Active Directory."
-}
-if ($sidCuenta.Value -ne $sid.Value) {
-    throw "La cuenta $Administrador resuelve al SID $($sidCuenta.Value), no al SID indicado."
+    $dominio = $Administrador.Split('\')[0]
+    & nltest "/dsgetdc:$dominio" *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "No se encontro un controlador del dominio $dominio. Conecte el equipo a la red corporativa o VPN."
+    }
+    try {
+        $cuenta = [Security.Principal.NTAccount]::new($Administrador)
+        $sidCuenta = $cuenta.Translate([Security.Principal.SecurityIdentifier])
+    } catch {
+        throw "No se pudo resolver la cuenta $Administrador en Active Directory."
+    }
+    if ($sidCuenta.Value -ne $sid.Value) {
+        throw "La cuenta $Administrador resuelve al SID $($sidCuenta.Value), no al SID indicado."
+    }
+    "SID=$($sid.Value)"
 }
 
 # Copia solo scripts validos a una carpeta local y confirma que los bytes no cambian.
@@ -131,7 +142,6 @@ try {
     if (-not (Test-Path -LiteralPath $ensamblado -PathType Leaf)) {
         throw "No se encontro el ensamblado generador: $ensamblado"
     }
-    $descriptor = "SID=$($sid.Value)"
     $scriptsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptsPreparados))
     $salidaBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($rutaSalidaCompleta))
     $administradorBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Administrador))

@@ -38,7 +38,7 @@ Este manual describe la operacion, configuracion, seguridad, pruebas y publicaci
 
 `permisos.json` y `catalogo-scripts.json` son contenedores cifrados y firmados. Ambos emplean la misma AES-256-GCM y la misma identidad de firma RSA-PSS/SHA-256, con tipo autenticado para impedir el intercambio de archivos. La version 1.5.0 conserva lectura verificada de los dos v1 corporativos cuyas huellas estan fijadas para la migracion y escribe exclusivamente v2.
 
-La clave AES no forma parte del EXE. Se distribuye en `clave-artefactos.dpng.json`, cifrada con DPAPI-NG para un grupo de Active Directory y firmada con RSA-PSS/SHA-256. En el primer arranque autorizado se guarda con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
+La clave AES no forma parte del EXE. Se distribuye en `clave-artefactos.dpng.json`, cifrada con DPAPI-NG para un grupo de Active Directory o para el mismo perfil con `LOCAL=user`, y firmada con RSA-PSS/SHA-256. El paquete local solo puede abrirse en el usuario y equipo que lo genero. En el primer arranque autorizado se guarda con DPAPI `LocalMachine` en `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key`, con acceso exclusivo para `SYSTEM` y `Administrators`. La firma usa el certificado privado con huella `500266A64E574889370D92E5CE0D65D55CC963B7`; los equipos que solo verifican no necesitan la clave privada.
 
 La configuracion predeterminada apunta a:
 
@@ -76,15 +76,15 @@ Reglas:
 
 La herramienta comprueba que la cuenta resuelve exactamente al SID indicado y que el catalogo contiene el numero esperado de scripts. Sin acceso a un controlador del dominio, DPAPI-NG no puede crear el paquete y no se genera ningun conjunto parcial.
 
-Desde una descarga de GitLab extraida como `Lanzador-de-scrips-main`, el proceso completo se puede ejecutar desde la propia raiz:
+Para generar un conjunto exclusivamente local desde una descarga de GitLab extraida como `Lanzador-de-scrips-main`, ejecute como `PCERA\alero` desde la propia raiz:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1 -Desplegar
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\PrepararArtefactosDominio.ps1
 ```
 
-El script detecta la carpeta corporativa `ACTUALES`, valida los 37 scripts y pide confirmacion antes de crear el respaldo y sustituir el conjunto central. Use `-RutaScripts` cuando la carpeta se encuentre en otra ubicacion. Sin `-Desplegar`, solo genera una copia validada bajo `obj`.
+El script detecta la carpeta corporativa `ACTUALES`, valida los 37 scripts y genera los tres archivos bajo `ArtefactosGenerados\conjunto-<fecha>-<id>`. No consulta Active Directory, no usa la ruta central y no copia nada al servidor. Use `-RutaScripts` cuando la carpeta se encuentre en otra ubicacion.
 
-La cuenta firmante local no tiene que coincidir con la cuenta administradora incluida en permisos. La primera aporta la clave RSA privada y la segunda, junto con su SID, define el destinatario DPAPI-NG. El certificado privado actual no es exportable y solo existe en el equipo firmante original; ejecute alli el asistente con conexion al dominio o VPN. Los equipos cliente y el repositorio no deben recibir esa clave privada. Para trasladar la firma a otro equipo seria necesario rotar el certificado, actualizar la clave publica de la aplicacion, recompilar y volver a generar los tres artefactos.
+El conjunto local autoriza a `PCERA\alero` y protege la AES con `LOCAL=user`. Puede copiar los tres archivos juntos al servidor, pero el paquete solo se descifrara cuando la aplicacion se ejecute como ese usuario en el mismo equipo PCERA. Para aprovisionar otros equipos sigue siendo necesario generar un paquete con SID de dominio desde un equipo conectado al controlador de dominio.
 
 ## Migracion A La Version 1.5.5
 

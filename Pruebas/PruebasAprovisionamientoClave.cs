@@ -176,8 +176,9 @@ public sealed class PruebasAprovisionamientoClave
     }
 
     [Fact]
-    public void DescriptorRechazaProteccionLocalOTextoArbitrario()
+    public void DescriptorAceptaUsuarioLocalYRechazaMaquinaOTextoArbitrario()
     {
+        ServicioDpapiNg.ValidarDescriptor("LOCAL=user");
         ServicioDpapiNg.ValidarDescriptor("SID=S-1-5-21-1-2-3-1001");
         ServicioDpapiNg.ValidarDescriptor(
             "SID=S-1-5-21-1-2-3-1001 OR SID=S-1-5-21-1-2-3-1002");
@@ -186,6 +187,39 @@ public sealed class PruebasAprovisionamientoClave
             ServicioDpapiNg.ValidarDescriptor("LOCAL=machine"));
         Assert.Throws<ArgumentException>(() =>
             ServicioDpapiNg.ValidarDescriptor("SID=../Administrators"));
+    }
+
+    [Fact]
+    public void DpapiNgLocalProtegeYRecuperaConElMismoUsuario()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var servicio = new ServicioDpapiNg();
+        var datos = RandomNumberGenerator.GetBytes(32);
+        byte[]? protegidos = null;
+        byte[]? recuperados = null;
+        try
+        {
+            protegidos = servicio.Proteger(datos, "LOCAL=user");
+            Assert.False(datos.SequenceEqual(protegidos));
+            recuperados = servicio.Desproteger(protegidos);
+            Assert.True(datos.SequenceEqual(recuperados));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(datos);
+            if (protegidos is not null)
+            {
+                CryptographicOperations.ZeroMemory(protegidos);
+            }
+            if (recuperados is not null)
+            {
+                CryptographicOperations.ZeroMemory(recuperados);
+            }
+        }
     }
 
     [Fact]
@@ -318,28 +352,24 @@ public sealed class PruebasAprovisionamientoClave
         Assert.DoesNotContain("ClaveAesBase64", herramientaConjunto, StringComparison.Ordinal);
         Assert.DoesNotContain("-ClaveAES", herramientaConjunto, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Read-Host", herramientaConjunto, StringComparison.Ordinal);
+        Assert.Contains("ModoLocalUsuario", herramientaConjunto, StringComparison.Ordinal);
+        Assert.Contains("LOCAL=user", herramientaConjunto, StringComparison.Ordinal);
         Assert.Contains("$PSScriptRoot", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains("GenerarConjuntoArtefactos.ps1", herramientaDominio, StringComparison.Ordinal);
-        Assert.Contains("SupportsShouldProcess", herramientaDominio, StringComparison.Ordinal);
-        Assert.Contains("RESPALDO_", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("ModoLocalUsuario", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains("ArtefactosGenerados", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains("Get-FileHash", herramientaDominio, StringComparison.Ordinal);
         Assert.Contains("Get-ResumenConjunto", herramientaDominio, StringComparison.Ordinal);
-        Assert.Contains("Cuenta firmante local", herramientaDominio, StringComparison.Ordinal);
-        Assert.Contains("equipo firmante original", herramientaDominio, StringComparison.Ordinal);
-        Assert.Contains(@"MAD00\aroperez_micro", herramientaDominio, StringComparison.Ordinal);
-        Assert.Contains(
-            "S-1-5-21-1979283502-1139295200-817656539-77039",
-            herramientaDominio,
-            StringComparison.Ordinal);
+        Assert.Contains("Cuenta local validada", herramientaDominio, StringComparison.Ordinal);
+        Assert.Contains(@"PCERA\alero", herramientaDominio, StringComparison.Ordinal);
         Assert.DoesNotContain("ClaveAesBase64", herramientaDominio, StringComparison.Ordinal);
         Assert.DoesNotContain("-ClaveAES", herramientaDominio, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Read-Host", herramientaDominio, StringComparison.Ordinal);
-        Assert.DoesNotContain("RequiereAdministrador", herramientaDominio, StringComparison.Ordinal);
-        Assert.DoesNotContain("La consola se ejecuta como", herramientaDominio, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "Abra PowerShell como administrador usando la misma cuenta de dominio",
-            herramientaDominio,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("SupportsShouldProcess", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain("RutaCentralPermisos", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain("RESPALDO_", herramientaDominio, StringComparison.Ordinal);
+        Assert.DoesNotContain("nltest", herramientaDominio, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(@"MAD00\aroperez_micro", herramientaDominio, StringComparison.Ordinal);
     }
 
     [Theory]

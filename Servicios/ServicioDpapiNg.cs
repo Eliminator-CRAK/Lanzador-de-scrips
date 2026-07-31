@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Protege claves para identidades de Active Directory mediante DPAPI-NG.
+// Descripcion: Protege claves para identidades de dominio o del usuario local mediante DPAPI-NG.
 
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -21,6 +21,7 @@ internal sealed class ServicioDpapiNg : IProtectorDpapiNg
     private const int CodigoFalloCifrado = unchecked((int)0x80090034);
     private const uint BanderaSilenciosa = 0x00000040;
     private const int LongitudMaximaResultado = 1024 * 1024;
+    private const string DescriptorUsuarioLocal = "LOCAL=user";
 
     private static readonly Regex PatronDescriptorSid = new(
         @"^SID=S-\d+(?:-\d+)+(?: (?:AND|OR) SID=S-\d+(?:-\d+)+)*$",
@@ -101,12 +102,17 @@ internal sealed class ServicioDpapiNg : IProtectorDpapiNg
 
     internal static void ValidarDescriptor(string descriptor)
     {
+        if (string.Equals(descriptor, DescriptorUsuarioLocal, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(descriptor)
             || descriptor.Length > 2048
             || !PatronDescriptorSid.IsMatch(descriptor))
         {
             throw new ArgumentException(
-                "El descriptor debe contener uno o varios SID de Active Directory unidos por AND u OR.",
+                "El descriptor debe ser LOCAL=user o contener SID de Active Directory unidos por AND u OR.",
                 nameof(descriptor));
         }
 
@@ -160,7 +166,7 @@ internal sealed class ServicioDpapiNg : IProtectorDpapiNg
         {
             // Explica el fallo habitual cuando el dominio no esta disponible.
             var detalleDominio = codigo == CodigoFalloCifrado
-                ? " Compruebe la conexion al dominio y la disponibilidad de un controlador de dominio."
+                ? " Compruebe que esta identidad y este equipo estan autorizados. Para descriptores SID, compruebe tambien la conexion al dominio."
                 : string.Empty;
             throw new CryptographicException(
                 $"Windows no pudo {operacion}. Codigo 0x{unchecked((uint)codigo):X8}.{detalleDominio}");

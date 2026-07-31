@@ -162,7 +162,7 @@ internal sealed class ServicioAprovisionamientoClaveArtefactos
             return new ResultadoAprovisionamientoClave(
                 EstadoAprovisionamientoClave.Error,
                 "No se pudo aprovisionar automaticamente la clave AES. "
-                + "Compruebe el acceso al paquete central y la pertenencia al grupo autorizado.",
+                + "Compruebe el acceso al paquete central y que la identidad actual este autorizada.",
                 TipoError: ex.GetType().Name,
                 DetalleError: ServicioRedaccionSecretos.Sanitizar(ex.Message));
         }

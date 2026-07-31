@@ -10,6 +10,7 @@ __pycache__/
 Recursos/WebView2/
 publicacion/
 publicacion_*/
+ArtefactosGenerados/
 /*.obj
 
 # Perfiles locales y configuraciones con secretos.
