@@ -543,6 +543,23 @@ function Get-PortableExecutableMachine {
     }
 }
 
+function ConvertTo-WindowsExtendedPath {
+    param(
+        [string]$Ruta
+    )
+
+    # Permite que las API Win32 lean metadatos en rutas superiores a MAX_PATH.
+    $rutaCompleta = [System.IO.Path]::GetFullPath($Ruta)
+    if ($rutaCompleta.StartsWith('\\?\', [System.StringComparison]::Ordinal)) {
+        return $rutaCompleta
+    }
+    if ($rutaCompleta.StartsWith('\\', [System.StringComparison]::Ordinal)) {
+        return '\\?\UNC\' + $rutaCompleta.Substring(2)
+    }
+
+    return '\\?\' + $rutaCompleta
+}
+
 function Get-RuntimeContentHash {
     param(
         [string]$Ruta
@@ -615,8 +632,10 @@ function Test-WebView2RuntimeFolder {
         -HashEsperado $hashEjecutableWebView2Fijado `
         -Descripcion 'msedgewebview2.exe' | Out-Null
 
-    $versionEjecutable = $ejecutableWebView2.VersionInfo.FileVersion
-    $versionProducto = $ejecutableWebView2.VersionInfo.ProductVersion
+    $rutaVersion = ConvertTo-WindowsExtendedPath -Ruta $ejecutableWebView2.FullName
+    $informacionVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($rutaVersion)
+    $versionEjecutable = $informacionVersion.FileVersion
+    $versionProducto = $informacionVersion.ProductVersion
     if ($versionEjecutable -ne $versionWebView2Fijada -or $versionProducto -ne $versionWebView2Fijada) {
         throw "La version de msedgewebview2.exe no coincide. Esperada: $versionWebView2Fijada. Archivo: $versionEjecutable. Producto: $versionProducto."
     }

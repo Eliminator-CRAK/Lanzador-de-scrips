@@ -20,7 +20,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("3345CEC7106D6A8EB3A5770DFF97DF36CB0750DF005331B54AB551CDF11E3DFB", publicacion, StringComparison.Ordinal);
         Assert.Contains("$arquitecturaPeX64 = 0x8664", publicacion, StringComparison.Ordinal);
         Assert.Contains("60926d99-f201-46bb-91a0-d868dc06b275", publicacion, StringComparison.Ordinal);
-        Assert.Contains("VersionInfo.FileVersion", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$informacionVersion.FileVersion", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$informacionVersion.ProductVersion", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft Corporation", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Sort-Object { [version]", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Get-WebView2FixedRuntimeInfo", publicacion, StringComparison.Ordinal);
@@ -63,6 +64,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("FinalReleaseComObject($vista)", publicacion, StringComparison.Ordinal);
         Assert.Contains("[void]$vista.Execute()", publicacion, StringComparison.Ordinal);
         Assert.Contains("[void]$vista.Close()", publicacion, StringComparison.Ordinal);
+        Assert.Contains("function ConvertTo-WindowsExtendedPath", publicacion, StringComparison.Ordinal);
+        Assert.Contains("GetVersionInfo($rutaVersion)", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA-256 final", publicacion, StringComparison.Ordinal);
     }
 
