@@ -89,6 +89,10 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[18.0,19.0)", preparacion, StringComparison.Ordinal);
         Assert.Contains("'/a'", compilacion, StringComparison.Ordinal);
         Assert.Contains("MsiAdminImage", compilacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-Msi-WebView2-", compilacion, StringComparison.Ordinal);
+        Assert.Contains("FileAttributes]::ReparsePoint", compilacion, StringComparison.Ordinal);
+        Assert.Contains("$env:InstalledWebView2RuntimeSource = $runtimeMsi", compilacion, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.Directory]::Delete($runtimeMsi, $true)", compilacion, StringComparison.Ordinal);
         Assert.Contains("El ejecutable incluido en el MSI no conserva una firma Authenticode valida", compilacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Product.Community", preparacion, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Product.Community", compilacion, StringComparison.OrdinalIgnoreCase);

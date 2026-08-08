@@ -56,6 +56,25 @@ $runtime = [System.IO.Path]::GetFullPath($RutaRuntimeWebView2)
 if (-not [System.IO.File]::Exists((Join-Path $runtime 'msedgewebview2.exe'))) {
     throw "No se encontro el runtime fijo de WebView2: $runtime"
 }
+if (([System.IO.DirectoryInfo]::new($runtime).Attributes -band
+        [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    @(Get-ChildItem -LiteralPath $runtime -Recurse -Force |
+        Where-Object {
+            ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+        }).Count -gt 0) {
+    throw 'El runtime fijo de WebView2 no puede contener puntos de reanalisis.'
+}
+
+$raizTemporal = [System.IO.Path]::GetFullPath(
+    [System.IO.Path]::GetTempPath()).TrimEnd('\')
+$runtimeMsi = [System.IO.Path]::GetFullPath((Join-Path $raizTemporal (
+    'LanzadorScripts-Msi-WebView2-' + [System.Guid]::NewGuid().ToString('N'))))
+$prefijoTemporal = $raizTemporal + '\'
+if (-not $runtimeMsi.StartsWith(
+        $prefijoTemporal,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "La copia temporal del runtime queda fuera de TEMP: $runtimeMsi"
+}
 
 $prefijoObj = $objRaiz.TrimEnd('\') + '\'
 if (-not $objInstalador.StartsWith($prefijoObj, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -125,10 +144,18 @@ $entornoAnterior = @{
 }
 
 try {
+    [System.IO.Directory]::CreateDirectory($runtimeMsi) | Out-Null
+    Get-ChildItem -LiteralPath $runtime -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $runtimeMsi -Recurse -Force
+    }
+    if (-not [System.IO.File]::Exists((Join-Path $runtimeMsi 'msedgewebview2.exe'))) {
+        throw 'No se pudo preparar la copia corta del runtime WebView2 para el MSI.'
+    }
+
     $env:LANZADOR_GIT_REVISION = $revisionGit
     $env:LANZADOR_SIGNING_THUMBPRINT = if ($DesarrolloSinFirma) { '' } else { $CertThumbprint }
     $env:LANZADOR_TIMESTAMP_SERVER = $TimestampServer
-    $env:InstalledWebView2RuntimeSource = $runtime
+    $env:InstalledWebView2RuntimeSource = $runtimeMsi
     if ([System.IO.File]::Exists($msi)) {
         [System.IO.File]::Delete($msi)
     }
@@ -144,6 +171,15 @@ finally {
             $nombre,
             $entornoAnterior[$nombre],
             [System.EnvironmentVariableTarget]::Process)
+    }
+
+    if ([System.IO.Directory]::Exists($runtimeMsi)) {
+        try {
+            [System.IO.Directory]::Delete($runtimeMsi, $true)
+        }
+        catch {
+            Write-Warning "No se pudo limpiar el runtime MSI temporal: $($_.Exception.Message)"
+        }
     }
 }
 
