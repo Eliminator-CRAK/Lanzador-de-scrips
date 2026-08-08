@@ -889,7 +889,7 @@ function Assert-PublishedMsi {
     try {
         $baseDatos = $instalador.OpenDatabase((Resolve-Path -LiteralPath $RutaMsi).Path, 0)
         $vista = $baseDatos.OpenView('SELECT `Property`, `Value` FROM `Property`')
-        $vista.Execute()
+        [void]$vista.Execute()
         $propiedades = @{}
         while ($true) {
             $fila = $vista.Fetch()
