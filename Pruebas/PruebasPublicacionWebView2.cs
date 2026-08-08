@@ -59,6 +59,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("$publicacionNuevaInstalada = $true", publicacion, StringComparison.Ordinal);
         Assert.Contains("ProductVersion no identifica el commit publicado", publicacion, StringComparison.Ordinal);
         Assert.Contains("TimeStamperCertificate", publicacion, StringComparison.Ordinal);
+        Assert.Contains("FinalReleaseComObject($fila)", publicacion, StringComparison.Ordinal);
+        Assert.Contains("FinalReleaseComObject($vista)", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA-256 final", publicacion, StringComparison.Ordinal);
     }
 

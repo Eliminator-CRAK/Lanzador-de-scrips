@@ -884,16 +884,27 @@ function Assert-PublishedMsi {
     }
 
     $instalador = New-Object -ComObject WindowsInstaller.Installer
-    $baseDatos = $instalador.OpenDatabase((Resolve-Path -LiteralPath $RutaMsi).Path, 0)
+    $baseDatos = $null
+    $vista = $null
     try {
+        $baseDatos = $instalador.OpenDatabase((Resolve-Path -LiteralPath $RutaMsi).Path, 0)
         $vista = $baseDatos.OpenView('SELECT `Property`, `Value` FROM `Property`')
         $vista.Execute()
         $propiedades = @{}
-        while ($fila = $vista.Fetch()) {
-            $propiedades[[string]$fila.StringData(1)] = [string]$fila.StringData(2)
+        while ($true) {
+            $fila = $vista.Fetch()
+            if ($null -eq $fila) {
+                break
+            }
+
+            try {
+                $propiedades[[string]$fila.StringData(1)] = [string]$fila.StringData(2)
+            }
+            finally {
+                [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($fila) | Out-Null
+            }
         }
 
-        $vista.Close()
         if ($propiedades.ProductVersion -ne $versionProductoEsperada -or
             $propiedades.ALLUSERS -ne '1' -or
             $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}' -or
@@ -902,7 +913,17 @@ function Assert-PublishedMsi {
         }
     }
     finally {
-        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($baseDatos) | Out-Null
+        if ($null -ne $vista) {
+            try {
+                $vista.Close()
+            }
+            catch {
+            }
+            [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($vista) | Out-Null
+        }
+        if ($null -ne $baseDatos) {
+            [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($baseDatos) | Out-Null
+        }
         [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($instalador) | Out-Null
     }
 
