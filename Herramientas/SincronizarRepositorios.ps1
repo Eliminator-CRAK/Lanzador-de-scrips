@@ -76,14 +76,25 @@ function Get-RemoteBranchSha {
 
     # Consulta la rama sin interpretar nombres suministrados como opciones.
     $referencia = "refs/heads/$NombreRama"
-    $salida = & git ls-remote --heads $Remoto $referencia 2>&1
+    $salida = @(& git ls-remote --heads $Remoto $referencia 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "No se pudo consultar $Remoto/$NombreRama."
     }
     if (@($salida).Count -eq 0) {
         return ''
     }
-    return ([string]$salida[0]).Split("`t")[0].Trim()
+    if ($salida.Count -ne 1) {
+        throw "$Remoto devolvio varias referencias para $NombreRama."
+    }
+
+    $campos = ([string]$salida[0]).Trim() -split '\s+'
+    if ($campos.Count -ne 2 -or
+        $campos[0] -notmatch '^(?:[0-9a-f]{40}|[0-9a-f]{64})$' -or
+        $campos[1] -ne $referencia) {
+        throw "$Remoto devolvio una referencia no valida para $NombreRama."
+    }
+
+    return $campos[0]
 }
 
 function Assert-BranchName {
