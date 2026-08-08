@@ -166,7 +166,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void AplicacionNoIncluyeInstaladores()
+    public void PublicacionIncluyeMsiSinInstaladoresRuntime()
     {
         var raiz = ObtenerRaizProyecto();
         var proyecto = File.ReadAllText(Path.Combine(raiz, "LanzadorScripts.csproj"));
@@ -176,6 +176,8 @@ public sealed class PruebasLanzadorScripts
         Assert.DoesNotContain("Start-Process", publicacion, StringComparison.Ordinal);
         Assert.Contains("InicializarArtefactos", publicacion, StringComparison.Ordinal);
         Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
+        Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.7.0-x64.msi", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));
@@ -322,7 +324,7 @@ public sealed class PruebasLanzadorScripts
         var raizLocalAppData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "LanzadorScripts",
-            "WebView2-v4",
+            "WebView2-v5",
             "Sesiones");
         var raizProgramData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         var raizWindows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
@@ -359,15 +361,15 @@ public sealed class PruebasLanzadorScripts
         {
             RutasAplicacion.RutaConfiguracionUsuario,
             RutasAplicacion.RutaLogsUsuario,
-            RutasAplicacion.RutaAuditoria,
-            RutasAplicacion.RutaTokensUsuario
+            RutasAplicacion.RutaTokensUsuario,
+            RutasAplicacion.RutaStaging
         };
 
         Assert.All(rutasDatos, ruta => Assert.StartsWith(programData, ruta, StringComparison.OrdinalIgnoreCase));
         Assert.StartsWith(localAppData, RutasAplicacion.RutaRaizWebView2Usuario, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(localAppData, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(programFiles, RutasAplicacion.RutaRuntimesWebView2, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(programFiles, RutasAplicacion.RutaStaging, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(programData, RutasAplicacion.RutaStaging, StringComparison.OrdinalIgnoreCase);
         Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
         Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizLocalAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
     }
@@ -1628,6 +1630,7 @@ internal sealed class EntornoPruebas : IDisposable
         File.WriteAllText(Path.Combine(raiz, "sub", "ok.cmd"), "echo ok");
         Directory.CreateDirectory(Path.Combine(raiz, "vacia"));
         Directory.CreateDirectory(Path.Combine(raiz, "PERMISOS"));
+        Directory.CreateDirectory(Path.Combine(raiz, "PERMISOS", ServicioAuditoria.NombreCarpetaAuditoria));
         File.WriteAllText(Path.Combine(raiz, "PERMISOS", "bloqueado.ps1"), "Write-Output 'no'");
         Directory.CreateDirectory(Path.Combine(raiz, ".git"));
         File.WriteAllText(Path.Combine(raiz, ".git", "bloqueado.ps1"), "Write-Output 'no'");

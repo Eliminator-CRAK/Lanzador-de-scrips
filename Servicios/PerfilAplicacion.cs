@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Normaliza el perfil local usado por la aplicacion portable.
+// Descripcion: Normaliza la identidad usada para separar datos locales por usuario.
 
 using System.Security.Cryptography;
 using System.Security.Principal;

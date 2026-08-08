@@ -4,5 +4,8 @@
   <Folder Name="/Pruebas/">
     <Project Path="Pruebas/LanzadorScripts.Pruebas.csproj" />
   </Folder>
+  <Project Path="Instalador/LanzadorScripts.Instalador.vdproj" Type="Installer">
+    <Build />
+  </Project>
   <Project Path="LanzadorScripts.csproj" />
 </Solution>

@@ -34,6 +34,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts;
     private readonly ServicioBrokerElevado _servicioBrokerElevado = new();
     private readonly string _rutaStaging;
+    private int _desechado;
 
     public GestorEjecucionesWeb(
         ServicioAuditoria servicioAuditoria,
@@ -68,14 +69,15 @@ public sealed class GestorEjecucionesWeb : IDisposable
             .ToArray();
     }
 
-    public Guid Iniciar(
+    public async Task<ResultadoInicioEjecucion> IniciarAsync(
         ScriptInterno script,
         string rutaLogs,
         UsuarioCliente usuario,
         bool permitirExecutionPolicyBypass,
         JsonObject permisos,
         CatalogoScripts catalogo,
-        bool modoDesarrolloFirmas)
+        bool modoDesarrolloFirmas,
+        string sha256)
     {
         PurgarFinalizadasAntiguas();
         var permisosCongelados = JsonNode.Parse(permisos.ToJsonString()) as JsonObject ?? new JsonObject();
@@ -90,15 +92,26 @@ public sealed class GestorEjecucionesWeb : IDisposable
             permitirExecutionPolicyBypass,
             permisosCongelados,
             catalogoCongelado,
-            modoDesarrolloFirmas);
+            modoDesarrolloFirmas,
+            sha256);
+        var auditoria = await _servicioAuditoria.RegistrarInicioEjecucionAsync(
+            ejecucion.Id,
+            script,
+            usuario,
+            sha256);
+        if (!auditoria.Exito)
+        {
+            ejecucion.Dispose();
+            return ResultadoInicioEjecucion.Error(auditoria.Mensaje);
+        }
+
         _ejecuciones[ejecucion.Id] = ejecucion;
         ejecucion.AgregarEvento("exito", $"> Iniciando {script.Nombre}...", "#B5CEA8");
-        _ = _servicioAuditoria.RegistrarInicioEjecucionAsync(ejecucion.Id, script, usuario);
-        _ = Task.Run(() => EjecutarAsync(ejecucion));
-        return ejecucion.Id;
+        ejecucion.TareaEjecucion = Task.Run(() => EjecutarAsync(ejecucion));
+        return ResultadoInicioEjecucion.Correcto(ejecucion.Id);
     }
 
-    public void Cancelar(Guid id)
+    public async Task CancelarAsync(Guid id)
     {
         if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada)
         {
@@ -106,7 +119,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
 
         ejecucion.Cancelada = true;
-        _ = _servicioAuditoria.RegistrarEventoSeguridadAsync(
+        await _servicioAuditoria.RegistrarEventoSeguridadAsync(
             "ejecucion.cancelacion",
             ejecucion.Usuario.NombreUsuario,
             ejecucion.Script.Id,
@@ -227,13 +240,25 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     public void Dispose()
     {
+        Cerrar(TimeSpan.FromSeconds(30));
+    }
+
+    internal void Cerrar(TimeSpan tiempoMaximo)
+    {
+        if (Interlocked.Exchange(ref _desechado, 1) != 0)
+        {
+            return;
+        }
+
+        var espera = tiempoMaximo < TimeSpan.Zero ? TimeSpan.Zero : tiempoMaximo;
+        var cancelacionesBroker = new List<Task>();
         foreach (var ejecucion in _ejecuciones.Values)
         {
             try
             {
                 if (ejecucion.CancelarBroker is not null)
                 {
-                    _ = ejecucion.CancelarBroker();
+                    cancelacionesBroker.Add(ejecucion.CancelarBroker());
                 }
 
                 if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
@@ -244,8 +269,28 @@ public sealed class GestorEjecucionesWeb : IDisposable
             catch
             {
             }
+        }
 
-            ejecucion.Dispose();
+        var tareas = _ejecuciones.Values
+            .Select(ejecucion => ejecucion.TareaEjecucion)
+            .Where(tarea => tarea is not null)
+            .Cast<Task>()
+            .Concat(cancelacionesBroker)
+            .ToArray();
+        try
+        {
+            _ = Task.WhenAll(tareas).Wait(espera);
+        }
+        catch
+        {
+        }
+
+        foreach (var ejecucion in _ejecuciones.Values)
+        {
+            if (ejecucion.TareaEjecucion?.IsCompleted != false)
+            {
+                ejecucion.Dispose();
+            }
         }
     }
 
@@ -371,14 +416,23 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
         finally
         {
-            ejecucion.MarcarFinalizada();
-            await _servicioAuditoria.RegistrarFinEjecucionAsync(
+            var auditoria = await _servicioAuditoria.RegistrarFinEjecucionAsync(
                 ejecucion.Id,
                 ejecucion.Script,
                 ejecucion.Usuario,
+                ejecucion.Sha256,
                 resultadoAuditoria,
                 codigoSalida,
                 detalleAuditoria);
+            if (!auditoria.Exito)
+            {
+                ejecucion.AgregarEvento(
+                    "error",
+                    "> El resultado queda pendiente de confirmar en la auditoria remota. Se bloquearan nuevas ejecuciones.",
+                    "#F44747");
+            }
+
+            ejecucion.MarcarFinalizada();
         }
     }
 
@@ -964,40 +1018,57 @@ function global:Get-Credential {
 
     private sealed record PlanPowerShell(bool UsarRutaRapida, string Comando);
 
-    private sealed class EjecucionWeb(
-        ScriptInterno script,
-        string rutaLogs,
-        UsuarioCliente usuario,
-        bool permitirExecutionPolicyBypass,
-        JsonObject permisos,
-        CatalogoScripts catalogo,
-        bool modoDesarrolloFirmas) : IDisposable
+    private sealed class EjecucionWeb : IDisposable
     {
         private readonly List<EventoCliente> _eventos = [];
         private readonly SemaphoreSlim _senal = new(0);
         private readonly object _bloqueo = new();
 
+        public EjecucionWeb(
+            ScriptInterno script,
+            string rutaLogs,
+            UsuarioCliente usuario,
+            bool permitirExecutionPolicyBypass,
+            JsonObject permisos,
+            CatalogoScripts catalogo,
+            bool modoDesarrolloFirmas,
+            string sha256)
+        {
+            Script = script;
+            RutaLogs = rutaLogs;
+            Usuario = usuario;
+            PermitirExecutionPolicyBypass = permitirExecutionPolicyBypass;
+            Permisos = permisos;
+            Catalogo = catalogo;
+            ModoDesarrolloFirmas = modoDesarrolloFirmas;
+            Sha256 = sha256;
+        }
+
         public Guid Id { get; } = Guid.NewGuid();
 
-        public ScriptInterno Script { get; } = script;
+        public ScriptInterno Script { get; }
 
-        public string RutaLogs { get; } = rutaLogs;
+        public string RutaLogs { get; }
 
-        public UsuarioCliente Usuario { get; } = usuario;
+        public UsuarioCliente Usuario { get; }
 
-        public bool PermitirExecutionPolicyBypass { get; } = permitirExecutionPolicyBypass;
+        public bool PermitirExecutionPolicyBypass { get; }
 
-        public JsonObject Permisos { get; } = permisos;
+        public JsonObject Permisos { get; }
 
-        public CatalogoScripts Catalogo { get; } = catalogo;
+        public CatalogoScripts Catalogo { get; }
 
-        public bool ModoDesarrolloFirmas { get; } = modoDesarrolloFirmas;
+        public bool ModoDesarrolloFirmas { get; }
+
+        public string Sha256 { get; }
 
         public Process? Proceso { get; set; }
 
         public string? RutaScriptPreparado { get; set; }
 
         public Func<Task>? CancelarBroker { get; set; }
+
+        public Task? TareaEjecucion { get; set; }
 
         public bool Cancelada { get; set; }
 
@@ -1105,4 +1176,17 @@ function global:Get-Credential {
     }
 
     private sealed record ResultadoEjecucionBroker(string Resultado, int? CodigoSalida, string? Detalle);
+}
+
+public sealed record ResultadoInicioEjecucion(bool Exito, Guid? EjecucionId, string Mensaje)
+{
+    public static ResultadoInicioEjecucion Correcto(Guid ejecucionId)
+    {
+        return new ResultadoInicioEjecucion(true, ejecucionId, string.Empty);
+    }
+
+    public static ResultadoInicioEjecucion Error(string mensaje)
+    {
+        return new ResultadoInicioEjecucion(false, null, mensaje);
+    }
 }

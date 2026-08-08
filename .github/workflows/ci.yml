@@ -22,7 +22,8 @@ concurrency:
 
 jobs:
   build-test-publish:
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, vs-professional-2026]
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -41,13 +42,13 @@ jobs:
         run: dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
 
       - name: Build Release
-        run: dotnet build .\LanzadorScripts.slnx -c Release --no-restore
+        run: dotnet build .\LanzadorScripts.csproj -c Release --no-restore
 
       - name: Test
-        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-build
+        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
 
       - name: Audit NuGet packages
-        run: dotnet list .\LanzadorScripts.slnx package --vulnerable --include-transitive
+        run: dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
 
       - name: Verify Visual C++ x64
         shell: powershell

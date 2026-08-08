@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Pruebas del runtime WebView2 y del ejecutable portable publicado.
+// Descripcion: Pruebas del runtime WebView2 y de las distribuciones publicadas.
 
 using Xunit;
 
@@ -45,7 +45,10 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("Move-Item -LiteralPath $cabTemporal -Destination $cab -Force", publicacion, StringComparison.Ordinal);
         Assert.Contains("status --porcelain --untracked-files=all", publicacion, StringComparison.Ordinal);
         Assert.Contains("Assert-PublishedExecutable", publicacion, StringComparison.Ordinal);
-        Assert.Contains("-SufijoProducto $sufijoProducto", publicacion, StringComparison.Ordinal);
+        Assert.Contains("-SufijoProducto '.portable'", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.7.0-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.7.0-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
         Assert.Contains("obj\\PublicacionStaging", publicacion, StringComparison.Ordinal);
         Assert.Contains("Sustituye la publicacion solo despues de validar todo el staging", publicacion, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $stagingCompleta -Destination $salidaCompleta", publicacion, StringComparison.Ordinal);
@@ -58,16 +61,22 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion160()
+    public void ProyectoPublicaVersion170()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
+        var cliente = File.ReadAllText(ObtenerRutaProyecto(
+            "ClienteWeb",
+            "assets",
+            "index-DgdNDMM1.js"));
 
-        Assert.Contains("<Version>1.6.0</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.6.0.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.6.0.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.7.0</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.7.0.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.7.0.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("v1.7.0", cliente, StringComparison.Ordinal);
+        Assert.DoesNotContain("v1.2.0", cliente, StringComparison.Ordinal);
     }
 
     // Comprueba que el icono conserva resoluciones adecuadas para Windows.
@@ -110,8 +119,8 @@ public sealed class PruebasPublicacionWebView2
         var plantillaRecursos = File.ReadAllText(ObtenerRutaProyecto("LanzadorNativo", "LanzadorNativo.rc.in"));
 
         var firmaRuntime = publicacion.IndexOf("Write-Host 'Firmando runtime .NET interno...'", StringComparison.Ordinal);
-        var creacionNativa = publicacion.IndexOf("Write-Host 'Creando lanzadores nativos normal y portable...'", StringComparison.Ordinal);
-        var firmaFinal = publicacion.IndexOf("Write-Host 'Firmando los dos lanzadores finales...'", StringComparison.Ordinal);
+        var creacionNativa = publicacion.IndexOf("Write-Host 'Creando el lanzador nativo portable...'", StringComparison.Ordinal);
+        var firmaFinal = publicacion.IndexOf("Write-Host 'Firmando el lanzador portable final...'", StringComparison.Ordinal);
 
         Assert.True(firmaRuntime >= 0);
         Assert.True(creacionNativa > firmaRuntime);
@@ -126,14 +135,13 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("SetEnvironmentVariableW(L\"TMP\"", codigoNativo, StringComparison.Ordinal);
         Assert.DoesNotContain("WEBVIEW2_USER_DATA_FOLDER", codigoNativo, StringComparison.Ordinal);
         Assert.DoesNotContain("L\"WebView2\\\\Perfil\"", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("FOLDERID_ProgramFiles", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("FOLDERID_ProgramData", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Runtime.exe", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_DISTRIBUTION_EXE", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("LANZADOR_LIMPIEZA_COMPLETA", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable.exe", publicacion, StringComparison.Ordinal);
-        Assert.Contains("-Variante normal", publicacion, StringComparison.Ordinal);
-        Assert.Contains("-Variante portable", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.7.0-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Variante normal", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("LANZADOR_LIMPIEZA_COMPLETA", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("FOLDERID_ProgramFiles", codigoNativo, StringComparison.Ordinal);
+        Assert.DoesNotContain("FOLDERID_ProgramData", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("__RUTA_ICONO__", plantillaRecursos, StringComparison.Ordinal);
         Assert.DoesNotContain("FOLDERID_LocalAppData", codigoNativo, StringComparison.Ordinal);
         Assert.DoesNotContain("LocalApplicationData", codigoNativo, StringComparison.Ordinal);
@@ -145,6 +153,7 @@ public sealed class PruebasPublicacionWebView2
     {
         var ci = File.ReadAllText(ObtenerRutaProyecto(".github", "workflows", "ci.yml"));
         var etapas = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "EjecutarEtapaCi.ps1"));
+        var preparacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PrepararVisualStudioInstalador.ps1"));
 
         Assert.Contains(
             "./Herramientas/EjecutarEtapaCi.ps1 -Etapa PrepararPowerShell",
@@ -154,10 +163,15 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("9E725837AF682B87BB212CD1EFE3657C06C540404203810857EC2516AE2CA322", etapas, StringComparison.Ordinal);
         Assert.Contains("PowerShell-$version-win-x64.zip", etapas, StringComparison.Ordinal);
         Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", etapas, StringComparison.Ordinal);
-        Assert.Contains("Microsoft.VisualStudio.Component.VC.Tools.x86.x64", etapas, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.VisualStudio.Component.VC.Tools.x86.x64", preparacion, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.VisualStudio.Product.Professional", preparacion, StringComparison.Ordinal);
+        Assert.Contains("vs-professional-2026", ci, StringComparison.Ordinal);
         Assert.Contains("X509Store]::new", etapas, StringComparison.Ordinal);
         Assert.Contains("StoreLocation]::LocalMachine", etapas, StringComparison.Ordinal);
-        Assert.DoesNotContain("StoreLocation]::CurrentUser", etapas, StringComparison.Ordinal);
+        Assert.Contains("StoreLocation]::CurrentUser", etapas, StringComparison.Ordinal);
+        Assert.Contains("Import-PfxCertificate", etapas, StringComparison.Ordinal);
+        Assert.Contains("Remove-ConfianzaCertificadoFirmaCi", etapas, StringComparison.Ordinal);
+        Assert.Contains("El PFX del runner no coincide", etapas, StringComparison.Ordinal);
         Assert.DoesNotContain("Import-Certificate", etapas, StringComparison.Ordinal);
         Assert.Contains("Remove-Item -LiteralPath $certPath", etapas, StringComparison.Ordinal);
     }

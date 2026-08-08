@@ -11,6 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $raizRepositorio = Split-Path -Parent $PSScriptRoot
 $huellaFirmaEsperada = '6C654649369000DDE0AA70F62645058D9A3437F5'
+$almacenesConfianzaAgregada = [System.Collections.Generic.List[
+    System.Security.Cryptography.X509Certificates.StoreName]]::new()
 
 function Preparar-PowerShell {
     # Instala la version fijada de PowerShell despues de verificar su huella.
@@ -35,16 +37,8 @@ function Preparar-PowerShell {
 }
 
 function Verificar-Cpp {
-    # Comprueba que el runner contiene las herramientas C++ x64.
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $instalacion = & $vswhere `
-        -latest `
-        -products * `
-        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-        -property installationPath
-    if ([string]::IsNullOrWhiteSpace($instalacion)) {
-        throw 'La imagen no contiene las herramientas C++ x64 requeridas.'
-    }
+    # Comprueba Professional 2026, C++ e Installer Projects en el runner corporativo.
+    & "$PSScriptRoot\PrepararVisualStudioInstalador.ps1"
 }
 
 function Confiar-CertificadoFirmaCi {
@@ -83,12 +77,20 @@ function Confiar-CertificadoFirmaCi {
                 try {
                     $almacen.Open(
                         [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-                    $almacen.Add($certificadoPublico)
                     $coincidencias = $almacen.Certificates.Find(
                         [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
                         $Certificado.Thumbprint,
                         $false)
-                    if ($coincidencias.Count -lt 1) {
+                    if ($coincidencias.Count -eq 0) {
+                        $almacen.Add($certificadoPublico)
+                        $almacenesConfianzaAgregada.Add($nombreAlmacen)
+                        $coincidencias = $almacen.Certificates.Find(
+                            [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                            $Certificado.Thumbprint,
+                            $false)
+                    }
+
+                    if ($coincidencias.Count -ne 1) {
                         throw "No se pudo confiar en el certificado dentro de $nombreAlmacen."
                     }
                 }
@@ -118,6 +120,7 @@ function Publicar-Aplicacion {
         }
 
         $certPath = Join-Path $env:RUNNER_TEMP 'lanzador-signing.pfx'
+        $certificadoImportado = $false
         try {
             Write-Host 'Cargando certificado de firma del runner...'
             [IO.File]::WriteAllBytes(
@@ -127,51 +130,121 @@ function Publicar-Aplicacion {
                 $env:WINDOWS_SIGNING_CERT_PASSWORD `
                 -AsPlainText `
                 -Force
-            $certificado = Get-PfxCertificate `
+            $certificadoPfx = Get-PfxCertificate `
                 -FilePath $certPath `
                 -Password $securePassword
+            if (-not $certificadoPfx.Thumbprint.Equals(
+                    $huellaFirmaEsperada,
+                    [StringComparison]::OrdinalIgnoreCase) -or
+                -not $certificadoPfx.HasPrivateKey -or
+                $certificadoPfx.NotAfter.ToUniversalTime() -le [DateTime]::UtcNow -or
+                $certificadoPfx.EnhancedKeyUsageList.ObjectId -notcontains '1.3.6.1.5.5.7.3.3') {
+                throw 'El PFX del runner no coincide con el certificado Authenticode fijado.'
+            }
+
+            $certificado = Get-ChildItem -Path Cert:\CurrentUser\My |
+                Where-Object {
+                    $_.Thumbprint -eq $certificadoPfx.Thumbprint -and
+                    $_.HasPrivateKey
+                } |
+                Select-Object -First 1
+            if ($null -eq $certificado) {
+                $certificado = Import-PfxCertificate `
+                    -FilePath $certPath `
+                    -CertStoreLocation Cert:\CurrentUser\My `
+                    -Password $securePassword `
+                    -Exportable:$false
+                $certificadoImportado = $true
+            }
+
             Write-Host 'Aprovisionando confianza del certificado en el runner...'
             Confiar-CertificadoFirmaCi -Certificado $certificado
             Write-Host 'Certificado de firma preparado correctamente.'
             & "$PSScriptRoot\PublicarPortable.ps1" `
-                -CertPath $certPath `
-                -CertPassword $securePassword
+                -CertThumbprint $certificado.Thumbprint
         }
         finally {
+            if ($certificadoImportado) {
+                $almacenPrivado = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+                    [System.Security.Cryptography.X509Certificates.StoreName]::My,
+                    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+                try {
+                    $almacenPrivado.Open(
+                        [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                    foreach ($certificadoGuardado in $almacenPrivado.Certificates.Find(
+                            [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                            $huellaFirmaEsperada,
+                            $false)) {
+                        $almacenPrivado.Remove($certificadoGuardado)
+                    }
+                }
+                finally {
+                    $almacenPrivado.Close()
+                }
+            }
+
+            Remove-ConfianzaCertificadoFirmaCi
             Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue
         }
     }
     else {
-        & "$PSScriptRoot\PublicarPortable.ps1" -AllowUnsignedForDev
+        & "$PSScriptRoot\PublicarPortable.ps1" `
+            -CertThumbprint '' `
+            -AllowUnsignedForDev
     }
 }
 
+function Remove-ConfianzaCertificadoFirmaCi {
+    # Retira solo las anclas agregadas por esta ejecucion del runner.
+    foreach ($nombreAlmacen in $almacenesConfianzaAgregada) {
+        $almacen = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+            $nombreAlmacen,
+            [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+        try {
+            $almacen.Open(
+                [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            foreach ($certificado in $almacen.Certificates.Find(
+                    [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                    $huellaFirmaEsperada,
+                    $false)) {
+                $almacen.Remove($certificado)
+            }
+        }
+        finally {
+            $almacen.Close()
+        }
+    }
+
+    $almacenesConfianzaAgregada.Clear()
+}
+
 function Verificar-Artefacto {
-    # Comprueba los dos ejecutables y sus firmas.
+    # Comprueba el MSI, el portable y sus firmas.
     $carpeta = Join-Path $raizRepositorio 'publicacion'
-    $ejecutablesEsperados = @(
-        (Join-Path $carpeta 'LanzadorScripts.exe'),
-        (Join-Path $carpeta 'LanzadorScripts_Portable.exe')
+    $archivosEsperados = @(
+        (Join-Path $carpeta 'LanzadorScripts-1.7.0-x64.msi'),
+        (Join-Path $carpeta 'LanzadorScripts_Portable-1.7.0-x64.exe')
     )
-    foreach ($exe in $ejecutablesEsperados) {
-        if (-not (Test-Path -LiteralPath $exe)) {
-            throw "No se genero $(Split-Path -Leaf $exe)."
+    foreach ($archivo in $archivosEsperados) {
+        if (-not (Test-Path -LiteralPath $archivo)) {
+            throw "No se genero $(Split-Path -Leaf $archivo)."
         }
     }
 
     $archivos = @(Get-ChildItem -LiteralPath $carpeta -Recurse -File)
     if ($archivos.Count -ne 2 -or
-        @($archivos | Where-Object { $_.FullName -notin $ejecutablesEsperados }).Count -gt 0) {
-        throw "La publicacion debe generar exactamente los dos EXE esperados. Archivos: $($archivos.Count)"
+        @($archivos | Where-Object { $_.FullName -notin $archivosEsperados }).Count -gt 0) {
+        throw "La publicacion debe generar exactamente el MSI y el portable esperados. Archivos: $($archivos.Count)"
     }
 
-    foreach ($exe in $ejecutablesEsperados) {
-        $firma = Get-AuthenticodeSignature -LiteralPath $exe
-        if ($env:RELEASE_BUILD -eq 'true' -and $firma.Status -ne 'Valid') {
-            throw "La firma de $(Split-Path -Leaf $exe) no es valida: $($firma.Status)."
+    foreach ($archivo in $archivosEsperados) {
+        $firma = Get-AuthenticodeSignature -LiteralPath $archivo
+        if ($env:RELEASE_BUILD -eq 'true' -and
+            ($firma.Status -ne 'Valid' -or $null -eq $firma.TimeStamperCertificate)) {
+            throw "La firma de $(Split-Path -Leaf $archivo) no es valida: $($firma.Status)."
         }
 
-        Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
+        Get-FileHash -LiteralPath $archivo -Algorithm SHA256 | Format-List
     }
 }
 

@@ -61,13 +61,15 @@ public sealed class PruebasCicloVidaAplicacion
         var aplicacion = File.ReadAllText(ObtenerRutaProyecto("Aplicacion.xaml.cs"));
 
         Assert.Contains("new(AccionInstanciaAplicacion.Mostrar)", aplicacion, StringComparison.Ordinal);
+        Assert.Contains("$\"{PrefijoPipe}_{sufijoDistribucion}\"", aplicacion, StringComparison.Ordinal);
+        Assert.Contains("$\"{PrefijoMutex}_{sufijoDistribucion}\"", aplicacion, StringComparison.Ordinal);
         Assert.Contains("PipeOptions.CurrentUserOnly", aplicacion, StringComparison.Ordinal);
         Assert.Contains("LeerMensajeLimitadoAsync", aplicacion, StringComparison.Ordinal);
         Assert.Contains("MostrarDesdeInstanciaSecundaria", aplicacion, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void LanzadorDistingueLimpiezaNormalYCompleta()
+    public void LanzadorPortableAislaYLimpiaCadaSesion()
     {
         var nativo = File.ReadAllText(ObtenerRutaProyecto("LanzadorNativo", "LanzadorNativo.cpp"));
         var publicacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PublicarPortable.ps1"));
@@ -81,10 +83,13 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("EliminarArbolSeguroConReintentos", nativo, StringComparison.Ordinal);
         Assert.Contains("FILE_ATTRIBUTE_REPARSE_POINT", nativo, StringComparison.Ordinal);
         Assert.Contains("HayProcesoEnRuta", nativo, StringComparison.Ordinal);
-        Assert.Contains("LimpiezaCompleta", nativo, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts.exe", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable.exe", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$archivosPublicados.Count -ne 2", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LANZADOR_PORTABLE_ROOT", nativo, StringComparison.Ordinal);
+        Assert.Contains("LANZADOR_PORTABLE_SESSIONS_ROOT", nativo, StringComparison.Ordinal);
+        Assert.Contains("Sesion-", nativo, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.7.0-x64.exe", publicacion, StringComparison.Ordinal);
+
+        var tokens = File.ReadAllText(ObtenerRutaProyecto("Servicios", "ServicioTokensAdmin.cs"));
+        Assert.Contains("RutasAplicacion.Distribucion.EsPortable", tokens, StringComparison.Ordinal);
     }
 
     [Fact]

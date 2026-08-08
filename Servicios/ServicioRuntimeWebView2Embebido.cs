@@ -184,7 +184,7 @@ public sealed class ServicioRuntimeWebView2Embebido
                 }
 
                 File.WriteAllText(Path.Combine(carpetaTemporal, NombreArchivoHash), hash, Encoding.ASCII);
-                ReemplazarCarpeta(carpetaTemporal, carpetaDestino);
+                ReemplazarCarpeta(raiz, carpetaTemporal, carpetaDestino);
                 if (!ValidarRuntimeExtraido(carpetaDestino, hash, out var rutaRuntimeExtraido))
                 {
                     return ResultadoRuntimeWebView2Embebido.Error("El runtime WebView2 extraido no supero la validacion.");
@@ -204,7 +204,7 @@ public sealed class ServicioRuntimeWebView2Embebido
             }
             finally
             {
-                EliminarDirectorioSiExiste(carpetaTemporal);
+                EliminarDirectorioSiExiste(raiz, carpetaTemporal);
             }
         }
         catch (Exception ex) when (ex is IOException
@@ -223,6 +223,12 @@ public sealed class ServicioRuntimeWebView2Embebido
 
     private static Stream? AbrirRecursoEnsamblado()
     {
+        // La instalacion MSI usa directamente el runtime desplegado en Program Files.
+        if (!RutasAplicacion.Distribucion.EsPortable)
+        {
+            return null;
+        }
+
         return Assembly.GetExecutingAssembly().GetManifestResourceStream(NombreRecursoZip);
     }
 
@@ -357,11 +363,13 @@ public sealed class ServicioRuntimeWebView2Embebido
         }
     }
 
-    private static void ReemplazarCarpeta(string origen, string destino)
+    private static void ReemplazarCarpeta(string raiz, string origen, string destino)
     {
         if (Directory.Exists(destino))
         {
-            Directory.Delete(destino, recursive: true);
+            ServicioDirectoriosAplicacion.EliminarArbolSinAtravesarReanalisis(
+                raiz,
+                destino);
         }
 
         Directory.Move(origen, destino);
@@ -382,7 +390,7 @@ public sealed class ServicioRuntimeWebView2Embebido
             {
                 if (!RuntimeEstaEnUso(carpeta.FullName))
                 {
-                    EliminarDirectorioSiExiste(carpeta.FullName);
+                    EliminarDirectorioSiExiste(raiz, carpeta.FullName);
                 }
             }
         }
@@ -496,13 +504,15 @@ public sealed class ServicioRuntimeWebView2Embebido
         }
     }
 
-    private static void EliminarDirectorioSiExiste(string ruta)
+    private static void EliminarDirectorioSiExiste(string raiz, string ruta)
     {
         try
         {
             if (Directory.Exists(ruta))
             {
-                Directory.Delete(ruta, recursive: true);
+                ServicioDirectoriosAplicacion.EliminarArbolSinAtravesarReanalisis(
+                    raiz,
+                    ruta);
             }
         }
         catch
