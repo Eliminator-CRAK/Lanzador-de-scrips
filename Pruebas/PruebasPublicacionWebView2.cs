@@ -62,6 +62,7 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("FinalReleaseComObject($fila)", publicacion, StringComparison.Ordinal);
         Assert.Contains("FinalReleaseComObject($vista)", publicacion, StringComparison.Ordinal);
         Assert.Contains("[void]$vista.Execute()", publicacion, StringComparison.Ordinal);
+        Assert.Contains("[void]$vista.Close()", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA-256 final", publicacion, StringComparison.Ordinal);
     }
 

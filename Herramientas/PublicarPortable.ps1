@@ -915,7 +915,7 @@ function Assert-PublishedMsi {
     finally {
         if ($null -ne $vista) {
             try {
-                $vista.Close()
+                [void]$vista.Close()
             }
             catch {
             }
