@@ -4,7 +4,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('PrepararPowerShell', 'VerificarCpp', 'Publicar', 'VerificarArtefacto')]
+    [ValidateSet(
+        'VerificarDotnet',
+        'PrepararPowerShell',
+        'VerificarCpp',
+        'Publicar',
+        'VerificarArtefacto')]
     [string]$Etapa
 )
 
@@ -13,6 +18,19 @@ $raizRepositorio = Split-Path -Parent $PSScriptRoot
 $huellaFirmaEsperada = '6C654649369000DDE0AA70F62645058D9A3437F5'
 $almacenesConfianzaAgregada = [System.Collections.Generic.List[
     System.Security.Cryptography.X509Certificates.StoreName]]::new()
+
+function Verificar-Dotnet {
+    # Confirma el SDK compatible fijado por global.json sin modificar el runner.
+    $version = & dotnet --version
+    if ($LASTEXITCODE -ne 0 -or $version -notmatch '^10\.0\.2\d{2}$') {
+        throw "El runner debe tener un SDK .NET 10.0.2xx compatible con global.json. Version: $version"
+    }
+
+    & dotnet --info
+    if ($LASTEXITCODE -ne 0) {
+        throw 'No se pudo consultar la instalacion de .NET del runner.'
+    }
+}
 
 function Preparar-PowerShell {
     # Instala la version fijada de PowerShell despues de verificar su huella.
@@ -252,6 +270,7 @@ Push-Location $raizRepositorio
 try {
     # Ejecuta solamente la etapa solicitada por el workflow.
     switch ($Etapa) {
+        'VerificarDotnet' { Verificar-Dotnet }
         'PrepararPowerShell' { Preparar-PowerShell }
         'VerificarCpp' { Verificar-Cpp }
         'Publicar' { Publicar-Aplicacion }
