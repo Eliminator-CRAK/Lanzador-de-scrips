@@ -32,6 +32,25 @@ function Verificar-Dotnet {
     }
 }
 
+function Get-Sha256Archivo {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Ruta
+    )
+
+    # Calcula el hash sin depender de modulos opcionales de PowerShell.
+    $algoritmo = [System.Security.Cryptography.SHA256]::Create()
+    $flujo = [System.IO.File]::OpenRead($Ruta)
+    try {
+        return [System.BitConverter]::ToString(
+            $algoritmo.ComputeHash($flujo)).Replace('-', '')
+    }
+    finally {
+        $flujo.Dispose()
+        $algoritmo.Dispose()
+    }
+}
+
 function Preparar-PowerShell {
     # Instala la version fijada de PowerShell despues de verificar su huella.
     $version = '7.6.0'
@@ -41,11 +60,14 @@ function Preparar-PowerShell {
     $url = "https://github.com/PowerShell/PowerShell/releases/download/v$version/PowerShell-$version-win-x64.zip"
 
     Invoke-WebRequest -Uri $url -OutFile $zip
-    $hashReal = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+    $hashReal = Get-Sha256Archivo -Ruta $zip
     if ($hashReal -ne $hashEsperado) {
         throw "Hash de PowerShell inesperado: $hashReal"
     }
 
+    $moduloArchive = Join-Path $env:SystemRoot `
+        'System32\WindowsPowerShell\v1.0\Modules\Microsoft.PowerShell.Archive\Microsoft.PowerShell.Archive.psd1'
+    Import-Module -Name $moduloArchive -Force
     Expand-Archive -LiteralPath $zip -DestinationPath $destino -Force
     & (Join-Path $destino 'pwsh.exe') -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
     [IO.File]::AppendAllText(
