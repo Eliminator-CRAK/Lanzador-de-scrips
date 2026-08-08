@@ -37,6 +37,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.True(preparacion >= 0);
         Assert.True(compilacion > preparacion);
         Assert.Contains("Assert-WebView2EmbeddedResource -RutaEnsamblado", publicacion, StringComparison.Ordinal);
+        Assert.Contains("[System.Reflection.Assembly]::Load($bytesEnsamblado)", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("Assembly]::LoadFile", publicacion, StringComparison.Ordinal);
         Assert.Contains("Get-RuntimeContentHash -Ruta $origen", publicacion, StringComparison.Ordinal);
         Assert.Contains("return $ejecutableMsi.Directory.FullName", publicacion, StringComparison.Ordinal);
         Assert.Contains("Recursos.WebView2Runtime.zip", publicacion, StringComparison.Ordinal);

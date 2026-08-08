@@ -795,7 +795,9 @@ function Assert-WebView2EmbeddedResource {
         throw "No se encontro el ensamblado publicado para validar WebView2: $RutaEnsamblado"
     }
 
-    $ensamblado = [System.Reflection.Assembly]::LoadFile((Resolve-Path -LiteralPath $RutaEnsamblado).Path)
+    $bytesEnsamblado = [System.IO.File]::ReadAllBytes(
+        (Resolve-Path -LiteralPath $RutaEnsamblado).Path)
+    $ensamblado = [System.Reflection.Assembly]::Load($bytesEnsamblado)
     if ($ensamblado.GetManifestResourceNames() -notcontains $nombreRecursoWebView2) {
         throw "El ensamblado publicado no contiene el recurso $nombreRecursoWebView2."
     }
