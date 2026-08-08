@@ -205,17 +205,21 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PantallaPrincipalSoloUsaAprovisionamientoAutomaticoDeClave()
+    public void AplicacionNoSolicitaNiAprovisionaClavesDeArtefactos()
     {
         var raiz = ObtenerRaizProyecto();
         var rutaVentana = Path.Combine(raiz, "VentanaPrincipal.xaml.cs");
         var rutaDialogo = Path.Combine(raiz, "DialogoClaveArtefactos.xaml");
         var rutaCodigoDialogo = Path.Combine(raiz, "DialogoClaveArtefactos.xaml.cs");
         var ventana = File.ReadAllText(rutaVentana);
+        var aplicacion = File.ReadAllText(Path.Combine(raiz, "Aplicacion.xaml.cs"));
+        var rutas = File.ReadAllText(Path.Combine(raiz, "Servicios", "RutasAplicacion.cs"));
 
         Assert.DoesNotContain("Instalar clave", ventana, StringComparison.Ordinal);
         Assert.DoesNotContain("aprovisionarClaveArtefactos", ventana, StringComparison.Ordinal);
         Assert.DoesNotContain("ServicioClaveArtefactos.Aprovisionar", ventana, StringComparison.Ordinal);
+        Assert.DoesNotContain("AprovisionamientoClave", aplicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("artefactos.key", rutas, StringComparison.Ordinal);
         Assert.False(File.Exists(rutaDialogo));
         Assert.False(File.Exists(rutaCodigoDialogo));
     }
@@ -877,7 +881,10 @@ public sealed class PruebasLanzadorScripts
         Assert.False(seguridad.Diagnosticar(ps1, permisosVacios, null, "Catalogo ausente.").Permitido);
         Assert.False(seguridad.Diagnosticar(cmd, permisosVacios, null, "Catalogo ausente.").Permitido);
 
-        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear([ps1, cmd], [cmd.Id]);
+        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear(
+            [ps1, cmd],
+            [cmd.Id],
+            entorno.ConjuntoId);
         Assert.True(seguridad.Diagnosticar(cmd, permisosVacios, catalogo, string.Empty).Permitido);
         Assert.False(seguridad.Diagnosticar(ps1, permisosVacios, catalogo, string.Empty).Permitido);
         Assert.True(seguridad.Diagnosticar(
@@ -906,178 +913,19 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void ArtefactoProtegidoCifraFirmaYSeparaTipos()
-    {
-        var claveAes = RandomNumberGenerator.GetBytes(32);
-        using var rsa = RSA.Create(3072);
-        var servicio = new ServicioArtefactosProtegidos(claveAes, rsa, rsa);
-        var protegido = servicio.ProtegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"dato\":\"valor-publico\"}");
-
-        Assert.DoesNotContain("\"dato\"", protegido, StringComparison.Ordinal);
-        Assert.Contains("\"Version\": 2", protegido, StringComparison.Ordinal);
-        Assert.True(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            protegido,
-            out var claro,
-            out _));
-        Assert.Contains("\"dato\":\"valor-publico\"", claro, StringComparison.Ordinal);
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            protegido,
-            out _,
-            out _));
-
-        var manipulado = JsonNode.Parse(protegido)!.AsObject();
-        var datos = manipulado["Datos"]!.GetValue<string>();
-        manipulado["Datos"] = datos[..^1] + (datos[^1] == 'A' ? "B" : "A");
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            manipulado.ToJsonString(),
-            out _,
-            out _));
-
-        var autorManipulado = JsonNode.Parse(protegido)!.AsObject();
-        autorManipulado["Autor"] = "Otro";
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            autorManipulado.ToJsonString(),
-            out _,
-            out _));
-
-        var campoDesconocido = JsonNode.Parse(protegido)!.AsObject();
-        campoDesconocido["Extra"] = true;
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            campoDesconocido.ToJsonString(),
-            out _,
-            out _));
-    }
-
-    [Fact]
-    public void ArtefactoProtegidoRecuperaCopiaValida()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var ruta = Path.Combine(entorno.Raiz, "artefacto.json");
-        var servicio = entorno.Artefactos;
-        servicio.GuardarTextoProtegido(
-            ruta,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"version\":1}");
-        servicio.GuardarTextoProtegido(
-            ruta,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"version\":2}");
-        File.WriteAllText(ruta, "{");
-
-        Assert.True(servicio.IntentarCargarTextoProtegido(
-            ruta,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            out var claro,
-            out _,
-            out var recuperado));
-        Assert.True(recuperado);
-        Assert.Contains("\"version\":1", claro, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ClaveArtefactosUsaDpapiDeMaquina()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var rutaClave = Path.Combine(entorno.Raiz, "Seguridad", "artefactos.key");
-        var clave = RandomNumberGenerator.GetBytes(32);
-
-        ServicioClaveArtefactos.Aprovisionar(rutaClave, clave, aplicarAcl: false);
-        var contenidoProtegido = File.ReadAllText(rutaClave, Encoding.UTF8);
-        using var material = new ServicioClaveArtefactos(rutaClave).ObtenerMaterial();
-
-        Assert.True(material.Clave.SequenceEqual(clave));
-        Assert.DoesNotContain(Convert.ToBase64String(clave), contenidoProtegido, StringComparison.Ordinal);
-        Assert.Contains("\"ambito\": \"LocalMachine\"", contenidoProtegido, StringComparison.Ordinal);
-        CryptographicOperations.ZeroMemory(clave);
-    }
-
-    [Fact]
-    public void ArtefactosFallanCerradosSinClaveDpapi()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        using var rsa = RSA.Create(3072);
-        var servicio = new ServicioArtefactosProtegidos(
-            new ServicioClaveArtefactos(Path.Combine(entorno.Raiz, "ausente.key")),
-            new ServicioFirmaArtefactos(rsa, rsa));
-
-        Assert.Throws<ClaveArtefactosNoDisponibleException>(() =>
-            servicio.ProtegerTexto(ServicioArtefactosProtegidos.TipoPermisos, "{}"));
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{}",
-            out _,
-            out var error));
-        Assert.Contains("No se ha aprovisionado", error, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void FirmaArtefactosSeparaFirmaYVerificacion()
-    {
-        var clave = RandomNumberGenerator.GetBytes(32);
-        using var rsaFirma = RSA.Create(3072);
-        using var rsaIncorrecta = RSA.Create(3072);
-        var escritor = new ServicioArtefactosProtegidos(clave, rsaFirma, rsaFirma);
-        var lectorIncorrecto = new ServicioArtefactosProtegidos(clave, rsaFirma, rsaIncorrecta);
-        var protegido = escritor.ProtegerTexto(
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            "{\"version\":1}");
-
-        Assert.False(lectorIncorrecto.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            protegido,
-            out _,
-            out var error));
-        Assert.Equal("La firma del contenedor protegido no es valida.", error);
-        CryptographicOperations.ZeroMemory(clave);
-    }
-
-    [Fact]
-    public void AclClaveSoloPermiteSistemaYAdministradores()
-    {
-        var seguridad = ServicioDirectoriosAplicacion.CrearSeguridadArchivoAdministrativo();
-        var reglas = seguridad
-            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
-            .OfType<FileSystemAccessRule>()
-            .ToList();
-        var permitidos = new HashSet<string>(StringComparer.Ordinal)
-        {
-            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value,
-            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null).Value
-        };
-
-        Assert.Equal(2, reglas.Count);
-        Assert.All(reglas, regla =>
-        {
-            Assert.False(regla.IsInherited);
-            Assert.Equal(AccessControlType.Allow, regla.AccessControlType);
-            Assert.Equal(FileSystemRights.FullControl, regla.FileSystemRights);
-            Assert.Contains(((SecurityIdentifier)regla.IdentityReference).Value, permitidos);
-        });
-    }
-
-    [Fact]
     public void CodigoNoContieneClavesPrivadasIntegradas()
     {
         var raiz = ObtenerRaizProyecto();
         var artefactos = File.ReadAllText(
-            Path.Combine(raiz, "Servicios", "ServicioArtefactosProtegidos.cs"),
-            Encoding.UTF8);
-        var aprovisionamiento = File.ReadAllText(
-            Path.Combine(raiz, "Herramientas", "AprovisionarClaveArtefactos.ps1"),
+            Path.Combine(raiz, "Servicios", "ServicioArtefactosFirmados.cs"),
             Encoding.UTF8);
 
         Assert.DoesNotContain("ClaveAesBase64", artefactos, StringComparison.Ordinal);
         Assert.DoesNotContain("ClavePrivadaBase64", artefactos, StringComparison.Ordinal);
         Assert.DoesNotContain("ImportPkcs8PrivateKey", artefactos, StringComparison.Ordinal);
-        Assert.Contains("Read-Host", aprovisionamiento, StringComparison.Ordinal);
-        Assert.Contains("-AsSecureString", aprovisionamiento, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioClaveArtefactos.cs")));
+        Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioDpapiNg.cs")));
+        Assert.False(File.Exists(Path.Combine(raiz, "Herramientas", "AprovisionarClaveArtefactos.ps1")));
     }
 
     [Fact]
@@ -1087,7 +935,10 @@ public sealed class PruebasLanzadorScripts
         var validador = new ServicioValidacionScripts();
         var seguridad = new ServicioSeguridadScripts();
         var script = validador.ValidarScriptParaEjecucion(entorno.Raiz, "sub/ok.cmd").Script!;
-        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear([script], [script.Id]);
+        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear(
+            [script],
+            [script.Id],
+            entorno.ConjuntoId);
 
         Assert.True(seguridad.Diagnosticar(
             script,
@@ -1115,7 +966,7 @@ public sealed class PruebasLanzadorScripts
             .ValidarScriptParaEjecucion(entorno.Raiz, "INSTALADOR.BAT")
             .Script!;
         var servicio = new ServicioCatalogoScripts(entorno.Artefactos);
-        var catalogo = servicio.Crear([script], [script.Id]);
+        var catalogo = servicio.Crear([script], [script.Id], entorno.ConjuntoId);
         var rutaCatalogo = Path.Combine(entorno.Raiz, ServicioCatalogoScripts.NombreArchivo);
 
         servicio.Guardar(rutaCatalogo, catalogo);
@@ -1125,29 +976,39 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void GeneracionInicialIncluyeSoloAdministradorYCatalogoProtegido()
+    public void GeneracionInicialIncluyeDosAdministradoresYCatalogoFirmado()
     {
         using var entorno = EntornoPruebas.Crear();
         var salida = Path.Combine(entorno.Raiz, "salida-publicacion");
-        ServicioGeneracionArtefactosIniciales.Generar(entorno.Raiz, salida, entorno.Artefactos);
+        ServicioGeneracionArtefactosIniciales.Generar(
+            entorno.Raiz,
+            salida,
+            ServicioGeneracionArtefactosIniciales.AdministradoresPredeterminados,
+            entorno.Artefactos,
+            entorno.ConjuntoId);
         var artefactos = entorno.Artefactos;
 
-        var permisosProtegidos = File.ReadAllText(Path.Combine(salida, "permisos.json"));
-        Assert.True(artefactos.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            permisosProtegidos,
+        var permisosFirmados = File.ReadAllText(Path.Combine(salida, "permisos.json"));
+        Assert.Contains("\"Contenido\"", permisosFirmados, StringComparison.Ordinal);
+        Assert.Contains("MAD00\\\\aroperez_micro", permisosFirmados, StringComparison.Ordinal);
+        Assert.True(artefactos.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            permisosFirmados,
             out var permisosJson,
+            out var conjuntoPermisos,
             out _));
         var permisos = JsonNode.Parse(permisosJson)!.AsObject();
         var usuarios = permisos["usuarios"]!.AsArray();
-        var usuario = Assert.Single(usuarios);
-        Assert.Equal(@"MAD00\aroperez_micro", usuario?["nombreUsuario"]?.GetValue<string>());
+        Assert.Equal(2, usuarios.Count);
+        Assert.Contains(usuarios, usuario => usuario?["nombreUsuario"]?.GetValue<string>() == @"MAD00\aroperez_micro");
+        Assert.Contains(usuarios, usuario => usuario?["nombreUsuario"]?.GetValue<string>() == @"PCERA\alero");
         Assert.All(usuarios, usuario => Assert.Equal("admin", usuario?["rol"]?.GetValue<string>()));
 
         var rutaCatalogo = Path.Combine(salida, ServicioCatalogoScripts.NombreArchivo);
         Assert.True(new ServicioCatalogoScripts(entorno.Artefactos).IntentarCargar(rutaCatalogo, out var catalogo, out _));
         Assert.NotNull(catalogo);
-        Assert.Contains(catalogo!.Scripts, script => script.ScriptId == "ok.ps1");
+        Assert.Equal(conjuntoPermisos, catalogo!.ConjuntoId);
+        Assert.Contains(catalogo.Scripts, script => script.ScriptId == "ok.ps1");
         Assert.Contains(catalogo.Scripts, script => script.ScriptId == "sub/ok.cmd");
     }
 
@@ -1244,7 +1105,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public async Task ApiAceptaPermisosCifrados()
+    public async Task ApiAceptaPermisosFirmados()
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
@@ -1262,7 +1123,7 @@ public sealed class PruebasLanzadorScripts
         Assert.Equal("admin", usuario?["rol"]?.GetValue<string>());
 
         var texto = File.ReadAllText(entorno.RutaPermisos, Encoding.UTF8);
-        Assert.DoesNotContain("\"usuarios\"", texto, StringComparison.Ordinal);
+        Assert.Contains("\"usuarios\"", texto, StringComparison.Ordinal);
         Assert.Contains("\"Firma\"", texto, StringComparison.Ordinal);
     }
 
@@ -1509,10 +1370,11 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public async Task ApiGuardaPermisosCifrados()
+    public async Task ApiGuardaPermisosFirmadosConElMismoConjunto()
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
+        entorno.GuardarCatalogo(["ok.ps1", "sub/ok.cmd"]);
         using var servidor = ServidorLocalWeb.IniciarParaPruebas(
             entorno.CrearConfiguracion(),
             entorno.Artefactos);
@@ -1534,23 +1396,27 @@ public sealed class PruebasLanzadorScripts
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
 
         var texto = File.ReadAllText(entorno.RutaPermisos, Encoding.UTF8);
-        Assert.DoesNotContain("\"usuarios\"", texto, StringComparison.Ordinal);
+        Assert.Contains("\"usuarios\"", texto, StringComparison.Ordinal);
         Assert.Contains("\"Firma\"", texto, StringComparison.Ordinal);
-        Assert.Contains("\"Datos\"", texto, StringComparison.Ordinal);
+        Assert.Contains("\"Contenido\"", texto, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Datos\"", texto, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(entorno.Raiz, "permisos.json")));
-        Assert.True(entorno.Artefactos.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
+        Assert.True(entorno.Artefactos.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
             texto,
             out var claro,
+            out var conjuntoId,
             out _));
+        Assert.Equal(entorno.ConjuntoId, conjuntoId);
         Assert.NotNull(JsonNode.Parse(claro) as JsonObject);
     }
 
     [Fact]
-    public async Task EjecucionRealUsaCatalogoCifrado()
+    public async Task EjecucionRealUsaCatalogoFirmado()
     {
         using var entorno = EntornoPruebas.Crear();
         entorno.GuardarPermisosProtegidos(CrearPermisosAdmin());
+        entorno.GuardarCatalogo(["ok.ps1"]);
         using var servidor = ServidorLocalWeb.IniciarParaPruebas(
             entorno.CrearConfiguracion(),
             entorno.Artefactos);
@@ -1568,8 +1434,9 @@ public sealed class PruebasLanzadorScripts
         publicarCatalogo.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
         Assert.Equal(HttpStatusCode.OK, (await cliente.SendAsync(publicarCatalogo)).StatusCode);
         var rutaCatalogo = ServicioCatalogoScripts.ObtenerRuta(entorno.RutaPermisos);
-        var catalogoProtegido = File.ReadAllText(rutaCatalogo, Encoding.UTF8);
-        Assert.DoesNotContain("\"ok.ps1\"", catalogoProtegido, StringComparison.Ordinal);
+        var catalogoFirmado = File.ReadAllText(rutaCatalogo, Encoding.UTF8);
+        Assert.Contains("\"ok.ps1\"", catalogoFirmado, StringComparison.Ordinal);
+        Assert.Contains("\"Firma\"", catalogoFirmado, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(entorno.Raiz, "catalogo-scripts.json")));
 
         using var cuerpo = new StringContent("{\"scriptId\":\"ok.ps1\"}", Encoding.UTF8, "application/json");
@@ -1738,10 +1605,8 @@ internal sealed class EntornoPruebas : IDisposable
         CarpetaPermisos = Path.Combine(Raiz, "PERMISOS");
         RutaPermisos = Path.Combine(CarpetaPermisos, RutasArtefactosProtegidos.NombrePermisos);
         _rsaArtefactos = RSA.Create(3072);
-        Artefactos = new ServicioArtefactosProtegidos(
-            RandomNumberGenerator.GetBytes(32),
-            _rsaArtefactos,
-            _rsaArtefactos);
+        Artefactos = new ServicioArtefactosFirmados(_rsaArtefactos, _rsaArtefactos);
+        ConjuntoId = ServicioArtefactosFirmados.CrearConjuntoId();
     }
 
     public string Raiz { get; }
@@ -1750,7 +1615,9 @@ internal sealed class EntornoPruebas : IDisposable
 
     public string CarpetaPermisos { get; }
 
-    public ServicioArtefactosProtegidos Artefactos { get; }
+    public ServicioArtefactosFirmados Artefactos { get; }
+
+    public string ConjuntoId { get; }
 
     public static EntornoPruebas Crear()
     {
@@ -1804,17 +1671,21 @@ internal sealed class EntornoPruebas : IDisposable
     public void GuardarPermisosProtegidos(JsonObject permisos)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(RutaPermisos)!);
-        Artefactos.GuardarTextoProtegido(
+        Artefactos.GuardarTextoFirmado(
             RutaPermisos,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            permisos.ToJsonString());
+            ServicioArtefactosFirmados.TipoPermisos,
+            permisos.ToJsonString(),
+            ConjuntoId);
     }
 
     public void GuardarCatalogo(IEnumerable<string> scriptIds)
     {
         var validador = new ServicioValidacionScripts();
         var servicio = new ServicioCatalogoScripts(Artefactos);
-        var catalogo = servicio.Crear(validador.DescubrirScripts(Raiz), scriptIds);
+        var catalogo = servicio.Crear(
+            validador.DescubrirScripts(Raiz),
+            scriptIds,
+            ConjuntoId);
         servicio.Guardar(ServicioCatalogoScripts.ObtenerRuta(RutaPermisos), catalogo);
     }
 

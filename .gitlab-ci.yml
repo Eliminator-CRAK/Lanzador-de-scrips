@@ -2,7 +2,25 @@
 # Descripcion: Analisis continuo de alta sensibilidad con Semgrep.
 
 stages:
+  - validate
   - security
+
+nuget-audit:
+  stage: validate
+  image: mcr.microsoft.com/dotnet/sdk:10.0.203@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc
+  interruptible: true
+  timeout: 20m
+  variables:
+    NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget/packages"
+  script:
+    - dotnet restore LanzadorScripts.slnx -p:EnableWindowsTargeting=true
+    - dotnet list LanzadorScripts.slnx package --vulnerable --include-transitive
+  cache: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: "$CI_MERGE_REQUEST_IID"
+    - if: '$CI_PIPELINE_SOURCE == "push"'
 
 semgrep-high-sensitivity:
   stage: security

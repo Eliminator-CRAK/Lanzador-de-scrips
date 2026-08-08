@@ -72,12 +72,6 @@ public partial class VentanaPrincipal : Window
             "El icono de la bandeja quedo disponible.");
     }
 
-    internal void ActualizarTrasAprovisionamientoClave()
-    {
-        // Recarga el cliente para que vuelva a evaluar permisos y catalogo.
-        VistaCliente.CoreWebView2?.Reload();
-    }
-
     protected override void OnContentRendered(EventArgs e)
     {
         // Inicia los componentes pesados cuando la ventana ya es visible.
@@ -1655,7 +1649,7 @@ public partial class VentanaPrincipal : Window
                     const autorizados = modelos.filter(modelo => modelo.estado === 'autorizado').length;
                     const modificados = modelos.filter(modelo => modelo.estado === 'modificado').length;
                     estado.textContent = datos?.valido
-                        ? `${autorizados} autorizado(s), ${modificados} modificado(s). KeyId ${datos.keyId || ''}.`
+                        ? `${autorizados} autorizado(s), ${modificados} modificado(s). ConjuntoId ${datos.conjuntoId || ''}.`
                         : datos?.mensaje || 'El catalogo no es valido. Selecciona scripts y publicalo.';
                 }
 
@@ -1668,7 +1662,7 @@ public partial class VentanaPrincipal : Window
 
                 async function cargarPanelFirmas(panel) {
                     const estado = panel.querySelector('#ls-firmas-estado');
-                    estado.textContent = 'Cargando catalogo cifrado...';
+                    estado.textContent = 'Cargando catalogo firmado...';
 
                     try {
                         const [ajustes, modo, catalogo] = await Promise.all([
@@ -1692,7 +1686,7 @@ public partial class VentanaPrincipal : Window
 
                 async function guardarPanelFirmas(panel) {
                     const estado = panel.querySelector('#ls-firmas-estado');
-                    estado.textContent = 'Guardando politica cifrada...';
+                    estado.textContent = 'Guardando politica firmada...';
 
                     try {
                         const ajustes = await apiJson('/api/ajustes');
@@ -1704,7 +1698,7 @@ public partial class VentanaPrincipal : Window
                             body: JSON.stringify(permisos)
                         });
 
-                        estado.textContent = 'Politica cifrada y firmada correctamente.';
+                        estado.textContent = 'Politica firmada correctamente.';
                     } catch (error) {
                         estado.textContent = error.message || 'No se pudo guardar la politica.';
                     }
@@ -1726,7 +1720,7 @@ public partial class VentanaPrincipal : Window
                         });
                         const catalogo = await apiJson('/api/catalogo-scripts');
                         renderizarCatalogo(panel, catalogo);
-                        estado.textContent = `Catalogo cifrado y firmado con ${scriptIds.length} script(s).`;
+                        estado.textContent = `Catalogo firmado con ${scriptIds.length} script(s).`;
                     } catch (error) {
                         estado.textContent = error.message || 'No se pudo publicar el catalogo.';
                     }
@@ -1789,7 +1783,7 @@ public partial class VentanaPrincipal : Window
                     const panel = document.createElement('section');
                     panel.id = idPanelFirmas;
                     panel.innerHTML = `
-                        <h3 class="text-sm font-medium text-gray-200 uppercase tracking-wider mb-4">Catálogo cifrado y desarrollo</h3>
+                        <h3 class="text-sm font-medium text-gray-200 uppercase tracking-wider mb-4">Catálogo firmado y desarrollo</h3>
                         <div class="bg-black/20 border border-white/5 rounded-lg p-5 space-y-5">
                             <div class="flex items-center justify-between gap-4">
                                 <div>

@@ -12,6 +12,9 @@ publicacion/
 publicacion_*/
 ArtefactosGenerados/
 /*.obj
+semgrep-results.json
+gitleaks-report*
+ReleaseAssets/
 
 # Perfiles locales y configuraciones con secretos.
 **/EBWebView/
@@ -21,3 +24,11 @@ LanzadorScripts.exe.WebView2/
 LanzadorScripts.exe.WebView2/**
 [[]mcp_servers.*[]].txt
 mcp_servers.*.txt
+*.pfx
+*.p12
+*.snk
+*.lanzadorconfig
+**/permisos.json
+**/catalogo-scripts.json
+**/clave-artefactos.dpng.json
+**/artefactos.key

@@ -1,108 +1,56 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Manual de uso para usuarios normales del lanzador. -->
+<!-- Descripcion: Explica el uso diario de LanzadorScripts para usuarios finales. -->
 
 # Manual De Usuario
 
-## Objetivo
-
-LanzadorScripts permite ejecutar scripts autorizados desde una interfaz local. La aplicacion valida permisos, integridad y disponibilidad antes de permitir una ejecucion.
-
 ## Inicio
 
-1. Abra `LanzadorScripts.exe`.
-2. Acepte el aviso de administrador de Windows si aparece.
-3. Espere a que finalice la pantalla de preparacion.
-4. Si aparece un aviso de permisos, WebView2 o conexion, no ejecute scripts y contacte con el administrador.
+Abra `LanzadorScripts.exe` o `LanzadorScripts_Portable.exe`. La aplicacion aparece tambien en el area de notificacion de Windows.
 
-## Cambios En La Version 1.5.6
-
-- Los permisos, el catalogo y la clave central se publican como un unico conjunto validado.
-- La configuracion inicial contiene una sola cuenta administradora autorizada.
-- Si no hay conexion al dominio durante una rotacion, la aplicacion conserva el bloqueo sin instalar una clave incompleta.
-
-## Cambios En La Version 1.5.5
-
-- La clave de artefactos se instala automaticamente desde el servidor al arrancar.
-- Si la red tarda en estar disponible, la aplicacion reintenta durante tres minutos y actualiza los permisos sin pedir una clave.
-- Se ha eliminado el boton para instalar manualmente la clave AES.
-
-## Cambios En La Version 1.5.4
-
-- WebView2 guarda su perfil temporal en `LocalAppData` y crea una carpeta nueva en cada arranque.
-- Ya no reutiliza la carpeta de navegador de `ProgramData` que provocaba el aviso de lectura o escritura.
-- La configuracion, las claves, los permisos, los logs y la auditoria conservan sus rutas actuales.
-
-## Cambios En La Version 1.5.3
-
-- WebView2 utiliza un perfil nuevo y repara sus permisos antes de abrir Microsoft Edge.
-- El arranque y la limpieza ya no muestran ventanas de progreso separadas.
-- Cerrar desde la bandeja es directo cuando no hay scripts activos; la confirmacion aparece solo si se cancelara alguna ejecucion.
-
-## Cambios En La Version 1.5.2
-
-- El nuevo icono de consola utiliza un fondo negro opaco en el ejecutable, la ventana, la barra de tareas y la bandeja.
-
-## Cambios En La Version 1.5.1
-
-- LanzadorScripts utiliza un nuevo icono propio de consola, mas reconocible en el ejecutable, la ventana, la barra de tareas y la bandeja.
-
-## Cambios En La Version 1.5.0
-
-- La aplicacion muestra una ventana de preparacion incluso mientras extrae los componentes internos.
-- El icono de LanzadorScripts permanece en la bandeja mientras la aplicacion este ejecutandose.
-- Minimizar conserva la aplicacion en la barra de tareas. Cerrar la ventana la deja en segundo plano sin detener scripts.
-- El menu de bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente.
-- El cierre definitivo solicita confirmacion y muestra los scripts que se cancelaran cuando existen ejecuciones activas.
-- Una segunda apertura de LanzadorScripts restaura la ventana existente.
-- El usuario no debe modificar `permisos.json`, `catalogo-scripts.json` ni crear carpetas de configuracion.
-- La aplicacion ya no se abre automaticamente con Windows; debe iniciarse desde el EXE distribuido.
-- La configuracion, los temporales de ejecucion y los logs se guardan en las zonas protegidas de `ProgramData` y `Program Files`; solo la cache temporal de WebView2 usa `LocalAppData`.
-- La configuracion local se guarda de forma atomica y coordina las peticiones paralelas para evitar bloqueos de `configuracion.dat`.
-- WebView2 usa un perfil nuevo con permisos compatibles con sus procesos aislados; el usuario no debe modificar la carpeta.
-- Si un script cambia, queda bloqueado hasta que un administrador publique de nuevo el catalogo.
-- Si falta la clave local, la aplicacion intenta recuperarla automaticamente del paquete corporativo autorizado. No pide al usuario la clave AES.
-- Los permisos y el catalogo corporativos antiguos se pueden leer durante la migracion si conservan sus firmas validas y comparten la misma clave.
-- Si el paquete no existe, la cuenta no pertenece al grupo autorizado o los permisos no se pueden validar, la aplicacion bloquea la ejecucion y el usuario debe comunicar el mensaje exacto.
+La version `1.6.0` no instala ni solicita claves AES. Si aparece un aviso sobre `artefactos.key`, el EXE es anterior a `1.6.0`.
 
 ## Ejecutar Un Script
 
-1. Abra la carpeta autorizada que contiene el script.
-2. Use `← Volver` para subir una carpeta o `Principal` para regresar al inicio.
-3. Busque el script en la lista.
-4. Revise si aparece bloqueado y lea el motivo.
-5. Pulse ejecutar solo si el script esta permitido.
-6. Mantenga la consola visible hasta ver el evento final.
-7. Revise el codigo de salida cuando termine.
+1. Busque el script por nombre o abra su carpeta.
+2. Compruebe que no muestra un bloqueo de permisos o de firma.
+3. Pulse el script para iniciar la ejecucion.
+4. Siga la salida en la consola de la aplicacion.
+5. Responda en el campo interactivo cuando el script solicite datos.
 
-## Entrada Interactiva
+Un candado indica que la cuenta no esta autorizada, que el script no pertenece al catalogo o que sus bytes cambiaron despues de publicarlo.
 
-Algunos scripts pueden pedir datos. Escriba solo la informacion solicitada por el procedimiento operativo. No introduzca contrasenas, tokens o claves si el script no esta aprobado para ello.
+## Cancelar Y Cerrar
 
-## Cancelar Una Ejecucion
-
-Use cancelar solo si el script se ha quedado bloqueado o si el procedimiento lo exige. La cancelacion queda auditada con usuario, equipo, script y hora.
+- La accion de cancelar detiene solo la ejecucion seleccionada.
+- El boton de cerrar de la ventana mantiene la aplicacion en segundo plano.
+- Desde el icono de la bandeja puede restaurar, maximizar, minimizar o cerrar definitivamente.
+- La advertencia sobre cancelacion aparece solo cuando existen scripts en ejecucion.
 
 ## Estados Habituales
 
 | Estado | Accion |
 |---|---|
-| Script bloqueado por permisos | Solicitar autorizacion al administrador. |
-| Script bloqueado por firma/hash | No ejecutar. El administrador debe revisar integridad. |
-| Backend local no disponible | Reiniciar la app y avisar a soporte si se repite. |
-| Carpeta remota de scripts no disponible | Esperar recuperacion de red; la interfaz seguira visible pero los scripts quedan bloqueados. |
-| Carpeta remota de permisos no disponible | No ejecutar. Solo administracion puede activar emergencia temporal; los cambios de permisos quedan bloqueados mientras la carpeta siga inaccesible. |
-| Permisos ausentes o no validos | No ejecutar y comunicar el mensaje exacto al administrador. |
-| Falta `artefactos.key` | Mantener la app abierta y conectada a la red corporativa mientras reintenta. Si falla, el administrador debe comprobar que los tres archivos centrales estan desplegados. |
-| WebView2 no disponible | Reiniciar la app. Si se repite, avisar a soporte con la ruta de logs. |
-| El error muestra una ruta dentro de AppData | El EXE es anterior a la version 1.5.0 o se ha abierto el componente interno. Cierre la app y use uno de los EXE distribuidos. |
+| Permisos no encontrados | Compruebe la red corporativa y comunique la ruta mostrada al administrador. |
+| Permisos o catalogo no validos | No edite los JSON. El administrador debe desplegar de nuevo la pareja firmada. |
+| ConjuntoId distinto | Se han mezclado dos publicaciones. Cierre la aplicacion y avise al administrador. |
+| Script modificado | Solicite que el administrador vuelva a publicar el catalogo. |
+| Carpeta de scripts no disponible | Compruebe la red o VPN. |
+| WebView2 no puede escribir | Cierre todas las instancias y entregue al administrador el log de inicio. |
+| EXE bloqueado por Windows | Verifique que usa el EXE corporativo firmado. |
 
 ## Logs
 
-Los logs de ejecucion se guardan en `%ProgramData%\LanzadorScripts\Usuarios\<id-SID>\Logs`. No modifique ni borre logs salvo indicacion del administrador.
+Los logs y la auditoria se guardan bajo:
+
+```text
+C:\ProgramData\LanzadorScripts\Usuarios\<perfil>\
+```
+
+No modifique `configuracion.dat`, los archivos de auditoria ni el perfil WebView2 mientras la aplicacion esta abierta.
 
 ## Buenas Practicas
 
-- Ejecute solo scripts necesarios para su tarea.
-- No comparta capturas con tokens, rutas internas o datos sensibles.
-- Puede ocultar la ventana mientras un script trabaja, pero no use `Cerrar LanzadorScripts` en la bandeja hasta que termine.
-- Informe cualquier mensaje inesperado o bloqueo repetido.
+- Use solo los ejecutables publicados por el administrador.
+- No copie `permisos.json` o `catalogo-scripts.json` por separado.
+- No modifique un script autorizado sin solicitar una nueva publicacion del catalogo.
+- Cierre definitivamente desde la bandeja antes de sustituir el EXE.

@@ -47,10 +47,6 @@ public static class RutasAplicacion
 
     public static string RutaTokensUsuarioLegada => Path.Combine(RaizAppDataLegada, "Tokens");
 
-    public static string RutaSeguridad => Path.Combine(RaizProgramData, "Seguridad");
-
-    public static string RutaClaveArtefactos => Path.Combine(RutaSeguridad, "artefactos.key");
-
     public static string RutaStaging => Path.Combine(RaizProgramFiles, "Staging");
 
     public static string RutaRaizWebView2Usuario => Path.Combine(

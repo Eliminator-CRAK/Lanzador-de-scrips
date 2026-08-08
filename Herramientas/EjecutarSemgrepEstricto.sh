@@ -7,7 +7,7 @@ set -u
 # Conserva el informe en una ruta fija dentro del repositorio.
 informe="semgrep-results.json"
 
-# Ejecuta todas las reglas sin exclusiones ni supresiones locales.
+# Ejecuta todas las reglas sobre el codigo versionable sin supresiones locales.
 semgrep scan \
   --config auto \
   --config p/security-audit \
@@ -15,7 +15,6 @@ semgrep scan \
   --no-error \
   --strict \
   --disable-nosem \
-  --no-git-ignore \
   --timeout 60 \
   --timeout-threshold 0 \
   --max-target-bytes 0 \

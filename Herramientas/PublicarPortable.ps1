@@ -1,12 +1,12 @@
 # (Autor: Alex Roman)
-# Descripcion: Publica el ejecutable portable y sus artefactos protegidos.
+# Descripcion: Publica los ejecutables y, opcionalmente, los artefactos firmados.
 
 param(
     [string]$CertThumbprint = '',
     [string]$CertPath = '',
     [securestring]$CertPassword,
     [string]$TimestampServer = 'http://timestamp.digicert.com',
-    [string]$RutaScriptsIniciales = (Join-Path $env:USERPROFILE 'OneDrive - Aena, SME S.A\Escritorio\notas\SCRIPS\ACTUALES'),
+    [string]$RutaScriptsIniciales = (Join-Path $env:USERPROFILE 'OneDrive - Aena, SME S.A\Documentos\notas\SCRIPS\ACTUALES'),
     [string]$RutaCarpetaPermisos = '\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS',
     [string]$RutaRuntimeWebView2Portable = '',
     [switch]$InicializarArtefactos,
@@ -32,7 +32,6 @@ $salidaAnterior = Join-Path $raiz "obj\PublicacionAnterior-$PID"
 $tamanoMinimoExe = 209715200
 $cacheWebView2 = Join-Path $raiz 'Recursos\WebView2'
 $runtimeZipIntermedio = Join-Path $raiz 'obj\WebView2Runtime\WebView2Runtime.zip'
-$rutaClaveArtefactos = Join-Path $env:ProgramData 'LanzadorScripts\Seguridad\artefactos.key'
 $huellaCertificadoArtefactos = '500266A64E574889370D92E5CE0D65D55CC963B7'
 $versionWebView2Fijada = '150.0.4078.48'
 $nombreCabWebView2Fijado = "Microsoft.WebView2.FixedVersionRuntime.$versionWebView2Fijada.x64.cab"
@@ -949,10 +948,6 @@ if ($null -ne $certificadoFirma) {
 }
 
 if ($InicializarArtefactos) {
-    if (-not (Test-Path -LiteralPath $rutaClaveArtefactos -PathType Leaf)) {
-        throw "No se encontro la clave DPAPI de artefactos. Ejecute Herramientas\AprovisionarClaveArtefactos.ps1 como administrador."
-    }
-
     $certificadoArtefactos = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My |
         Where-Object {
             $_.Thumbprint -eq $huellaCertificadoArtefactos -and
@@ -990,6 +985,18 @@ if ($InicializarArtefactos) {
     }
     if (-not (Test-Path -LiteralPath $permisos) -or -not (Test-Path -LiteralPath $catalogo)) {
         throw 'No se pudieron generar los artefactos operativos.'
+    }
+
+    $permisosFirmados = Get-Content -LiteralPath $permisos -Raw | ConvertFrom-Json
+    $catalogoFirmado = Get-Content -LiteralPath $catalogo -Raw | ConvertFrom-Json
+    if ($permisosFirmados.Version -ne 3 -or
+        $catalogoFirmado.Version -ne 3 -or
+        [string]::IsNullOrWhiteSpace([string]$permisosFirmados.ConjuntoId) -or
+        -not [string]::Equals(
+            [string]$permisosFirmados.ConjuntoId,
+            [string]$catalogoFirmado.ConjuntoId,
+            [StringComparison]::Ordinal)) {
+        throw 'Los artefactos generados no forman una pareja firmada v3 valida.'
     }
 }
 

@@ -1,9 +1,9 @@
 // (Autor: Alex Roman)
-// Descripcion: Genera, protege y valida el catalogo externo de scripts autorizados.
+// Descripcion: Genera, firma y valida el catalogo externo de scripts autorizados.
 
 using System.IO;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace LanzadorScripts.Servicios;
 
@@ -17,25 +17,28 @@ public sealed class ServicioCatalogoScripts
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = false,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
-    private readonly ServicioArtefactosProtegidos _artefactos;
+    private readonly ServicioArtefactosFirmados _artefactos;
 
     public ServicioCatalogoScripts()
-        : this(new ServicioArtefactosProtegidos())
+        : this(new ServicioArtefactosFirmados())
     {
     }
 
-    internal ServicioCatalogoScripts(ServicioArtefactosProtegidos artefactos)
+    internal ServicioCatalogoScripts(ServicioArtefactosFirmados artefactos)
     {
         _artefactos = artefactos;
     }
 
     public CatalogoScripts Crear(
         IReadOnlyList<ScriptInterno> scriptsDetectados,
-        IEnumerable<string> scriptsSeleccionados)
+        IEnumerable<string> scriptsSeleccionados,
+        string conjuntoId)
     {
+        ServicioArtefactosFirmados.ValidarConjuntoId(conjuntoId);
         var indice = scriptsDetectados.ToDictionary(
             script => NormalizarScriptId(script.Id),
             StringComparer.OrdinalIgnoreCase);
@@ -65,7 +68,7 @@ public sealed class ServicioCatalogoScripts
         return new CatalogoScripts(
             VersionCatalogo,
             DateTimeOffset.UtcNow,
-            _artefactos.KeyId,
+            conjuntoId,
             entradas);
     }
 
@@ -73,10 +76,11 @@ public sealed class ServicioCatalogoScripts
     {
         Validar(catalogo);
         var json = JsonSerializer.Serialize(catalogo, OpcionesJson);
-        _artefactos.GuardarTextoProtegido(
+        _artefactos.GuardarTextoFirmado(
             rutaCatalogo,
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            json);
+            ServicioArtefactosFirmados.TipoCatalogoScripts,
+            json,
+            catalogo.ConjuntoId);
     }
 
     public bool IntentarCargar(
@@ -88,10 +92,11 @@ public sealed class ServicioCatalogoScripts
         error = string.Empty;
         try
         {
-            if (!_artefactos.IntentarCargarTextoProtegido(
+            if (!_artefactos.IntentarCargarTextoFirmado(
                 rutaCatalogo,
-                ServicioArtefactosProtegidos.TipoCatalogoScripts,
+                ServicioArtefactosFirmados.TipoCatalogoScripts,
                 out var json,
+                out var conjuntoIdFirmado,
                 out error,
                 out _))
             {
@@ -111,6 +116,13 @@ public sealed class ServicioCatalogoScripts
             }
 
             Validar(catalogo);
+            if (!string.Equals(catalogo.ConjuntoId, conjuntoIdFirmado, StringComparison.Ordinal))
+            {
+                catalogo = null;
+                error = "El ConjuntoId interno del catalogo no coincide con el contenedor firmado.";
+                return false;
+            }
+
             return true;
         }
         catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
@@ -175,13 +187,12 @@ public sealed class ServicioCatalogoScripts
 
     private static void Validar(CatalogoScripts catalogo)
     {
-        if (catalogo.Version != VersionCatalogo
-            || string.IsNullOrWhiteSpace(catalogo.KeyId)
-            || catalogo.Scripts is null)
+        if (catalogo.Version != VersionCatalogo || catalogo.Scripts is null)
         {
             throw new InvalidOperationException("El catalogo de scripts no tiene una version valida.");
         }
 
+        ServicioArtefactosFirmados.ValidarConjuntoId(catalogo.ConjuntoId);
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entrada in catalogo.Scripts)
         {
@@ -211,7 +222,7 @@ public sealed class ServicioCatalogoScripts
 public sealed record CatalogoScripts(
     int Version,
     DateTimeOffset GeneradoUtc,
-    string KeyId,
+    string ConjuntoId,
     IReadOnlyList<EntradaCatalogoScript> Scripts);
 
 public sealed record EntradaCatalogoScript(
