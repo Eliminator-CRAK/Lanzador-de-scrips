@@ -463,7 +463,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
     {
         await log.WriteLineAsync("Integridad validada antes de ejecutar:");
         await log.WriteLineAsync($"Catalogo estado: {diagnostico.CatalogoEstado}");
-        await log.WriteLineAsync($"Catalogo keyId: {diagnostico.CatalogoKeyId}");
+        await log.WriteLineAsync($"Catalogo ConjuntoId: {diagnostico.CatalogoConjuntoId}");
         await log.WriteLineAsync($"SHA-256: {diagnostico.Sha256}");
         await log.WriteLineAsync();
     }
@@ -473,7 +473,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         await log.WriteLineAsync("Copia temporal validada:");
         await log.WriteLineAsync($"Ruta staging: {script.RutaCompleta}");
         await log.WriteLineAsync($"Catalogo estado: {diagnostico.CatalogoEstado}");
-        await log.WriteLineAsync($"Catalogo keyId: {diagnostico.CatalogoKeyId}");
+        await log.WriteLineAsync($"Catalogo ConjuntoId: {diagnostico.CatalogoConjuntoId}");
         await log.WriteLineAsync($"SHA-256 final: {ServicioSeguridadScripts.CalcularSha256(script.RutaValidada)}");
         await log.WriteLineAsync();
     }

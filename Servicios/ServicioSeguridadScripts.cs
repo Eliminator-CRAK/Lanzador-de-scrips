@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Valida scripts contra el catalogo cifrado antes de ejecutarlos.
+// Descripcion: Valida scripts contra el catalogo firmado antes de ejecutarlos.
 
 using System.IO;
 using System.Security.Cryptography;
@@ -32,7 +32,7 @@ public sealed class ServicioSeguridadScripts
             script.Tipo != "powershell" || PowerShellDisponibleCacheado(),
             script.Tipo == "powershell" ? ObtenerExecutionPolicyCacheada() : "No aplica",
             catalogo is null ? "invalido" : "cargado",
-            catalogo?.KeyId ?? string.Empty,
+            catalogo?.ConjuntoId ?? string.Empty,
             string.Empty,
             politica.PermitirExecutionPolicyBypass,
             modoDesarrolloFirmas);
@@ -213,7 +213,7 @@ public sealed record DiagnosticoEjecucionScript(
     bool PowerShellDisponible,
     string ExecutionPolicy,
     string CatalogoEstado,
-    string CatalogoKeyId,
+    string CatalogoConjuntoId,
     string Sha256,
     bool ExecutionPolicyBypassPermitido,
     bool ModoDesarrolloFirmas = false);

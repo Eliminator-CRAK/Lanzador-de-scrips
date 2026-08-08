@@ -1,37 +1,38 @@
 # (Autor: Alex Roman)
-# Descripcion: Genera permisos, catalogo y paquete DPAPI-NG para dominio o usuario local.
+# Descripcion: Genera localmente permisos y catalogo firmados para el despliegue corporativo.
 
-[CmdletBinding(DefaultParameterSetName = 'Dominio')]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
     [string]$RutaScripts,
 
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string]$RutaSalida,
+    [string]$RutaSalida = '',
 
+    [ValidateCount(2, 2)]
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')]
-    [string]$Administrador = 'MAD00\aroperez_micro',
-
-    [Parameter(Mandatory, ParameterSetName = 'Dominio')]
-    [ValidatePattern('^S-1-5-21-(?:\d+-){2,14}\d+$')]
-    [string]$SidAutorizado,
-
-    [Parameter(Mandatory, ParameterSetName = 'Local')]
-    [switch]$ModoLocalUsuario,
+    [string[]]$Administradores = @(
+        'MAD00\aroperez_micro',
+        'PCERA\alero'
+    ),
 
     [ValidateRange(1, 10000)]
     [int]$TotalScriptsEsperado = 37
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 
-# Resuelve las rutas y exige una salida nueva o vacia.
+# Resuelve entradas locales sin depender del dominio.
+$raiz = $PSScriptRoot
 if (-not (Test-Path -LiteralPath $RutaScripts -PathType Container)) {
     throw "No se encontro la carpeta de scripts: $RutaScripts"
 }
 $rutaScriptsCompleta = (Resolve-Path -LiteralPath $RutaScripts).Path
+if ([string]::IsNullOrWhiteSpace($RutaSalida)) {
+    $sufijo = "{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([Guid]::NewGuid().ToString('N').Substring(0, 8))
+    $RutaSalida = Join-Path $raiz "ArtefactosGenerados\conjunto-firmado-$sufijo"
+}
 $rutaSalidaCompleta = [IO.Path]::GetFullPath(
     [Environment]::ExpandEnvironmentVariables($RutaSalida))
 if (Test-Path -LiteralPath $rutaSalidaCompleta) {
@@ -45,41 +46,12 @@ if (Test-Path -LiteralPath $rutaSalidaCompleta) {
     New-Item -ItemType Directory -Path $rutaSalidaCompleta | Out-Null
 }
 
-# Selecciona una proteccion local o valida la identidad contra Active Directory.
-$descriptor = if ($ModoLocalUsuario) {
-    $identidad = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    if (-not [string]::Equals($identidad, $Administrador, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "La cuenta local $identidad no coincide con el administrador $Administrador."
-    }
-    'LOCAL=user'
-} else {
-    try {
-        $sid = [Security.Principal.SecurityIdentifier]::new($SidAutorizado)
-    } catch {
-        throw "El SID autorizado no es valido: $SidAutorizado"
-    }
-    if (-not $sid.Value.StartsWith('S-1-5-21-', [StringComparison]::Ordinal)) {
-        throw 'El SID autorizado debe pertenecer a un dominio de Active Directory.'
-    }
-
-    $dominio = $Administrador.Split('\')[0]
-    & nltest "/dsgetdc:$dominio" *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "No se encontro un controlador del dominio $dominio. Conecte el equipo a la red corporativa o VPN."
-    }
-    try {
-        $cuenta = [Security.Principal.NTAccount]::new($Administrador)
-        $sidCuenta = $cuenta.Translate([Security.Principal.SecurityIdentifier])
-    } catch {
-        throw "No se pudo resolver la cuenta $Administrador en Active Directory."
-    }
-    if ($sidCuenta.Value -ne $sid.Value) {
-        throw "La cuenta $Administrador resuelve al SID $($sidCuenta.Value), no al SID indicado."
-    }
-    "SID=$($sid.Value)"
+$administradoresUnicos = @($Administradores | Sort-Object -Unique)
+if ($administradoresUnicos.Count -ne 2) {
+    throw 'Debe indicar exactamente dos administradores distintos.'
 }
 
-# Copia solo scripts validos a una carpeta local y confirma que los bytes no cambian.
+# Copia los scripts a una carpeta temporal y conserva sus bytes.
 $archivosOrigen = @(
     Get-ChildItem -LiteralPath $rutaScriptsCompleta -Recurse -File |
         Where-Object { $_.Extension.ToLowerInvariant() -in @('.ps1', '.bat', '.cmd') }
@@ -88,21 +60,27 @@ if ($archivosOrigen.Count -ne $TotalScriptsEsperado) {
     throw "Se esperaban $TotalScriptsEsperado scripts y se encontraron $($archivosOrigen.Count)."
 }
 $raizTemporal = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$scriptsPreparados = Join-Path $raizTemporal ("LanzadorScripts-Artefactos-$([Guid]::NewGuid().ToString('N'))")
+$scriptsPreparados = Join-Path $raizTemporal ("LanzadorScripts-Firmados-$([Guid]::NewGuid().ToString('N'))")
 [IO.Directory]::CreateDirectory($scriptsPreparados) | Out-Null
 try {
     foreach ($archivoOrigen in $archivosOrigen) {
+        if (-not [string]::IsNullOrWhiteSpace($archivoOrigen.LinkTarget)) {
+            throw "No se permiten enlaces del sistema entre los scripts: $($archivoOrigen.FullName)"
+        }
+
         $relativa = [IO.Path]::GetRelativePath($rutaScriptsCompleta, $archivoOrigen.FullName)
         if ([IO.Path]::IsPathRooted($relativa) -or
             $relativa -eq '..' -or
             $relativa.StartsWith("..$([IO.Path]::DirectorySeparatorChar)", [StringComparison]::Ordinal)) {
             throw "El script queda fuera de la carpeta autorizada: $($archivoOrigen.FullName)"
         }
+
         $destino = [IO.Path]::GetFullPath((Join-Path $scriptsPreparados $relativa))
         $prefijoPreparacion = $scriptsPreparados.TrimEnd('\') + '\'
         if (-not $destino.StartsWith($prefijoPreparacion, [StringComparison]::OrdinalIgnoreCase)) {
             throw "La ruta relativa del script no es segura: $relativa"
         }
+
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destino)) | Out-Null
         Copy-Item -LiteralPath $archivoOrigen.FullName -Destination $destino
         $hashOrigen = (Get-FileHash -LiteralPath $archivoOrigen.FullName -Algorithm SHA256).Hash
@@ -112,8 +90,7 @@ try {
         }
     }
 
-    # Comprueba que el certificado privado de artefactos esta disponible.
-    $raiz = Split-Path -Parent $PSScriptRoot
+    # Comprueba la clave privada RSA usada para firmar artefactos.
     $proyecto = Join-Path $raiz 'LanzadorScripts.csproj'
     $fuenteCertificado = Get-Content -LiteralPath (Join-Path $raiz 'Servicios\ServicioTokenMaestro.cs') -Raw
     $coincidenciaHuella = [regex]::Match(
@@ -133,7 +110,7 @@ try {
         throw "No se encontro el certificado privado de artefactos $huella."
     }
 
-    # Compila el generador y pasa solo rutas e identidades codificadas.
+    # Compila y ejecuta el generador sin transmitir secretos.
     & dotnet build $proyecto -c Release -r win-x64 --self-contained true
     if ($LASTEXITCODE -ne 0) {
         throw "La compilacion termino con codigo $LASTEXITCODE."
@@ -142,39 +119,68 @@ try {
     if (-not (Test-Path -LiteralPath $ensamblado -PathType Leaf)) {
         throw "No se encontro el ensamblado generador: $ensamblado"
     }
+
     $scriptsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptsPreparados))
     $salidaBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($rutaSalidaCompleta))
-    $administradorBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Administrador))
-    $descriptorBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($descriptor))
+    $administradoresJson = ConvertTo-Json -InputObject @($administradoresUnicos) -Compress
+    $administradoresBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($administradoresJson))
     & dotnet $ensamblado `
         --generar-conjunto-artefactos `
         --scripts-base64 $scriptsBase64 `
         --salida-base64 $salidaBase64 `
-        --administrador-base64 $administradorBase64 `
-        --descriptor-base64 $descriptorBase64 `
+        --administradores-base64 $administradoresBase64 `
         --total-esperado $TotalScriptsEsperado
     if ($LASTEXITCODE -ne 0) {
         throw "La generacion del conjunto termino con codigo $LASTEXITCODE."
     }
 
-    # Verifica nombres, KeyId y huellas antes de devolver los resultados.
-    $nombresEsperados = @(
-        'permisos.json',
-        'catalogo-scripts.json',
-        'clave-artefactos.dpng.json'
-    )
+    # Verifica la forma publica del conjunto antes de entregarlo.
+    $nombresEsperados = @('permisos.json', 'catalogo-scripts.json')
     $archivos = @(Get-ChildItem -LiteralPath $rutaSalidaCompleta -File)
     if ($archivos.Count -ne $nombresEsperados.Count -or
         @($archivos | Where-Object { $_.Name -notin $nombresEsperados }).Count -ne 0) {
-        throw 'La salida no contiene exactamente los tres artefactos requeridos.'
+        throw 'La salida no contiene exactamente los dos artefactos firmados requeridos.'
     }
-    $keyIds = foreach ($nombre in $nombresEsperados) {
-        $contenido = Get-Content -LiteralPath (Join-Path $rutaSalidaCompleta $nombre) -Raw |
+
+    $tiposEsperados = @{
+        'permisos.json' = 'permissions'
+        'catalogo-scripts.json' = 'script-catalog'
+    }
+    $conjuntos = foreach ($nombre in $nombresEsperados) {
+        $contenedor = Get-Content -LiteralPath (Join-Path $rutaSalidaCompleta $nombre) -Raw |
             ConvertFrom-Json
-        [string]$contenido.KeyId
+        $propiedades = @($contenedor.PSObject.Properties.Name | Sort-Object)
+        $esperadas = @('Algoritmo', 'Autor', 'ConjuntoId', 'Contenido', 'Descripcion', 'Firma', 'Tipo', 'Version')
+        if (Compare-Object $propiedades $esperadas) {
+            throw "El contenedor $nombre no tiene exactamente las propiedades v3."
+        }
+        if ($contenedor.Version -ne 3 -or
+            $contenedor.Algoritmo -ne 'RSA-PSS-SHA256' -or
+            $contenedor.Tipo -ne $tiposEsperados[$nombre] -or
+            [string]$contenedor.ConjuntoId -notmatch '^[A-F0-9]{32}$') {
+            throw "El contenedor $nombre no cumple el contrato firmado v3."
+        }
+        [string]$contenedor.ConjuntoId
     }
-    if (@($keyIds | Sort-Object -Unique).Count -ne 1 -or [string]::IsNullOrWhiteSpace($keyIds[0])) {
-        throw 'Los tres artefactos no comparten el mismo KeyId.'
+    if (@($conjuntos | Sort-Object -Unique).Count -ne 1) {
+        throw 'Permisos y catalogo no comparten el mismo ConjuntoId.'
+    }
+
+    $permisos = (Get-Content -LiteralPath (Join-Path $rutaSalidaCompleta 'permisos.json') -Raw |
+        ConvertFrom-Json).Contenido
+    $adminsGenerados = @(
+        $permisos.usuarios |
+            Where-Object { $_.rol -eq 'admin' } |
+            ForEach-Object { [string]$_.nombreUsuario } |
+            Sort-Object -Unique
+    )
+    if (Compare-Object $adminsGenerados $administradoresUnicos) {
+        throw 'Los permisos no contienen exactamente los dos administradores solicitados.'
+    }
+    $catalogo = (Get-Content -LiteralPath (Join-Path $rutaSalidaCompleta 'catalogo-scripts.json') -Raw |
+        ConvertFrom-Json).Contenido
+    if (@($catalogo.scripts).Count -ne $TotalScriptsEsperado) {
+        throw "El catalogo no contiene los $TotalScriptsEsperado scripts esperados."
     }
 
     $archivos |
@@ -182,7 +188,7 @@ try {
         ForEach-Object {
             [pscustomobject]@{
                 Archivo = $_.FullName
-                KeyId = $keyIds[0]
+                ConjuntoId = $conjuntos[0]
                 Sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
             }
         }
@@ -190,7 +196,7 @@ try {
     # Elimina solo la carpeta temporal unica creada por esta ejecucion.
     $temporalValidado = [IO.Path]::GetFullPath($scriptsPreparados)
     if ($temporalValidado.StartsWith($raizTemporal, [StringComparison]::OrdinalIgnoreCase) -and
-        (Split-Path -Leaf $temporalValidado).StartsWith('LanzadorScripts-Artefactos-', [StringComparison]::Ordinal)) {
+        (Split-Path -Leaf $temporalValidado).StartsWith('LanzadorScripts-Firmados-', [StringComparison]::Ordinal)) {
         [IO.Directory]::Delete($temporalValidado, $true)
     }
 }

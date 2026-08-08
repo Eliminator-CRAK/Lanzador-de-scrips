@@ -1,9 +1,10 @@
 // (Autor: Alex Roman)
-// Descripcion: Comprueba la lectura segura y la migracion de artefactos firmados v1.
+// Descripcion: Comprueba el formato estricto y la coherencia de los artefactos firmados v3.
 
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LanzadorScripts.Servicios;
 using Xunit;
 
@@ -11,221 +12,407 @@ namespace LanzadorScripts.Pruebas;
 
 public sealed class PruebasCompatibilidadArtefactos
 {
-    private const string Algoritmo = "AES-256-GCM+RSA-PSS-SHA256";
-    private const string Autor = "Alex Roman";
-    private const string Descripcion = "Artefacto cifrado y firmado de LanzadorScripts.";
+    private const string PermisosValidos = "{\"scriptsAdmin\":[],\"usuarios\":[],\"seguridadScripts\":{\"scriptsElevadosPermitidos\":[],\"permitirExecutionPolicyBypass\":false},\"rolUsuarioActual\":\"nominal\",\"maxScriptsSimultaneos\":5}";
 
     [Fact]
-    public void ContenedorLegadoValidoSeLeeYLaEscrituraNuevaUsaVersionDos()
+    public void ContenedorV3EsLegibleFirmadoYSeparaTipos()
     {
-        var clave = RandomNumberGenerator.GetBytes(32);
-        using var firmaActual = RSA.Create(3072);
-        using var firmaLegada = RSA.Create(3072);
-        var legado = CrearContenedor(
-            clave,
-            firmaLegada,
-            version: 1,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"usuarios\":[]}");
-        var servicio = CrearServicio(
-            clave,
-            firmaActual,
-            firmaLegada,
-            huellaPermisos: ObtenerHuella(legado));
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var conjuntoId = ServicioArtefactosFirmados.CrearConjuntoId();
+        var contenedor = servicio.FirmarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"usuarios\":[]}",
+            conjuntoId);
 
-        Assert.True(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            legado,
-            out var claro,
+        Assert.Contains("\"Version\": 3", contenedor, StringComparison.Ordinal);
+        Assert.Contains("\"Contenido\"", contenedor, StringComparison.Ordinal);
+        Assert.Contains("\"usuarios\"", contenedor, StringComparison.Ordinal);
+        Assert.DoesNotContain("AES", contenedor, StringComparison.OrdinalIgnoreCase);
+        Assert.True(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            contenedor,
+            out var contenido,
+            out var conjuntoLeido,
             out _));
-        Assert.Equal("{\"usuarios\":[]}", claro);
-        Assert.True(servicio.IntentarObtenerKeyIdFirmado(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            legado,
-            out var keyId,
+        Assert.Equal("{\"usuarios\":[]}", contenido);
+        Assert.Equal(conjuntoId, conjuntoLeido);
+        Assert.False(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoCatalogoScripts,
+            contenedor,
+            out _,
+            out _,
             out _));
-        Assert.Equal(Convert.ToHexString(SHA256.HashData(clave))[..16], keyId);
+    }
 
-        var actualizado = servicio.ProtegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            claro);
-        using var documento = JsonDocument.Parse(actualizado);
-        Assert.Equal(2, documento.RootElement.GetProperty("Version").GetInt32());
-        CryptographicOperations.ZeroMemory(clave);
+    [Theory]
+    [InlineData("Autor", "Otro autor")]
+    [InlineData("Descripcion", "Otra descripcion")]
+    [InlineData("Version", "4")]
+    [InlineData("Tipo", "script-catalog")]
+    [InlineData("Algoritmo", "RSA-PKCS1-SHA256")]
+    [InlineData("ConjuntoId", "00000000000000000000000000000000")]
+    public void ModificarMetadatosInvalidaLaFirma(string propiedad, string valor)
+    {
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var contenedor = JsonNode.Parse(servicio.FirmarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"usuarios\":[]}",
+            ServicioArtefactosFirmados.CrearConjuntoId()))!.AsObject();
+        contenedor[propiedad] = propiedad == "Version" ? int.Parse(valor) : valor;
+
+        Assert.False(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            contenedor.ToJsonString(),
+            out _,
+            out _,
+            out _));
     }
 
     [Fact]
-    public void CadaVersionExigeSuClavePublicaCorrespondiente()
+    public void ModificarContenidoFirmaOClavePublicaSeRechaza()
     {
-        var clave = RandomNumberGenerator.GetBytes(32);
-        using var firmaActual = RSA.Create(3072);
-        using var firmaLegada = RSA.Create(3072);
-        var v1FirmadaComoActual = CrearContenedor(
-            clave,
-            firmaActual,
-            version: 1,
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            "{\"scripts\":[]}");
-        var v2FirmadaComoLegada = CrearContenedor(
-            clave,
-            firmaLegada,
-            version: 2,
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            "{\"scripts\":[]}");
-        var servicio = CrearServicio(
-            clave,
-            firmaActual,
-            firmaLegada,
-            huellaCatalogo: ObtenerHuella(v1FirmadaComoActual));
+        using var rsa = RSA.Create(3072);
+        using var rsaIncorrecta = RSA.Create(3072);
+        var escritor = new ServicioArtefactosFirmados(rsa, rsa);
+        var lectorIncorrecto = new ServicioArtefactosFirmados(rsa, rsaIncorrecta);
+        var firmado = escritor.FirmarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"valor\":1}",
+            ServicioArtefactosFirmados.CrearConjuntoId());
+        var contenidoManipulado = JsonNode.Parse(firmado)!.AsObject();
+        contenidoManipulado["Contenido"]!["valor"] = 2;
+        var firmaInvalida = JsonNode.Parse(firmado)!.AsObject();
+        firmaInvalida["Firma"] = "***";
+        var firmaIncorrecta = JsonNode.Parse(firmado)!.AsObject();
+        firmaIncorrecta["Firma"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(384));
 
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            v1FirmadaComoActual,
+        Assert.False(escritor.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            contenidoManipulado.ToJsonString(),
             out _,
-            out var errorV1));
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoCatalogoScripts,
-            v2FirmadaComoLegada,
             out _,
-            out var errorV2));
-        Assert.Equal("La firma del contenedor protegido no es valida.", errorV1);
-        Assert.Equal("La firma del contenedor protegido no es valida.", errorV2);
-        CryptographicOperations.ZeroMemory(clave);
+            out _));
+        Assert.False(escritor.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            firmaInvalida.ToJsonString(),
+            out _,
+            out _,
+            out var errorFirma));
+        Assert.Contains("Base64", errorFirma, StringComparison.Ordinal);
+        Assert.False(escritor.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            firmaIncorrecta.ToJsonString(),
+            out _,
+            out _,
+            out _));
+        Assert.False(lectorIncorrecto.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            firmado,
+            out _,
+            out _,
+            out _));
     }
 
     [Fact]
-    public void ContenedorLegadoManipuladoSeRechaza()
+    public void PropiedadesDesconocidasODuplicadasSeRechazan()
     {
-        var clave = RandomNumberGenerator.GetBytes(32);
-        using var firmaActual = RSA.Create(3072);
-        using var firmaLegada = RSA.Create(3072);
-        var legado = CrearContenedor(
-            clave,
-            firmaLegada,
-            version: 1,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"usuarios\":[]}");
-        var servicio = CrearServicio(
-            clave,
-            firmaActual,
-            firmaLegada,
-            huellaPermisos: ObtenerHuella(legado));
-        var contenedor = JsonSerializer.Deserialize<Dictionary<string, object>>(legado)!;
-        contenedor["KeyId"] = "0000000000000000";
-        var manipulado = JsonSerializer.Serialize(contenedor);
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var firmado = servicio.FirmarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"usuarios\":[]}",
+            ServicioArtefactosFirmados.CrearConjuntoId());
+        var desconocida = JsonNode.Parse(firmado)!.AsObject();
+        desconocida["Extra"] = true;
+        var duplicada = firmado.Replace(
+            "  \"Autor\": \"Alex Roman\",",
+            "  \"Autor\": \"Alex Roman\",\n  \"Autor\": \"Alex Roman\",",
+            StringComparison.Ordinal);
 
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            manipulado,
+        Assert.False(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            desconocida.ToJsonString(),
+            out _,
+            out _,
+            out _));
+        Assert.False(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            duplicada,
+            out _,
+            out _,
+            out _));
+        Assert.Throws<ArgumentException>(() => servicio.FirmarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"valor\":1,\"valor\":2}",
+            ServicioArtefactosFirmados.CrearConjuntoId()));
+    }
+
+    [Fact]
+    public void ContenedorAesAnteriorSeRechazaConErrorDeMigracion()
+    {
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        const string anterior = "{\"Version\":2,\"Tipo\":\"permissions\",\"Algoritmo\":\"AES-256-GCM+RSA-PSS-SHA256\",\"KeyId\":\"0123456789ABCDEF\"}";
+
+        Assert.False(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            anterior,
+            out _,
             out _,
             out var error));
-        Assert.Equal("El contenedor v1 no pertenece a la migracion autorizada.", error);
-        CryptographicOperations.ZeroMemory(clave);
+        Assert.Contains("AES v1/v2 obsoleto", error, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void OtroContenedorLegadoConFirmaValidaSeRechaza()
+    public void LecturaRecuperaCopiaBakValida()
     {
-        var clave = RandomNumberGenerator.GetBytes(32);
-        using var firmaActual = RSA.Create(3072);
-        using var firmaLegada = RSA.Create(3072);
-        var autorizado = CrearContenedor(
-            clave,
-            firmaLegada,
-            version: 1,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"usuarios\":[]}");
-        var noAutorizado = CrearContenedor(
-            clave,
-            firmaLegada,
-            version: 1,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            "{\"usuarios\":[\"otro\"]}");
-        var servicio = CrearServicio(
-            clave,
-            firmaActual,
-            firmaLegada,
-            huellaPermisos: ObtenerHuella(autorizado));
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var ruta = Path.Combine(entorno.Raiz, "permisos.json");
+        var conjuntoId = ServicioArtefactosFirmados.CrearConjuntoId();
+        servicio.GuardarTextoFirmado(
+            ruta,
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"version\":1}",
+            conjuntoId);
+        servicio.GuardarTextoFirmado(
+            ruta,
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"version\":2}",
+            conjuntoId);
+        File.WriteAllText(ruta, "{");
 
-        Assert.False(servicio.IntentarDesprotegerTexto(
-            ServicioArtefactosProtegidos.TipoPermisos,
-            noAutorizado,
+        Assert.True(servicio.IntentarCargarTextoFirmado(
+            ruta,
+            ServicioArtefactosFirmados.TipoPermisos,
+            out var contenido,
+            out var conjuntoLeido,
             out _,
-            out var error));
-        Assert.Equal("El contenedor v1 no pertenece a la migracion autorizada.", error);
-        CryptographicOperations.ZeroMemory(clave);
+            out var recuperado));
+        Assert.True(recuperado);
+        Assert.Equal(conjuntoId, conjuntoLeido);
+        Assert.Contains("\"version\":1", contenido, StringComparison.Ordinal);
     }
 
-    private static ServicioArtefactosProtegidos CrearServicio(
-        byte[] clave,
-        RSA firmaActual,
-        RSA firmaLegada,
-        string? huellaPermisos = null,
-        string? huellaCatalogo = null)
+    [Fact]
+    public void Utf8IncorrectoSeRechaza()
     {
-        return new ServicioArtefactosProtegidos(
-            clave,
-            new ServicioFirmaArtefactos(
-                firmaActual,
-                firmaActual,
-                firmaLegada),
-            huellaPermisos ?? new string('0', 64),
-            huellaCatalogo ?? new string('0', 64));
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var ruta = Path.Combine(entorno.Raiz, "permisos.json");
+        File.WriteAllBytes(ruta, [0xC3, 0x28]);
+
+        Assert.False(servicio.IntentarCargarTextoFirmado(
+            ruta,
+            ServicioArtefactosFirmados.TipoPermisos,
+            out _,
+            out _,
+            out var error,
+            out _));
+        Assert.Contains("UTF-8", error, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ObtenerHuella(string texto)
+    [Fact]
+    public void ArchivoYFirmaConTamanoExcesivoSeRechazan()
     {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(texto)));
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var ruta = Path.Combine(entorno.Raiz, "permisos.json");
+        File.WriteAllText(ruta, new string('A', 24 * 1024 * 1024 + 1), Encoding.ASCII);
+
+        Assert.False(servicio.IntentarCargarTextoFirmado(
+            ruta,
+            ServicioArtefactosFirmados.TipoPermisos,
+            out _,
+            out _,
+            out var errorArchivo,
+            out _));
+        Assert.Contains("tamano", errorArchivo, StringComparison.OrdinalIgnoreCase);
+
+        var firmado = JsonNode.Parse(servicio.FirmarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"usuarios\":[]}",
+            ServicioArtefactosFirmados.CrearConjuntoId()))!.AsObject();
+        firmado["Firma"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16 * 1024 + 1));
+        Assert.False(servicio.IntentarValidarTexto(
+            ServicioArtefactosFirmados.TipoPermisos,
+            firmado.ToJsonString(),
+            out _,
+            out _,
+            out var errorFirma));
+        Assert.Contains("longitud", errorFirma, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string CrearContenedor(
-        byte[] clave,
-        RSA firma,
-        int version,
-        string tipo,
-        string claro)
+    [Fact]
+    public void PermisosFirmadosConPropiedadInternaDesconocidaSeRechazan()
     {
-        var keyId = Convert.ToHexString(SHA256.HashData(clave))[..16];
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var claroBytes = Encoding.UTF8.GetBytes(claro);
-        var cifrado = new byte[claroBytes.Length];
-        var etiqueta = new byte[16];
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var artefactos = new ServicioArtefactosFirmados(rsa, rsa);
+        var conjunto = new ServicioConjuntoArtefactos(artefactos);
+        var ruta = Path.Combine(entorno.Raiz, "permisos.json");
+        artefactos.GuardarTextoFirmado(
+            ruta,
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"scriptsAdmin\":[],\"usuarios\":[],\"seguridadScripts\":{\"scriptsElevadosPermitidos\":[],\"permitirExecutionPolicyBypass\":false},\"rolUsuarioActual\":\"nominal\",\"maxScriptsSimultaneos\":5,\"campoIgnorado\":true}",
+            ServicioArtefactosFirmados.CrearConjuntoId());
+
+        Assert.False(conjunto.IntentarCargarPermisos(
+            ruta,
+            out _,
+            out _,
+            out var error,
+            out _));
+        Assert.Contains("propiedades", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RutaFirmadaMedianteEnlaceSeRechazaCuandoElSistemaPermiteCrearlo()
+    {
+        using var entorno = EntornoTemporal.Crear();
+        using var rsa = RSA.Create(3072);
+        var servicio = new ServicioArtefactosFirmados(rsa, rsa);
+        var destino = Path.Combine(entorno.Raiz, "destino.json");
+        var enlace = Path.Combine(entorno.Raiz, "permisos.json");
+        servicio.GuardarTextoFirmado(
+            destino,
+            ServicioArtefactosFirmados.TipoPermisos,
+            "{\"usuarios\":[]}",
+            ServicioArtefactosFirmados.CrearConjuntoId());
         try
         {
-            var asociados = Encoding.UTF8.GetBytes(
-                $"LanzadorScripts|artefacto|v{version}|{tipo}|{Algoritmo}|{keyId}");
-            using (var aes = new AesGcm(clave, etiqueta.Length))
-            {
-                aes.Encrypt(nonce, claroBytes, cifrado, etiqueta, asociados);
-            }
-
-            var nonceBase64 = Convert.ToBase64String(nonce);
-            var etiquetaBase64 = Convert.ToBase64String(etiqueta);
-            var datosBase64 = Convert.ToBase64String(cifrado);
-            var dominio = Encoding.UTF8.GetBytes(
-                $"LanzadorScripts|firma|{Autor}|{Descripcion}|v{version}|{tipo}|{Algoritmo}|{keyId}|{nonceBase64}|{etiquetaBase64}|{datosBase64}");
-            var firmaBase64 = Convert.ToBase64String(firma.SignData(
-                dominio,
-                HashAlgorithmName.SHA256,
-                RSASignaturePadding.Pss));
-
-            return JsonSerializer.Serialize(new
-            {
-                Autor,
-                Descripcion,
-                Version = version,
-                Tipo = tipo,
-                Algoritmo,
-                KeyId = keyId,
-                Nonce = nonceBase64,
-                Etiqueta = etiquetaBase64,
-                Datos = datosBase64,
-                Firma = firmaBase64
-            });
+            File.CreateSymbolicLink(enlace, destino);
         }
-        finally
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            CryptographicOperations.ZeroMemory(claroBytes);
+            return;
+        }
+
+        Assert.False(servicio.IntentarCargarTextoFirmado(
+            enlace,
+            ServicioArtefactosFirmados.TipoPermisos,
+            out _,
+            out _,
+            out var error,
+            out _));
+        Assert.Contains("leer", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ParejaConConjuntoIdDistintoSeRechaza()
+    {
+        using var entorno = EntornoTemporal.CrearConScripts();
+        using var rsa = RSA.Create(3072);
+        var artefactos = new ServicioArtefactosFirmados(rsa, rsa);
+        var rutaPermisos = Path.Combine(entorno.Raiz, "permisos.json");
+        artefactos.GuardarTextoFirmado(
+            rutaPermisos,
+            ServicioArtefactosFirmados.TipoPermisos,
+            PermisosValidos,
+            ServicioArtefactosFirmados.CrearConjuntoId());
+        var scripts = new ServicioValidacionScripts().DescubrirScripts(entorno.RutaScripts);
+        var catalogos = new ServicioCatalogoScripts(artefactos);
+        catalogos.Guardar(
+            Path.Combine(entorno.Raiz, ServicioCatalogoScripts.NombreArchivo),
+            catalogos.Crear(
+                scripts,
+                scripts.Select(script => script.Id),
+                ServicioArtefactosFirmados.CrearConjuntoId()));
+
+        Assert.False(new ServicioConjuntoArtefactos(artefactos).IntentarCargarPareja(
+            rutaPermisos,
+            out _,
+            out _,
+            out _,
+            out var error));
+        Assert.Contains("ConjuntoId", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EscrituraEsperaBloqueoYConservaConjuntoId()
+    {
+        using var entorno = EntornoTemporal.CrearConScripts();
+        using var rsa = RSA.Create(3072);
+        var artefactos = new ServicioArtefactosFirmados(rsa, rsa);
+        var conjuntoId = ServicioArtefactosFirmados.CrearConjuntoId();
+        var rutaPermisos = Path.Combine(entorno.Raiz, "permisos.json");
+        artefactos.GuardarTextoFirmado(
+            rutaPermisos,
+            ServicioArtefactosFirmados.TipoPermisos,
+            PermisosValidos,
+            conjuntoId);
+        var scripts = new ServicioValidacionScripts().DescubrirScripts(entorno.RutaScripts);
+        var catalogos = new ServicioCatalogoScripts(artefactos);
+        catalogos.Guardar(
+            Path.Combine(entorno.Raiz, ServicioCatalogoScripts.NombreArchivo),
+            catalogos.Crear(scripts, scripts.Select(script => script.Id), conjuntoId));
+        var rutaBloqueo = Path.Combine(entorno.Raiz, ".lanzadorscripts-conjunto.lock");
+        using var bloqueo = new FileStream(
+            rutaBloqueo,
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None);
+        var conjunto = new ServicioConjuntoArtefactos(artefactos);
+        var escritura = Task.Run(() => conjunto.GuardarPermisosPreservandoConjunto(
+            rutaPermisos,
+            JsonNode.Parse(PermisosValidos)!.AsObject()));
+        await Task.Delay(250);
+        Assert.False(escritura.IsCompleted);
+        bloqueo.Dispose();
+        await escritura;
+
+        Assert.True(conjunto.IntentarCargarPareja(
+            rutaPermisos,
+            out _,
+            out _,
+            out var conjuntoLeido,
+            out _));
+        Assert.Equal(conjuntoId, conjuntoLeido);
+        Assert.True(File.Exists(rutaPermisos + ".bak"));
+    }
+
+    private sealed class EntornoTemporal : IDisposable
+    {
+        private EntornoTemporal(string raiz, string rutaScripts)
+        {
+            Raiz = raiz;
+            RutaScripts = rutaScripts;
+        }
+
+        public string Raiz { get; }
+
+        public string RutaScripts { get; }
+
+        public static EntornoTemporal Crear()
+        {
+            var raiz = Path.Combine(Path.GetTempPath(), "LanzadorScripts_Firmas_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(raiz);
+            return new EntornoTemporal(raiz, raiz);
+        }
+
+        public static EntornoTemporal CrearConScripts()
+        {
+            var entorno = Crear();
+            var scripts = Path.Combine(entorno.Raiz, "scripts");
+            Directory.CreateDirectory(scripts);
+            File.WriteAllText(Path.Combine(scripts, "ok.cmd"), "echo ok", Encoding.UTF8);
+            return new EntornoTemporal(entorno.Raiz, scripts);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Raiz, recursive: true);
+            }
+            catch
+            {
+            }
         }
     }
 }

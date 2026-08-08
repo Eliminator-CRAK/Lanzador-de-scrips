@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Genera permisos y catalogo iniciales para la publicacion portable.
+// Descripcion: Genera permisos y catalogo firmados para la distribucion corporativa.
 
 using System.IO;
 using System.Text;
@@ -12,7 +12,12 @@ namespace LanzadorScripts.Servicios;
 public static class ServicioGeneracionArtefactosIniciales
 {
     public const string ArgumentoGenerar = "--generar-artefactos-iniciales";
-    public const string AdministradorPredeterminado = @"MAD00\aroperez_micro";
+
+    public static readonly IReadOnlyList<string> AdministradoresPredeterminados =
+    [
+        @"MAD00\aroperez_micro",
+        @"PCERA\alero"
+    ];
 
     private static readonly Regex PatronCuentaWindows = new(
         @"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
@@ -36,11 +41,10 @@ public static class ServicioGeneracionArtefactosIniciales
         {
             var rutaScripts = DecodificarArgumento(argumentos, "--scripts-base64");
             var rutaSalida = DecodificarArgumento(argumentos, "--salida-base64");
-            var administrador = DecodificarArgumentoOpcional(
-                argumentos,
-                "--administrador-base64",
-                AdministradorPredeterminado);
-            Generar(rutaScripts, rutaSalida, administrador);
+            var administradores = DecodificarAdministradores(argumentos);
+            var resultado = Generar(rutaScripts, rutaSalida, administradores);
+            Console.WriteLine(
+                $"Conjunto firmado creado. ConjuntoId={resultado.ConjuntoId}; Scripts={resultado.TotalScripts}; Salida={resultado.RutaSalida}");
             return 0;
         }
         catch (Exception ex)
@@ -50,39 +54,33 @@ public static class ServicioGeneracionArtefactosIniciales
         }
     }
 
-    public static void Generar(string rutaScripts, string rutaSalida)
+    public static ResultadoGeneracionConjuntoArtefactos Generar(
+        string rutaScripts,
+        string rutaSalida)
     {
-        Generar(rutaScripts, rutaSalida, AdministradorPredeterminado);
+        return Generar(rutaScripts, rutaSalida, AdministradoresPredeterminados);
     }
 
-    public static void Generar(
+    public static ResultadoGeneracionConjuntoArtefactos Generar(
         string rutaScripts,
         string rutaSalida,
-        string administrador)
+        IEnumerable<string> administradores)
     {
-        Generar(
+        return Generar(
             rutaScripts,
             rutaSalida,
-            new ServicioArtefactosProtegidos(),
-            administrador);
+            administradores,
+            new ServicioArtefactosFirmados());
     }
 
-    internal static void Generar(
+    internal static ResultadoGeneracionConjuntoArtefactos Generar(
         string rutaScripts,
         string rutaSalida,
-        ServicioArtefactosProtegidos artefactos)
+        IEnumerable<string> administradores,
+        ServicioArtefactosFirmados artefactos,
+        string? conjuntoId = null)
     {
-        Generar(rutaScripts, rutaSalida, artefactos, AdministradorPredeterminado);
-    }
-
-    internal static void Generar(
-        string rutaScripts,
-        string rutaSalida,
-        ServicioArtefactosProtegidos artefactos,
-        string administrador)
-    {
-        // Valida la identidad antes de crear los artefactos.
-        var administradorValidado = ValidarAdministrador(administrador);
+        var administradoresValidados = ValidarAdministradores(administradores);
         var validador = new ServicioValidacionScripts();
         var scripts = validador.DescubrirScripts(rutaScripts);
         if (scripts.Count == 0)
@@ -102,16 +100,23 @@ public static class ServicioGeneracionArtefactosIniciales
 
         var rutaSalidaValidada = ServicioRutasSeguras.ResolverCarpetaAbsoluta(
             rutaSalida,
-            "salida de artefactos iniciales");
+            "salida de artefactos firmados");
         Directory.CreateDirectory(rutaSalidaValidada);
-        var permisos = CrearPermisosIniciales(administradorValidado);
-        artefactos.GuardarTextoProtegido(
+        var conjuntoIdValidado = conjuntoId ?? ServicioArtefactosFirmados.CrearConjuntoId();
+        ServicioArtefactosFirmados.ValidarConjuntoId(conjuntoIdValidado);
+
+        var permisos = CrearPermisosIniciales(administradoresValidados);
+        artefactos.GuardarTextoFirmado(
             Path.Combine(rutaSalidaValidada, RutasArtefactosProtegidos.NombrePermisos),
-            ServicioArtefactosProtegidos.TipoPermisos,
-            permisos.ToJsonString(OpcionesJson));
+            ServicioArtefactosFirmados.TipoPermisos,
+            permisos.ToJsonString(OpcionesJson),
+            conjuntoIdValidado);
 
         var servicioCatalogo = new ServicioCatalogoScripts(artefactos);
-        var catalogo = servicioCatalogo.Crear(scripts, scripts.Select(script => script.Id));
+        var catalogo = servicioCatalogo.Crear(
+            scripts,
+            scripts.Select(script => script.Id),
+            conjuntoIdValidado);
         servicioCatalogo.Guardar(
             Path.Combine(rutaSalidaValidada, ServicioCatalogoScripts.NombreArchivo),
             catalogo);
@@ -120,19 +125,29 @@ public static class ServicioGeneracionArtefactosIniciales
             scripts.Count,
             artefactos,
             servicioCatalogo,
-            administradorValidado);
+            administradoresValidados,
+            conjuntoIdValidado);
+
+        return new ResultadoGeneracionConjuntoArtefactos(
+            conjuntoIdValidado,
+            scripts.Count,
+            rutaSalidaValidada);
     }
 
-    internal static JsonObject CrearPermisosIniciales(string administrador)
+    internal static JsonObject CrearPermisosIniciales(IEnumerable<string> administradores)
     {
-        // Crea un unico administrador principal para el paquete inicial.
+        var usuarios = new JsonArray();
+        var indice = 1;
+        foreach (var administrador in ValidarAdministradores(administradores))
+        {
+            usuarios.Add(CrearAdministrador($"administrador-{indice}", administrador));
+            indice++;
+        }
+
         return new JsonObject
         {
             ["scriptsAdmin"] = new JsonArray(),
-            ["usuarios"] = new JsonArray
-            {
-                CrearAdministrador("administrador-principal", administrador)
-            },
+            ["usuarios"] = usuarios,
             ["seguridadScripts"] = new JsonObject
             {
                 ["scriptsElevadosPermitidos"] = new JsonArray(),
@@ -141,6 +156,36 @@ public static class ServicioGeneracionArtefactosIniciales
             ["rolUsuarioActual"] = "nominal",
             ["maxScriptsSimultaneos"] = 5
         };
+    }
+
+    internal static IReadOnlyList<string> ValidarAdministradores(IEnumerable<string> administradores)
+    {
+        ArgumentNullException.ThrowIfNull(administradores);
+        var resultado = administradores
+            .Select(ValidarAdministrador)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (resultado.Count != 2)
+        {
+            throw new ArgumentException(
+                "El conjunto inicial debe contener exactamente dos administradores distintos.",
+                nameof(administradores));
+        }
+
+        return resultado;
+    }
+
+    internal static string ValidarAdministrador(string administrador)
+    {
+        var valor = administrador?.Trim() ?? string.Empty;
+        if (!PatronCuentaWindows.IsMatch(valor))
+        {
+            throw new ArgumentException(
+                "El administrador debe usar el formato DOMINIO\\usuario.",
+                nameof(administrador));
+        }
+
+        return valor;
     }
 
     private static JsonObject CrearAdministrador(string id, string nombreUsuario)
@@ -158,16 +203,18 @@ public static class ServicioGeneracionArtefactosIniciales
     private static void ValidarResultado(
         string rutaSalida,
         int totalScripts,
-        ServicioArtefactosProtegidos artefactos,
+        ServicioArtefactosFirmados artefactos,
         ServicioCatalogoScripts servicioCatalogo,
-        string administradorEsperado)
+        IReadOnlyCollection<string> administradoresEsperados,
+        string conjuntoIdEsperado)
     {
         var rutaPermisos = Path.Combine(rutaSalida, RutasArtefactosProtegidos.NombrePermisos);
-        var permisosProtegidos = File.ReadAllText(rutaPermisos, Encoding.UTF8);
-        if (!artefactos.IntentarDesprotegerTexto(
-                ServicioArtefactosProtegidos.TipoPermisos,
-                permisosProtegidos,
+        if (!artefactos.IntentarCargarTextoFirmado(
+                rutaPermisos,
+                ServicioArtefactosFirmados.TipoPermisos,
                 out var permisosJson,
+                out var conjuntoIdPermisos,
+                out _,
                 out _))
         {
             throw new InvalidOperationException("No se pudieron validar los permisos iniciales.");
@@ -181,20 +228,42 @@ public static class ServicioGeneracionArtefactosIniciales
                 StringComparison.OrdinalIgnoreCase))
             .Select(usuario => usuario?["nombreUsuario"]?.GetValue<string>())
             .Where(usuario => !string.IsNullOrWhiteSpace(usuario))
+            .Select(usuario => usuario!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (administradores is null
-            || !administradores.SetEquals([administradorEsperado]))
+        if (administradores is null || !administradores.SetEquals(administradoresEsperados))
         {
             throw new InvalidOperationException(
-                "Los permisos iniciales no contienen exclusivamente el administrador requerido.");
+                "Los permisos iniciales no contienen exclusivamente los administradores requeridos.");
         }
 
         var rutaCatalogo = Path.Combine(rutaSalida, ServicioCatalogoScripts.NombreArchivo);
         if (!servicioCatalogo.IntentarCargar(rutaCatalogo, out var catalogo, out _)
-            || catalogo?.Scripts.Count != totalScripts)
+            || catalogo?.Scripts.Count != totalScripts
+            || !string.Equals(conjuntoIdPermisos, conjuntoIdEsperado, StringComparison.Ordinal)
+            || !string.Equals(catalogo.ConjuntoId, conjuntoIdEsperado, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("No se pudo validar el catalogo inicial.");
+            throw new InvalidOperationException("No se pudo validar el conjunto firmado inicial.");
         }
+    }
+
+    private static IReadOnlyList<string> DecodificarAdministradores(string[] argumentos)
+    {
+        var indice = Array.FindIndex(
+            argumentos,
+            argumento => string.Equals(argumento, "--administradores-base64", StringComparison.OrdinalIgnoreCase));
+        if (indice < 0)
+        {
+            return AdministradoresPredeterminados;
+        }
+
+        if (indice + 1 >= argumentos.Length)
+        {
+            throw new InvalidOperationException("Falta el valor requerido para --administradores-base64.");
+        }
+
+        var json = Encoding.UTF8.GetString(Convert.FromBase64String(argumentos[indice + 1]));
+        return JsonSerializer.Deserialize<string[]>(json)
+            ?? throw new InvalidOperationException("La lista de administradores no es valida.");
     }
 
     private static string DecodificarArgumento(string[] argumentos, string nombre)
@@ -208,35 +277,5 @@ public static class ServicioGeneracionArtefactosIniciales
         }
 
         return Encoding.UTF8.GetString(Convert.FromBase64String(argumentos[indice + 1]));
-    }
-
-    private static string DecodificarArgumentoOpcional(
-        string[] argumentos,
-        string nombre,
-        string valorPredeterminado)
-    {
-        // Conserva compatibilidad con publicaciones que no indican administrador.
-        var indice = Array.FindIndex(
-            argumentos,
-            argumento => string.Equals(argumento, nombre, StringComparison.OrdinalIgnoreCase));
-        return indice < 0
-            ? valorPredeterminado
-            : indice + 1 < argumentos.Length
-                ? Encoding.UTF8.GetString(Convert.FromBase64String(argumentos[indice + 1]))
-                : throw new InvalidOperationException($"Falta el valor requerido para {nombre}.");
-    }
-
-    internal static string ValidarAdministrador(string administrador)
-    {
-        // Acepta solo el formato DOMINIO\\usuario sin caracteres de control o ruta.
-        var valor = administrador?.Trim() ?? string.Empty;
-        if (!PatronCuentaWindows.IsMatch(valor))
-        {
-            throw new ArgumentException(
-                "El administrador debe usar el formato DOMINIO\\usuario.",
-                nameof(administrador));
-        }
-
-        return valor;
     }
 }

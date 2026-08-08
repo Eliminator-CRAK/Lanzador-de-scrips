@@ -1,0 +1,82 @@
+# (Autor: Alex Roman)
+# Descripcion: Configura la revision corporativa automatica de CodeRabbit.
+
+language: es-ES
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  review_details: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  in_progress_fortune: false
+  poem: false
+  disable_cache: true
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    drafts: false
+  path_filters:
+    - "**"
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!publicacion*/**"
+    - "!ArtefactosGenerados/**"
+    - "!Recursos/WebView2/**"
+    - "!ClienteWeb/assets/**"
+    - "!semgrep-results.json"
+    - "!**/*.exe"
+    - "!**/*.dll"
+    - "!**/*.pdb"
+    - "!**/*.zip"
+    - "!**/*.cab"
+    - "!**/*.ico"
+  path_instructions:
+    - path: "**/*.cs"
+      instructions: >-
+        Revisa nulabilidad, cancelacion, concurrencia, liberacion de IDisposable,
+        limites de entrada, rutas seguras y fallos cerrados. Senala cambios que
+        puedan bloquear el hilo de interfaz o exponer detalles internos.
+    - path: "Servicios/ServicioArtefactosFirmados.cs"
+      instructions: >-
+        Trata el formato v3 como un protocolo criptografico. Comprueba el
+        encuadre con longitudes, cobertura de todos los metadatos, RSA-PSS con
+        SHA-256, JSON duplicado, UTF-8 estricto, limites, Base64 y enlaces.
+    - path: "Servicios/ServicioConjuntoArtefactos.cs"
+      instructions: >-
+        Revisa condiciones de carrera, bloqueo entre procesos, escritura
+        atomica, restauracion .bak y conservacion del ConjuntoId en la pareja.
+    - path: "Servicios/**/*Rutas*.cs"
+      instructions: >-
+        Comprueba traversal, rutas UNC, normalizacion Windows, reparse points,
+        TOCTOU y que ninguna entrada controlada salga de su carpeta autorizada.
+    - path: "**/*.ps1"
+      instructions: >-
+        Revisa inyeccion de comandos, rutas no confiables, secretos en argumentos,
+        codigos de salida nativos, borrados limitados y compatibilidad PowerShell 7.6.
+    - path: "LanzadorNativo/**/*.cpp"
+      instructions: >-
+        Revisa desbordamientos, conversiones de tamano, handles, rutas temporales,
+        herencia de procesos, limpieza y validacion del recurso PE embebido.
+    - path: "Pruebas/**/*.cs"
+      instructions: >-
+        Exige pruebas negativas para seguridad, concurrencia y corrupcion. Evita
+        aserciones que solo inspeccionen texto cuando pueda probarse el comportamiento.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Comprueba permisos minimos, acciones fijadas por SHA, secretos solo en
+        main o etiquetas, integridad de descargas y separacion entre build y release.
+    - path: ".gitlab-ci.yml"
+      instructions: >-
+        Comprueba imagenes fijadas, historial completo para Gitleaks, pipelines de
+        merge request y ausencia de secretos o publicaciones desde ramas.
+
+knowledge_base:
+  opt_out: true
+  web_search:
+    enabled: false

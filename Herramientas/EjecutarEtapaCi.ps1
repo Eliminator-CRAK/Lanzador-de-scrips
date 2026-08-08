@@ -104,12 +104,15 @@ function Confiar-CertificadoFirmaCi {
 }
 
 function Publicar-Aplicacion {
-    # Publica con firma en main y permite artefactos sin firma solo en PR.
+    # Firma solo main o etiquetas y crea builds de desarrollo en ramas.
     if ($PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
         throw "La publicacion exige PowerShell 7.6.x. Version activa: $($PSVersionTable.PSVersion)"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
+    if ($env:RELEASE_BUILD -eq 'true') {
+        if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64)) {
+            throw 'Falta WINDOWS_SIGNING_CERT_BASE64. Main y las etiquetas exigen firma Authenticode.'
+        }
         if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
             throw 'Falta WINDOWS_SIGNING_CERT_PASSWORD.'
         }
@@ -138,11 +141,8 @@ function Publicar-Aplicacion {
             Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue
         }
     }
-    elseif ($env:EVENT_NAME -eq 'pull_request') {
-        & "$PSScriptRoot\PublicarPortable.ps1" -AllowUnsignedForDev
-    }
     else {
-        throw 'Falta WINDOWS_SIGNING_CERT_BASE64. La publicacion en main exige firma Authenticode.'
+        & "$PSScriptRoot\PublicarPortable.ps1" -AllowUnsignedForDev
     }
 }
 
@@ -167,7 +167,7 @@ function Verificar-Artefacto {
 
     foreach ($exe in $ejecutablesEsperados) {
         $firma = Get-AuthenticodeSignature -LiteralPath $exe
-        if ($env:EVENT_NAME -ne 'pull_request' -and $firma.Status -ne 'Valid') {
+        if ($env:RELEASE_BUILD -eq 'true' -and $firma.Status -ne 'Valid') {
             throw "La firma de $(Split-Path -Leaf $exe) no es valida: $($firma.Status)."
         }
 

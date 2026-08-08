@@ -53,7 +53,7 @@ EXCEPCIONES_ERRORES = (
         ruta="VentanaPrincipal.xaml.cs",
         tipo="Syntax error",
         lineas=(1,),
-        sha256="1078897CC4BC8CCA77ABF546A76421880C5D99E16AA1E56752C66204036194D1",
+        sha256="04C3ABD350036848477C312CEC9F26E9FF2E8914F846B136FCF0D21D6625CA24",
         motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
     ),
     ExcepcionErrorSemgrep(
@@ -74,7 +74,7 @@ EXCEPCIONES_ERRORES = (
         ruta="Servicios/GestorEjecucionesWeb.cs",
         tipo="PartialParsing",
         lineas=(967, 974, 1108),
-        sha256="0BC39186560C9EA2011AA55B6315F27F125E3EF17A3A8C5F8CE62BF1C8D0A1A8",
+        sha256="15DB393CD27F177A1F0D6F58545049FB240C552504E5FE48927D34AACD0D2449",
         motivo="El parser C# de Semgrep no admite el constructor primario de la clase interna.",
     ),
 )
@@ -355,10 +355,15 @@ def validar_resultados(
     bloqueantes.extend(errores_bloqueantes)
     bloqueantes.extend(validar_omisiones(informe, rutas_errores_aceptadas))
 
-    codigo_esperado = 3 if informe["errors"] else 0
-    if codigo_semgrep != codigo_esperado:
+    codigos_esperados = {0}
+    if informe["errors"]:
+        codigos_esperados = {3}
+    if informe["results"]:
+        codigos_esperados.add(1)
+    if codigo_semgrep not in codigos_esperados:
         bloqueantes.append(
-            f"Semgrep termino con codigo {codigo_semgrep}; se esperaba {codigo_esperado}."
+            "Semgrep termino con codigo "
+            f"{codigo_semgrep}; se esperaba uno de {sorted(codigos_esperados)}."
         )
 
     if bloqueantes:

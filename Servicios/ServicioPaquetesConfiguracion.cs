@@ -24,24 +24,24 @@ public sealed class ServicioPaquetesConfiguracion
     };
 
     private readonly ServicioCifradoAplicacion _servicioCifrado;
-    private readonly ServicioArtefactosProtegidos _servicioArtefactos;
+    private readonly ServicioConjuntoArtefactos _servicioConjuntoArtefactos;
 
     public ServicioPaquetesConfiguracion()
-        : this(new ServicioCifradoAplicacion(), new ServicioArtefactosProtegidos())
+        : this(new ServicioCifradoAplicacion(), new ServicioArtefactosFirmados())
     {
     }
 
     public ServicioPaquetesConfiguracion(ServicioCifradoAplicacion servicioCifrado)
-        : this(servicioCifrado, new ServicioArtefactosProtegidos())
+        : this(servicioCifrado, new ServicioArtefactosFirmados())
     {
     }
 
     internal ServicioPaquetesConfiguracion(
         ServicioCifradoAplicacion servicioCifrado,
-        ServicioArtefactosProtegidos servicioArtefactos)
+        ServicioArtefactosFirmados servicioArtefactos)
     {
         _servicioCifrado = servicioCifrado;
-        _servicioArtefactos = servicioArtefactos;
+        _servicioConjuntoArtefactos = new ServicioConjuntoArtefactos(servicioArtefactos);
     }
 
     public PaqueteExportado Exportar(ConfiguracionLanzador configuracion, JsonObject permisos)
@@ -102,18 +102,11 @@ public sealed class ServicioPaquetesConfiguracion
     public void GuardarPermisosImportados(ConfiguracionLanzador configuracion, JsonObject permisos)
     {
         var rutaPermisos = new ServicioValidacionScripts().ResolverRutaPermisos(configuracion.RutaScripts, configuracion.RutaPermisos);
-        var carpeta = Path.GetDirectoryName(rutaPermisos);
-        if (!string.IsNullOrWhiteSpace(carpeta))
-        {
-            Directory.CreateDirectory(carpeta);
-        }
-
         var json = ServicioSeguridadScripts.NormalizarPolitica(permisos["seguridadScripts"] as JsonObject);
         permisos["seguridadScripts"] = json;
-        _servicioArtefactos.GuardarTextoProtegido(
+        _servicioConjuntoArtefactos.GuardarPermisosPreservandoConjunto(
             rutaPermisos,
-            ServicioArtefactosProtegidos.TipoPermisos,
-            permisos.ToJsonString(OpcionesJson));
+            permisos);
     }
 
     public static string ResolverRutaImportacion(string rutaArchivo)
