@@ -38,6 +38,7 @@ public sealed class PruebasPublicacionWebView2
         Assert.True(compilacion > preparacion);
         Assert.Contains("Assert-WebView2EmbeddedResource -RutaEnsamblado", publicacion, StringComparison.Ordinal);
         Assert.Contains("Get-RuntimeContentHash -Ruta $origen", publicacion, StringComparison.Ordinal);
+        Assert.Contains("return $ejecutableMsi.Directory.FullName", publicacion, StringComparison.Ordinal);
         Assert.Contains("Recursos.WebView2Runtime.zip", publicacion, StringComparison.Ordinal);
         Assert.Contains("$PSVersionTable.PSEdition -ne 'Core'", publicacion, StringComparison.Ordinal);
         Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", publicacion, StringComparison.Ordinal);

@@ -773,7 +773,17 @@ function Initialize-WebView2EmbeddedRuntime {
         -HashEsperado $hashZipWebView2Fijado `
         -Descripcion 'ZIP embebido de WebView2' | Out-Null
     Write-Host "WebView2 Runtime $versionWebView2Fijada x64 preparado. SHA-256 ZIP: $hashZipWebView2Fijado"
-    return $origen
+    $ejecutableMsi = Get-ChildItem `
+        -LiteralPath $origen `
+        -Filter 'msedgewebview2.exe' `
+        -Recurse `
+        -File |
+        Select-Object -First 1
+    if ($null -eq $ejecutableMsi -or $null -eq $ejecutableMsi.Directory) {
+        throw 'No se pudo resolver la carpeta WebView2 que debe instalar el MSI.'
+    }
+
+    return $ejecutableMsi.Directory.FullName
 }
 
 function Assert-WebView2EmbeddedResource {
