@@ -90,6 +90,11 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("'/a'", compilacion, StringComparison.Ordinal);
         Assert.Contains("MsiAdminImage", compilacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-Msi-WebView2-", compilacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-Msi-Validacion-", compilacion, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.Directory]::Delete($validacionMsi, $true)", compilacion, StringComparison.Ordinal);
+        Assert.Contains("[void]$vista.Execute()", compilacion, StringComparison.Ordinal);
+        Assert.Contains("FinalReleaseComObject($fila)", compilacion, StringComparison.Ordinal);
+        Assert.Contains("FinalReleaseComObject($vista)", compilacion, StringComparison.Ordinal);
         Assert.Contains("FileAttributes]::ReparsePoint", compilacion, StringComparison.Ordinal);
         Assert.Contains("$env:InstalledWebView2RuntimeSource = $runtimeMsi", compilacion, StringComparison.Ordinal);
         Assert.Contains("[System.IO.Directory]::Delete($runtimeMsi, $true)", compilacion, StringComparison.Ordinal);

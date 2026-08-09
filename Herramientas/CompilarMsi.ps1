@@ -26,7 +26,6 @@ $recursoHelper = Join-Path $raiz 'Instalador\LanzadorScripts.Instalador.rc'
 $helperExe = Join-Path $objInstalador 'LanzadorScripts.Instalador.exe'
 $helperObj = Join-Path $objInstalador 'LanzadorScripts.Instalador.obj'
 $helperRes = Join-Path $objInstalador 'LanzadorScripts.Instalador.res'
-$validacionMsi = Join-Path $objInstalador 'MsiAdminImage'
 $logValidacionMsi = Join-Path $objInstalador 'MsiAdminImage.log'
 $msi = Join-Path $raiz 'Instalador\Release\LanzadorScripts-1.7.0-x64.msi'
 $publicacion = Join-Path $raiz 'bin\Release\net10.0-windows\win-x64\publish'
@@ -69,11 +68,15 @@ $raizTemporal = [System.IO.Path]::GetFullPath(
     [System.IO.Path]::GetTempPath()).TrimEnd('\')
 $runtimeMsi = [System.IO.Path]::GetFullPath((Join-Path $raizTemporal (
     'LanzadorScripts-Msi-WebView2-' + [System.Guid]::NewGuid().ToString('N'))))
+$validacionMsi = [System.IO.Path]::GetFullPath((Join-Path $raizTemporal (
+    'LanzadorScripts-Msi-Validacion-' + [System.Guid]::NewGuid().ToString('N'))))
 $prefijoTemporal = $raizTemporal + '\'
-if (-not $runtimeMsi.StartsWith(
-        $prefijoTemporal,
-        [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "La copia temporal del runtime queda fuera de TEMP: $runtimeMsi"
+foreach ($rutaTemporal in @($runtimeMsi, $validacionMsi)) {
+    if (-not $rutaTemporal.StartsWith(
+            $prefijoTemporal,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "La ruta temporal queda fuera de TEMP: $rutaTemporal"
+    }
 }
 
 $prefijoObj = $objRaiz.TrimEnd('\') + '\'
@@ -225,16 +228,26 @@ if (-not $DesarrolloSinFirma) {
 }
 
 $instalador = New-Object -ComObject WindowsInstaller.Installer
-$baseDatos = $instalador.OpenDatabase((Resolve-Path -LiteralPath $msi).Path, 0)
+$baseDatos = $null
+$vista = $null
 try {
+    $baseDatos = $instalador.OpenDatabase((Resolve-Path -LiteralPath $msi).Path, 0)
     $vista = $baseDatos.OpenView('SELECT `Property`, `Value` FROM `Property`')
-    $vista.Execute()
+    [void]$vista.Execute()
     $propiedades = @{}
-    while ($fila = $vista.Fetch()) {
-        $propiedades[[string]$fila.StringData(1)] = [string]$fila.StringData(2)
-    }
+    while ($true) {
+        $fila = $vista.Fetch()
+        if ($null -eq $fila) {
+            break
+        }
 
-    $vista.Close()
+        try {
+            $propiedades[[string]$fila.StringData(1)] = [string]$fila.StringData(2)
+        }
+        finally {
+            [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($fila) | Out-Null
+        }
+    }
 
     if ($propiedades.ProductVersion -ne '1.7.0' -or
         $propiedades.ALLUSERS -ne '1' -or
@@ -244,17 +257,18 @@ try {
     }
 }
 finally {
-    [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($baseDatos) | Out-Null
+    if ($null -ne $vista) {
+        try {
+            [void]$vista.Close()
+        }
+        catch {
+        }
+        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($vista) | Out-Null
+    }
+    if ($null -ne $baseDatos) {
+        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($baseDatos) | Out-Null
+    }
     [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($instalador) | Out-Null
-}
-
-$prefijoObjInstalador = $objInstalador.TrimEnd('\') + '\'
-if (-not $validacionMsi.StartsWith($prefijoObjInstalador, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw 'La imagen administrativa de validacion queda fuera de obj.'
-}
-
-if ([System.IO.Directory]::Exists($validacionMsi)) {
-    [System.IO.Directory]::Delete($validacionMsi, $true)
 }
 
 if ([System.IO.File]::Exists($logValidacionMsi)) {
@@ -262,56 +276,66 @@ if ([System.IO.File]::Exists($logValidacionMsi)) {
 }
 
 [System.IO.Directory]::CreateDirectory($validacionMsi) | Out-Null
-$argumentosMsi = @(
-    '/a',
-    "`"$msi`"",
-    '/qn',
-    '/norestart',
-    "TARGETDIR=`"$validacionMsi`"",
-    '/l*v',
-    "`"$logValidacionMsi`""
-)
-$procesoMsi = Start-Process `
-    -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') `
-    -ArgumentList $argumentosMsi `
-    -Wait `
-    -PassThru `
-    -WindowStyle Hidden
-if ($procesoMsi.ExitCode -ne 0) {
-    throw "La extraccion administrativa del MSI fallo con codigo $($procesoMsi.ExitCode). Log: $logValidacionMsi"
-}
+try {
+    $argumentosMsi = @(
+        '/a',
+        "`"$msi`"",
+        '/qn',
+        '/norestart',
+        "TARGETDIR=`"$validacionMsi`"",
+        '/l*v',
+        "`"$logValidacionMsi`""
+    )
+    $procesoMsi = Start-Process `
+        -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') `
+        -ArgumentList $argumentosMsi `
+        -Wait `
+        -PassThru `
+        -WindowStyle Hidden
+    if ($procesoMsi.ExitCode -ne 0) {
+        throw "La extraccion administrativa del MSI fallo con codigo $($procesoMsi.ExitCode). Log: $logValidacionMsi"
+    }
 
-$exeExtraido = Join-Path $validacionMsi 'LanzadorScripts.exe'
-if (-not [System.IO.File]::Exists($exeExtraido)) {
-    throw 'La imagen administrativa no contiene LanzadorScripts.exe.'
-}
+    $exeExtraido = Join-Path $validacionMsi 'LanzadorScripts.exe'
+    if (-not [System.IO.File]::Exists($exeExtraido)) {
+        throw 'La imagen administrativa no contiene LanzadorScripts.exe.'
+    }
 
-$versionExtraida = (Get-Item -LiteralPath $exeExtraido).VersionInfo
-if ($versionExtraida.FileVersion -ne '1.7.0.0' -or
-    $versionExtraida.ProductVersion -ne $productoEsperado) {
-    throw 'El ejecutable incluido en el MSI no conserva la version esperada.'
-}
+    $versionExtraida = (Get-Item -LiteralPath $exeExtraido).VersionInfo
+    if ($versionExtraida.FileVersion -ne '1.7.0.0' -or
+        $versionExtraida.ProductVersion -ne $productoEsperado) {
+        throw 'El ejecutable incluido en el MSI no conserva la version esperada.'
+    }
 
-$loadersExtraidos = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'WebView2Loader.dll')
-if ($loadersExtraidos.Count -ne 1 -or
-    $loadersExtraidos[0].DirectoryName -ne $validacionMsi) {
-    throw 'La imagen administrativa no contiene una unica WebView2Loader.dll en su raiz.'
-}
+    $loadersExtraidos = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'WebView2Loader.dll')
+    if ($loadersExtraidos.Count -ne 1 -or
+        $loadersExtraidos[0].DirectoryName -ne $validacionMsi) {
+        throw 'La imagen administrativa no contiene una unica WebView2Loader.dll en su raiz.'
+    }
 
-$documentacionExtraida = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'Microsoft.Web.WebView2*.xml')
-if ($documentacionExtraida.Count -ne 0) {
-    throw 'La imagen administrativa contiene documentacion WebView2 innecesaria.'
-}
+    $documentacionExtraida = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'Microsoft.Web.WebView2*.xml')
+    if ($documentacionExtraida.Count -ne 0) {
+        throw 'La imagen administrativa contiene documentacion WebView2 innecesaria.'
+    }
 
-if (-not $DesarrolloSinFirma) {
-    $firmaExtraida = Get-AuthenticodeSignature -LiteralPath $exeExtraido
-    if ($firmaExtraida.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-        $null -eq $firmaExtraida.TimeStamperCertificate) {
-        throw 'El ejecutable incluido en el MSI no conserva una firma Authenticode valida.'
+    if (-not $DesarrolloSinFirma) {
+        $firmaExtraida = Get-AuthenticodeSignature -LiteralPath $exeExtraido
+        if ($firmaExtraida.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+            $null -eq $firmaExtraida.TimeStamperCertificate) {
+            throw 'El ejecutable incluido en el MSI no conserva una firma Authenticode valida.'
+        }
     }
 }
+finally {
+    if ([System.IO.Directory]::Exists($validacionMsi)) {
+        $atributosValidacion = [System.IO.DirectoryInfo]::new($validacionMsi).Attributes
+        if (($atributosValidacion -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'La imagen administrativa temporal se convirtio en un punto de reanalisis.'
+        }
 
-[System.IO.Directory]::Delete($validacionMsi, $true)
+        [System.IO.Directory]::Delete($validacionMsi, $true)
+    }
+}
 
 $hash = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash
 Write-Host "MSI generado: $msi"
