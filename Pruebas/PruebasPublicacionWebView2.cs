@@ -177,8 +177,9 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("Microsoft.VisualStudio.Product.Professional", preparacion, StringComparison.Ordinal);
         Assert.Contains("vs-professional-2026", ci, StringComparison.Ordinal);
         Assert.Contains("X509Store]::new", etapas, StringComparison.Ordinal);
-        Assert.Contains("StoreLocation]::LocalMachine", etapas, StringComparison.Ordinal);
         Assert.Contains("StoreLocation]::CurrentUser", etapas, StringComparison.Ordinal);
+        Assert.Contains("Aprovisionando CurrentUser\\$nombreAlmacen", etapas, StringComparison.Ordinal);
+        Assert.DoesNotContain("StoreLocation]::LocalMachine", etapas, StringComparison.Ordinal);
         Assert.Contains("Import-PfxCertificate", etapas, StringComparison.Ordinal);
         Assert.Contains("Remove-ConfianzaCertificadoFirmaCi", etapas, StringComparison.Ordinal);
         Assert.Contains("El PFX del runner no coincide", etapas, StringComparison.Ordinal);

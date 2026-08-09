@@ -110,10 +110,10 @@ function Confiar-CertificadoFirmaCi {
             foreach ($nombreAlmacen in @(
                 [System.Security.Cryptography.X509Certificates.StoreName]::Root,
                 [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher)) {
-                Write-Host "Aprovisionando LocalMachine\$nombreAlmacen..."
+                Write-Host "Aprovisionando CurrentUser\$nombreAlmacen..."
                 $almacen = [System.Security.Cryptography.X509Certificates.X509Store]::new(
                     $nombreAlmacen,
-                    [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+                    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
                 try {
                     $almacen.Open(
                         [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
@@ -239,7 +239,7 @@ function Remove-ConfianzaCertificadoFirmaCi {
     foreach ($nombreAlmacen in $almacenesConfianzaAgregada) {
         $almacen = [System.Security.Cryptography.X509Certificates.X509Store]::new(
             $nombreAlmacen,
-            [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+            [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
         try {
             $almacen.Open(
                 [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
