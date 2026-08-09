@@ -382,8 +382,8 @@ try {
     $appFiles = @($files | Where-Object {
         ($_.FileName -split '\|')[-1].Equals('LanzadorScripts.exe', [System.StringComparison]::OrdinalIgnoreCase)
     })
-    if ($appFiles.Count -ne 1 -or $appFiles[0].Version -ne '1.7.1.0') {
-        throw 'El MSI no contiene exactamente un LanzadorScripts.exe con version 1.7.1.0.'
+    if ($appFiles.Count -ne 1 -or $appFiles[0].Version -ne '1.7.2.0') {
+        throw 'El MSI no contiene exactamente un LanzadorScripts.exe con version 1.7.2.0.'
     }
 
     $features = @(Get-MsiRows `
@@ -398,7 +398,7 @@ try {
     $feature = $features[0].Feature
     Add-MsiBinary -Installer $installer -Database $database -Name 'LanzadorInstallerHelper' -Path $helperPath
 
-    Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_CheckClose', 2, 'LanzadorInstallerHelper', '--comprobar-cierre')
+    Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_CheckClose', 2, 'LanzadorInstallerHelper', '--comprobar-cierre [UILevel]')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Migrate16', 3074, 'LanzadorInstallerHelper', '--migrar-1.6')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Cleanup', 3074, 'LanzadorInstallerHelper', '--limpiar-desinstalacion')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Launch', 210, $appFile, $null)

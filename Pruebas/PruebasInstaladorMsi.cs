@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Valida el contrato reproducible del instalador MSI 1.7.1.
+// Descripcion: Valida el contrato reproducible del instalador MSI 1.7.2.
 
 using Xunit;
 
@@ -19,8 +19,10 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[ProgramFiles64Folder]LanzadorScripts", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"InstallAllUsers\" = \"11:TRUE\"", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"TargetPlatform\" = \"3:1\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("\"ProductVersion\" = \"8:1.7.1\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{96640479-F6DF-4AE5-BC5B-0799ECCC938E}", vdproj, StringComparison.Ordinal);
+        Assert.Contains("\"ProductVersion\" = \"8:1.7.2\"", vdproj, StringComparison.Ordinal);
+        Assert.Contains("{34788029-4F47-4F9D-A2D4-2AF8B350CB1F}", vdproj, StringComparison.Ordinal);
+        Assert.Contains("{6BC4B0C6-A410-4F16-BCE1-16E50952DC8E}", vdproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("{96640479-F6DF-4AE5-BC5B-0799ECCC938E}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{84E73469-1AAD-4C67-BE52-A88A2737CB15}", vdproj, StringComparison.Ordinal);
         Assert.Contains("{24169C78-5164-45C8-AB1A-AFC281D86DE9}", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"RemovePreviousVersions\" = \"11:TRUE\"", vdproj, StringComparison.Ordinal);
@@ -39,7 +41,7 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("<PublishSingleFile>false</PublishSingleFile>", perfil, StringComparison.Ordinal);
         Assert.Contains("<EmbedWebView2Runtime>false</EmbedWebView2Runtime>", perfil, StringComparison.Ordinal);
         Assert.Contains("<IncludeSourceRevisionInInformationalVersion>false", perfil, StringComparison.Ordinal);
-        Assert.Contains("1.7.1+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
+        Assert.Contains("1.7.2+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
 
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
         Assert.Contains("runtimes\\win-x64\\native\\WebView2Loader.dll", proyecto, StringComparison.Ordinal);
@@ -56,6 +58,7 @@ public sealed class PruebasInstaladorMsi
             "ConfigurarMsi.ps1"));
 
         Assert.Contains("LS_CheckClose", configuracion, StringComparison.Ordinal);
+        Assert.Contains("--comprobar-cierre [UILevel]", configuracion, StringComparison.Ordinal);
         Assert.Contains("NOT PATCH AND ACTION <> \"ADMIN\"', 1450", configuracion, StringComparison.Ordinal);
         Assert.Contains("LS_Migrate16", configuracion, StringComparison.Ordinal);
         Assert.Contains("NOT Installed AND NOT REMOVE~=\"ALL\" AND NOT PATCH AND ACTION <> \"ADMIN\"", configuracion, StringComparison.Ordinal);
@@ -110,6 +113,12 @@ public sealed class PruebasInstaladorMsi
             "LanzadorScripts.Instalador.cpp"));
         Assert.Contains("RutaSinPuntosReanalisis", helper, StringComparison.Ordinal);
         Assert.Contains("EliminarArbolSeguro(perfiles, lanzador)", helper, StringComparison.Ordinal);
+        Assert.Contains("NombrePipeInstalado", helper, StringComparison.Ordinal);
+        Assert.Contains("NombreMensajeCierre", helper, StringComparison.Ordinal);
+        Assert.Contains("EnumWindows(EnviarMensajeCierreVentana", helper, StringComparison.Ordinal);
+        Assert.Contains("CerrarParaMantenimiento", helper, StringComparison.Ordinal);
+        Assert.Contains("PrepararRutaWin32", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("lanzadorscripts_portable-", helper, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -127,6 +136,9 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("--validar-ruta-ausente", helper, StringComparison.Ordinal);
         Assert.Contains("-ArgumentList '--validar-ruta-ausente'", compilacion, StringComparison.Ordinal);
         Assert.Contains("El helper del MSI no acepta como correcto", compilacion, StringComparison.Ordinal);
+        Assert.Contains("--validar-limpieza-ruta-larga", helper, StringComparison.Ordinal);
+        Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", compilacion, StringComparison.Ordinal);
+        Assert.Contains("El helper del MSI no pudo eliminar una ruta superior a MAX_PATH", compilacion, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -136,8 +148,8 @@ public sealed class PruebasInstaladorMsi
             "Herramientas",
             "PublicarPortable.ps1"));
 
-        Assert.Contains("LanzadorScripts-1.7.1-x64.msi", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.7.1-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.7.2-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.7.2-x64.exe", publicacion, StringComparison.Ordinal);
         Assert.Contains("$rutasEsperadas = @($msiPublicado, $exePortable)", publicacion, StringComparison.Ordinal);
         Assert.Contains("$archivosPublicados.Count -ne 2", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("$exeNormal", publicacion, StringComparison.Ordinal);

@@ -9,12 +9,14 @@ namespace LanzadorScripts.Pruebas;
 public sealed class PruebasCicloVidaAplicacion
 {
     [Fact]
-    public void ProtocoloInstanciaAdmiteMostrarEImportar()
+    public void ProtocoloInstanciaAdmiteMostrarImportarYCerrarMantenimiento()
     {
         var mostrar = new MensajeInstanciaAplicacion(AccionInstanciaAplicacion.Mostrar);
         var importar = new MensajeInstanciaAplicacion(
             AccionInstanciaAplicacion.ImportarPaquete,
             @"C:\Paquetes\config.lsconfig");
+        var cerrar = new MensajeInstanciaAplicacion(
+            AccionInstanciaAplicacion.CerrarMantenimiento);
 
         Assert.True(ProtocoloInstanciaAplicacion.IntentarDeserializar(
             ProtocoloInstanciaAplicacion.Serializar(mostrar),
@@ -24,6 +26,10 @@ public sealed class PruebasCicloVidaAplicacion
             ProtocoloInstanciaAplicacion.Serializar(importar),
             out var importarLeido));
         Assert.Equal(importar.Ruta, importarLeido?.Ruta);
+        Assert.True(ProtocoloInstanciaAplicacion.IntentarDeserializar(
+            ProtocoloInstanciaAplicacion.Serializar(cerrar),
+            out var cerrarLeido));
+        Assert.Equal(AccionInstanciaAplicacion.CerrarMantenimiento, cerrarLeido?.Accion);
     }
 
     [Fact]
@@ -56,7 +62,7 @@ public sealed class PruebasCicloVidaAplicacion
     }
 
     [Fact]
-    public void InstanciaSecundariaSiempreSolicitaMostrar()
+    public void InstanciaSecundariaDistingueMostrarYCerrarMantenimiento()
     {
         var aplicacion = File.ReadAllText(ObtenerRutaProyecto("Aplicacion.xaml.cs"));
 
@@ -66,6 +72,15 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("PipeOptions.CurrentUserOnly", aplicacion, StringComparison.Ordinal);
         Assert.Contains("LeerMensajeLimitadoAsync", aplicacion, StringComparison.Ordinal);
         Assert.Contains("MostrarDesdeInstanciaSecundaria", aplicacion, StringComparison.Ordinal);
+        Assert.Contains("EsSolicitudCierreMantenimiento", aplicacion, StringComparison.Ordinal);
+        Assert.Contains("AccionInstanciaAplicacion.CerrarMantenimiento", aplicacion, StringComparison.Ordinal);
+
+        var ventana = File.ReadAllText(ObtenerRutaProyecto("VentanaPrincipal.xaml.cs"));
+        Assert.Contains("SolicitarCierrePorMantenimiento", ventana, StringComparison.Ordinal);
+        Assert.Contains("ChangeWindowMessageFilterEx", ventana, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts.CerrarMantenimiento.v1", ventana, StringComparison.Ordinal);
+        Assert.Contains("ejecuciones.Count > 0", ventana, StringComparison.Ordinal);
+        Assert.Contains("CerrarDefinitivamenteAsync(0, \"mantenimiento\")", ventana, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -86,7 +101,14 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("LANZADOR_PORTABLE_ROOT", nativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_PORTABLE_SESSIONS_ROOT", nativo, StringComparison.Ordinal);
         Assert.Contains("Sesion-", nativo, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.7.1-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("PrepararRutaWin32", nativo, StringComparison.Ordinal);
+        Assert.Contains("--validar-limpieza-ruta-larga", nativo, StringComparison.Ordinal);
+        Assert.Contains("rutaArchivo.size() <= MAX_PATH", nativo, StringComparison.Ordinal);
+        Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.7.2-x64.exe", publicacion, StringComparison.Ordinal);
+
+        var manifiesto = File.ReadAllText(ObtenerRutaProyecto("manifiesto.manifest"));
+        Assert.Contains("<ws2:longPathAware>true</ws2:longPathAware>", manifiesto, StringComparison.Ordinal);
 
         var tokens = File.ReadAllText(ObtenerRutaProyecto("Servicios", "ServicioTokensAdmin.cs"));
         Assert.Contains("RutasAplicacion.Distribucion.EsPortable", tokens, StringComparison.Ordinal);

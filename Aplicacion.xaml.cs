@@ -67,17 +67,28 @@ public partial class Aplicacion : System.Windows.Application
             initiallyOwned: true,
             $"{PrefijoMutex}_{sufijoDistribucion}",
             out _instanciaPrincipal);
+        var solicitudCierreMantenimiento = EsSolicitudCierreMantenimiento(e.Args);
         if (!_instanciaPrincipal)
         {
             if (!EnviarMensajesAInstanciaPrincipal(e.Args))
             {
+                var operacion = solicitudCierreMantenimiento
+                    ? "cerrarla para mantenimiento"
+                    : "mostrar la ventana";
                 MessageBox.Show(
-                    "La aplicacion ya esta iniciada, pero no respondio a la solicitud de mostrar la ventana.",
+                    $"La aplicacion ya esta iniciada, pero no respondio a la solicitud de {operacion}.",
                     "LanzadorScripts",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
 
+            Shutdown();
+            return;
+        }
+
+        if (solicitudCierreMantenimiento)
+        {
+            // No abre una instancia nueva si el proceso anterior ya termino.
             Shutdown();
             return;
         }
@@ -163,6 +174,13 @@ public partial class Aplicacion : System.Windows.Application
 
     private bool EnviarMensajesAInstanciaPrincipal(string[] argumentos)
     {
+        if (EsSolicitudCierreMantenimiento(argumentos))
+        {
+            // Entrega solo la orden interna solicitada por Windows Installer.
+            return EnviarMensajeAInstanciaPrincipal(
+                new MensajeInstanciaAplicacion(AccionInstanciaAplicacion.CerrarMantenimiento));
+        }
+
         // Restaura siempre la instancia existente y despues entrega los paquetes.
         var mensajes = new List<MensajeInstanciaAplicacion>
         {
@@ -236,7 +254,20 @@ public partial class Aplicacion : System.Windows.Application
                 when mensaje.Ruta is not null && EsPaqueteConfiguracionValido(mensaje.Ruta):
                 ProcesarRutaPaquete(mensaje.Ruta);
                 break;
+            case AccionInstanciaAplicacion.CerrarMantenimiento:
+                _ventanaPrincipal?.SolicitarCierrePorMantenimiento();
+                break;
         }
+    }
+
+    private static bool EsSolicitudCierreMantenimiento(string[] argumentos)
+    {
+        // Acepta exclusivamente el argumento interno exacto del instalador.
+        return argumentos.Length == 1
+            && string.Equals(
+                argumentos[0],
+                ProtocoloInstanciaAplicacion.ArgumentoCerrarMantenimiento,
+                StringComparison.Ordinal);
     }
 
     private static async Task<string> LeerMensajeLimitadoAsync(

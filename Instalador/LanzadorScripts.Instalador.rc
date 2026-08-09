@@ -20,11 +20,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Alex Roman\0"
             VALUE "FileDescription", "LanzadorScripts Installer Helper\0"
-            VALUE "FileVersion", "1.7.1.0\0"
+            VALUE "FileVersion", "1.7.2.0\0"
             VALUE "InternalName", "LanzadorScripts.Instalador\0"
             VALUE "OriginalFilename", "LanzadorScripts.Instalador.exe\0"
             VALUE "ProductName", "LanzadorScripts\0"
-            VALUE "ProductVersion", "1.7.1\0"
+            VALUE "ProductVersion", "1.7.2\0"
         END
     END
     BLOCK "VarFileInfo"
