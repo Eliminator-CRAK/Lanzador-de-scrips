@@ -8,15 +8,15 @@
 El administrador puede entregar una de estas opciones:
 
 ```text
-LanzadorScripts-1.7.0-x64.msi
-LanzadorScripts_Portable-1.7.0-x64.exe
+LanzadorScripts-1.7.1-x64.msi
+LanzadorScripts_Portable-1.7.1-x64.exe
 ```
 
 - La instalada aparece en el menu Inicio y conserva su configuracion.
 - La portable se abre directamente y elimina sus datos locales cuando se cierra de forma definitiva.
 - Los archivos exportados por el usuario no se eliminan.
 
-La version `1.7.0` no instala ni solicita claves AES. Si aparece un aviso sobre `artefactos.key`, se esta usando una version anterior.
+La version `1.7.1` no instala ni solicita claves AES. Si aparece un aviso sobre `artefactos.key`, se esta usando una version anterior.
 
 ## Ejecutar Un Script
 

@@ -262,8 +262,8 @@ function Verificar-Artefacto {
     # Comprueba el MSI, el portable y sus firmas.
     $carpeta = Join-Path $raizRepositorio 'publicacion'
     $archivosEsperados = @(
-        (Join-Path $carpeta 'LanzadorScripts-1.7.0-x64.msi'),
-        (Join-Path $carpeta 'LanzadorScripts_Portable-1.7.0-x64.exe')
+        (Join-Path $carpeta 'LanzadorScripts-1.7.1-x64.msi'),
+        (Join-Path $carpeta 'LanzadorScripts_Portable-1.7.1-x64.exe')
     )
     foreach ($archivo in $archivosEsperados) {
         if (-not (Test-Path -LiteralPath $archivo)) {

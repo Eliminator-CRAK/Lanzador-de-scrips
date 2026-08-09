@@ -3,15 +3,15 @@
 
 # Manual De Administradores Y Desarrolladores
 
-## Arquitectura 1.7.0
+## Arquitectura 1.7.1
 
 LanzadorScripts inicia una ventana WPF, un backend HTTP limitado a `127.0.0.1` y un cliente WebView2 embebido. El backend identifica al usuario, carga permisos, valida el catalogo y ejecuta una copia controlada del script.
 
 Las distribuciones son:
 
 ```text
-LanzadorScripts-1.7.0-x64.msi
-LanzadorScripts_Portable-1.7.0-x64.exe
+LanzadorScripts-1.7.1-x64.msi
+LanzadorScripts_Portable-1.7.1-x64.exe
 ```
 
 La instalada conserva binarios y runtimes en `Program Files`, y datos por usuario en `ProgramData`. La portable confina todo el estado local a una sesion aleatoria de `%TEMP%` y el lanzador nativo la elimina al finalizar.
@@ -92,10 +92,10 @@ Contrato:
 Comandos:
 
 ```powershell
-msiexec /i LanzadorScripts-1.7.0-x64.msi
-msiexec /i LanzadorScripts-1.7.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-1.7.0-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.7.0-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.7.1-x64.msi
+msiexec /i LanzadorScripts-1.7.1-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-1.7.1-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.7.1-x64.msi /qn /norestart
 ```
 
 Instalacion, reparacion, actualizacion y desinstalacion se bloquean si hay una variante activa. Las actualizaciones y reparaciones conservan configuracion. La desinstalacion completa elimina solo `Program Files`, `ProgramData`, perfiles WebView2 locales y Registro conocidos; nunca toca auditoria ni artefactos remotos.
@@ -159,10 +159,10 @@ Aikido no se utiliza. CodeRabbit no sustituye xUnit, Semgrep, Gitleaks ni revisi
 
 GitLab es el origen principal. Todo cambio se publica en la misma rama de GitLab y GitHub, con una unica merge request en GitLab. CodeRabbit revisa la MR.
 
-La Release `v1.7.0` debe contener bytes identicos en ambos proveedores:
+La Release `v1.7.1` debe contener bytes identicos en ambos proveedores:
 
-- `LanzadorScripts-1.7.0-x64.msi`.
-- `LanzadorScripts_Portable-1.7.0-x64.exe`.
+- `LanzadorScripts-1.7.1-x64.msi`.
+- `LanzadorScripts_Portable-1.7.1-x64.exe`.
 - `SHA256SUMS.txt`.
 - Certificado publico Authenticode.
 - ZIP con `permisos.json` y `catalogo-scripts.json`.
