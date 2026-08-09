@@ -3,20 +3,37 @@
 
 # LanzadorScripts
 
-Aplicacion WPF para descubrir, autorizar y ejecutar scripts PowerShell, BAT y CMD desde una interfaz WebView2 local. La version actual es `1.6.0`.
+Aplicacion WPF para autorizar y ejecutar scripts PowerShell, BAT y CMD desde una interfaz WebView2 local. La version actual es `1.7.0`.
+
+## Distribuciones
+
+La publicacion genera exactamente dos opciones x64:
+
+```text
+LanzadorScripts-1.7.0-x64.msi
+LanzadorScripts_Portable-1.7.0-x64.exe
+```
+
+- El MSI instala para todos los usuarios en `C:\Program Files\LanzadorScripts` y conserva configuracion y runtimes entre sesiones.
+- La portable usa una sesion privada bajo `%TEMP%\LanzadorScripts\Portable\Sesion-<guid>` y elimina todos sus datos locales al cerrar.
+- El siguiente arranque portable retira sesiones abandonadas por un cierre forzado sin seguir enlaces ni puntos de reanalisis.
+- Ninguna variante configura inicio automatico con Windows.
+
+El boton de cerrar oculta la ventana. El cierre definitivo se realiza desde `Cerrar LanzadorScripts` en el icono de la bandeja. La confirmacion solo aparece cuando hay scripts activos.
 
 ## Estado Del Codigo
 
-- Aplicacion: .NET 10, WPF, `win-x64` y ejecutable autocontenido.
-- Interfaz: bundle compilado incluido en `ClienteWeb` como activo fuente de distribucion.
-- Lanzador nativo: C++ en `LanzadorNativo`.
+- Aplicacion: .NET 10, WPF, `win-x64` y autocontenida.
+- Instalador: proyecto `.vdproj` con `Publish Items` y Visual Studio Installer Projects.
+- Portable: lanzador nativo C++ con payload .NET firmado.
+- Interfaz: bundle compilado incluido en `ClienteWeb`.
 - Pruebas: xUnit en `Pruebas`.
 - Repositorio principal: GitLab.
-- Replica: GitHub con el mismo SHA de `main` y de las etiquetas publicadas.
+- Replica exacta: GitHub.
 
-El proyecto frontend original que genero el bundle de `ClienteWeb` no esta disponible. El repositorio puede compilar y publicar la aplicacion, pero no reconstruir ese bundle desde sus fuentes originales.
+El proyecto frontend original que genero `ClienteWeb` no esta disponible. El repositorio compila, prueba y publica la aplicacion, pero no reconstruye ese bundle desde fuentes frontend.
 
-Los 37 scripts operativos no forman parte del repositorio. Se leen desde una carpeta externa durante la generacion del catalogo.
+Los 37 scripts operativos permanecen fuera del repositorio.
 
 ## Artefactos Firmados V3
 
@@ -26,45 +43,42 @@ La carpeta central predeterminada es:
 \\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS
 ```
 
-Contiene exactamente los artefactos activos:
+Contiene los dos artefactos activos:
 
 ```text
 permisos.json
 catalogo-scripts.json
 ```
 
-Ambos archivos son JSON legible y estan firmados con RSA-PSS/SHA-256. No usan AES, DPAPI, SID ni `artefactos.key`.
+Son JSON legible firmado con RSA-PSS/SHA-256. No usan AES, DPAPI, SID ni `artefactos.key`. Ambos comparten un `ConjuntoId` firmado y la aplicacion falla de forma cerrada si se modifica el contenido, los metadatos, la firma o la pareja.
 
-El contenedor v3 tiene exactamente estas propiedades:
+`ServicioCifradoAplicacion` solo protege `configuracion.dat` y paquetes `.lanzadorconfig`.
+
+## Auditoria Remota
+
+Cada ejecucion escribe eventos inmutables bajo:
 
 ```text
-Autor
-Descripcion
-Version
-Tipo
-Algoritmo
-ConjuntoId
-Contenido
-Firma
+\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS\Auditoria\<usuario__sid-hash>
 ```
 
-`ConjuntoId` es un identificador publico aleatorio de 128 bits. Permisos y catalogo deben compartirlo. La aplicacion falla de forma cerrada si falta un archivo, cambia cualquier metadato o contenido, la firma no es valida, los tipos estan intercambiados o los identificadores no coinciden.
+El evento `ejecucion.inicio` debe quedar confirmado antes de crear el proceso. Si el servidor no esta disponible, la API responde `503` y bloquea la ejecucion. Un resultado final no confirmado se reintenta solo en memoria y bloquea nuevos inicios. El cierre comparte un limite total de 30 segundos para procesos y auditoria.
 
-Los contenedores AES v1/v2 no se migran dentro de la aplicacion. Deben sustituirse conjuntamente por una pareja v3.
+Prepare una vez la carpeta y sus ACL desde una consola administrativa:
 
-La clave privada RSA solo se instala en equipos autorizados para generar o modificar artefactos. Los clientes incorporan unicamente el certificado publico de verificacion.
+```powershell
+pwsh -NoProfile -File .\Herramientas\PrepararAuditoriaServidor.ps1
+```
 
-`ServicioCifradoAplicacion` se conserva para `configuracion.dat` y paquetes `.lanzadorconfig`; no protege los dos JSON compartidos.
+La aplicacion, la portable y el desinstalador nunca eliminan auditorias remotas.
 
 ## Generar Los Dos JSON
 
 Requisitos:
 
-- Certificado privado de artefactos con huella `500266A64E574889370D92E5CE0D65D55CC963B7` en `CurrentUser\My` o `LocalMachine\My`.
+- Certificado privado de artefactos con huella `500266A64E574889370D92E5CE0D65D55CC963B7`.
 - .NET SDK 10.x.
 - Carpeta externa con los 37 scripts.
-
-Ejemplo desde la raiz del repositorio:
 
 ```powershell
 pwsh -NoProfile -File .\PrepararArtefactosFirmados.ps1 `
@@ -72,80 +86,110 @@ pwsh -NoProfile -File .\PrepararArtefactosFirmados.ps1 `
   -TotalScriptsEsperado 37
 ```
 
-La salida se crea en `ArtefactosGenerados\conjunto-firmado-*` y contiene solo los dos JSON. Los administradores iniciales son:
-
-```text
-MAD00\aroperez_micro
-PCERA\alero
-```
-
-La herramienta no se conecta a Active Directory ni genera material cifrado para un equipo concreto.
+La salida queda en `ArtefactosGenerados\conjunto-firmado-*` y contiene solo los dos JSON. Los administradores iniciales son `MAD00\aroperez_micro` y `PCERA\alero`.
 
 ## Compilar Y Probar
 
+Requisitos para el MSI:
+
+- Visual Studio Professional 2026.
+- Carga de trabajo de escritorio administrado.
+- Herramientas C++ x64.
+- Microsoft Visual Studio Installer Projects 3.0.0 o posterior.
+
+La preparacion se verifica sin instalar otra edicion:
+
 ```powershell
-dotnet restore LanzadorScripts.slnx
-dotnet build LanzadorScripts.slnx -c Release --no-restore
-dotnet test LanzadorScripts.slnx -c Release --no-build
-dotnet list LanzadorScripts.slnx package --vulnerable --include-transitive
+pwsh -NoProfile -File .\Herramientas\PrepararVisualStudioInstalador.ps1
 ```
 
-Los analizadores adicionales son Semgrep estricto y Gitleaks sobre todo el historial. Aikido no forma parte de este flujo.
+Compilacion administrada:
 
-## Publicar Ejecutables
+```powershell
+dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
+dotnet build .\LanzadorScripts.csproj -c Release --no-restore
+dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
+dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+```
 
-La publicacion requiere PowerShell 7.6, Visual Studio Build Tools para el lanzador C++ y un certificado Authenticode valido.
+MSI firmado:
+
+```powershell
+pwsh -NoProfile -File .\Herramientas\CompilarMsi.ps1 `
+  -CertThumbprint "HUELLA_AUTHENTICODE"
+```
+
+El proyecto de instalacion sigue el flujo de [Microsoft Visual Studio Installer Projects](https://learn.microsoft.com/es-es/visualstudio/deployment/installer-projects-net-core?view=visualstudio).
+
+## Publicar 1.7.0
+
+La publicacion final requiere PowerShell 7.6, un arbol Git limpio y el certificado Authenticode con clave privada en el almacen de certificados:
 
 ```powershell
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 `
-  -CertThumbprint "HUELLA_DEL_CERTIFICADO_AUTHENTICODE"
+  -CertThumbprint "HUELLA_AUTHENTICODE"
 ```
 
-La carpeta ignorada `publicacion` recibe:
+La carpeta ignorada `publicacion` recibe solo el MSI y la portable versionados. `-InicializarArtefactos` puede regenerar los dos JSON firmados y nunca busca `artefactos.key`.
 
-```text
-LanzadorScripts.exe
-LanzadorScripts_Portable.exe
+## Instalar Y Mantener
+
+Instalacion interactiva:
+
+```powershell
+msiexec /i LanzadorScripts-1.7.0-x64.msi
 ```
 
-`-InicializarArtefactos` exige el certificado privado de artefactos, pero nunca busca `artefactos.key`.
+Instalacion silenciosa sin acceso de escritorio:
 
-La Release `v1.6.0` debe incluir los dos EXE firmados, `SHA256SUMS.txt`, el certificado publico Authenticode, notas de despliegue y un ZIP con los dos JSON firmados. GitLab y GitHub deben publicar exactamente los mismos bytes.
+```powershell
+msiexec /i LanzadorScripts-1.7.0-x64.msi /qn /norestart
+```
 
-## Despliegue 1.6.0
+Instalacion silenciosa con acceso de escritorio:
 
-El cambio es incompatible y debe ejecutarse durante una ventana de mantenimiento:
+```powershell
+msiexec /i LanzadorScripts-1.7.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+```
 
-1. Cerrar todos los clientes.
-2. Respaldar como una unidad los EXE anteriores, `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json`.
-3. Copiar conjuntamente los dos JSON v3 a la carpeta central.
-4. Distribuir ambos EXE `1.6.0`.
-5. Validar arranque, permisos y ejecucion antes de reabrir el servicio.
+Reparacion y desinstalacion:
 
-No se deben mezclar EXE anteriores con JSON v3 ni EXE `1.6.0` con contenedores AES.
+```powershell
+msiexec /fa LanzadorScripts-1.7.0-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.7.0-x64.msi /qn /norestart
+```
 
-Para rollback, restaurar conjuntamente los EXE y los tres artefactos anteriores. El archivo local inactivo `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` puede conservarse siete dias; `1.6.0` no lo lee ni lo modifica.
+El MSI crea siempre el acceso del menu Inicio y la asociacion `.lanzadorconfig`. El acceso de escritorio y la apertura al finalizar estan desmarcados. La apertura final solo existe en instalacion interactiva.
+
+Las actualizaciones y reparaciones conservan configuracion. Una desinstalacion completa elimina solo las rutas locales conocidas y la asociacion. La operacion se bloquea mientras LanzadorScripts o la portable estan activos.
 
 ## Datos Locales
 
-- Configuracion por usuario: `%ProgramData%\LanzadorScripts\Usuarios\<perfil>\configuracion.dat`.
-- Logs y auditoria: bajo la misma carpeta de usuario.
-- Perfil WebView2: `%LocalAppData%\LanzadorScripts\WebView2-v4\Sesiones`.
-- Runtime WebView2 extraido: `%ProgramFiles%\LanzadorScripts\Runtimes\WebView2`.
+Instalada:
 
-El boton de cerrar oculta la ventana. El menu de la bandeja permite restaurar, maximizar, minimizar y cerrar definitivamente. La confirmacion de cancelacion solo aparece si existen ejecuciones activas.
+- Binarios, .NET y WebView2 fijo: `%ProgramFiles%\LanzadorScripts`.
+- Configuracion, tokens, logs y staging: `%ProgramData%\LanzadorScripts\Usuarios\<perfil>`.
+- Perfil WebView2 por sesion: `%LocalAppData%\LanzadorScripts\WebView2-v5\Sesiones`.
+- El perfil WebView2 se elimina al cerrar; la configuracion y runtimes se conservan.
 
-## Seguridad
+Portable:
+
+- Todos los datos locales, WebView2, .NET extraido, tokens y logs: `%TEMP%\LanzadorScripts\Portable\Sesion-<guid>`.
+- Solo sobreviven los archivos exportados expresamente por el usuario y los recursos remotos.
+- No crea asociaciones ni modifica el Registro.
+
+## Seguridad Y Calidad
 
 - La API escucha solo en `127.0.0.1` y exige sesion local.
-- Los scripts se validan por ruta, extension, longitud y SHA-256.
-- El catalogo firmado autoriza el byte exacto que se puede ejecutar.
-- Las actualizaciones de permisos y catalogo conservan el `ConjuntoId`, verifican el archivo compañero y usan escritura atomica con `.bak`.
-- Las rutas con navegacion, enlaces de sistema o archivos fuera de las carpetas autorizadas se rechazan.
-- Claves privadas, perfiles WebView2, runtimes descargados, `bin`, `obj`, EXE y artefactos operativos generados quedan fuera de Git.
+- Los scripts se validan por ruta, extension, tamano y SHA-256.
+- Las rutas con navegacion o enlaces se rechazan; la limpieza no atraviesa puntos de reanalisis.
+- Las claves privadas, perfiles, runtimes descargados, `bin`, `obj`, MSI, EXE y artefactos operativos quedan fuera de Git.
+- La validacion incluye xUnit, auditoria NuGet, Semgrep estricto, Gitleaks sobre todo el historial y CodeRabbit. Aikido no se utiliza.
+
+GitHub requiere un runner Windows corporativo etiquetado `vs-professional-2026` para construir las dos distribuciones. La firma solo se activa en `main` o etiquetas.
 
 ## Flujo Git
 
-Las contribuciones se desarrollan en ramas y se fusionan mediante una merge request de GitLab. `main` requiere pipeline correcto, discusiones resueltas y merge por Maintainers. CodeRabbit revisa la MR en GitLab. Tras la fusion, la herramienta de sincronizacion publica el mismo SHA en GitHub sin `force-push`.
+El desarrollo se realiza en ramas y se fusiona mediante una unica merge request de GitLab. `main` exige pipeline correcto, discusiones resueltas y merge por Maintainers. Despues se publica el mismo SHA en GitHub sin `force-push`.
 
 Consulte `CONTRIBUTING.md`, `Manual_Usuarios.md` y `Manual_Administradores_Desarrolladores.md`.

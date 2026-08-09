@@ -50,6 +50,7 @@ public partial class VentanaPrincipal : Window
     private CoreWebView2? _webViewConfigurada;
     private ulong _idNavegacionActual;
     private string _origenNavegacionActual = string.Empty;
+    private string? _rutaPerfilWebView2;
     private WindowState _estadoAntesOcultar = WindowState.Normal;
     private bool _inicioProgramado;
     private bool _cargaClienteEnCurso;
@@ -145,6 +146,8 @@ public partial class VentanaPrincipal : Window
                     MessageBoxImage.Error);
                 return;
             }
+
+            _rutaPerfilWebView2 = arranque.RutaPerfil;
 
             TextoArranque.Text = "Aplicando protecciones del cliente local...";
             var coreWebView2 = VistaCliente.CoreWebView2
@@ -525,6 +528,8 @@ public partial class VentanaPrincipal : Window
         try
         {
             VistaCliente.Dispose();
+            await _servicioArranqueWebView2.LimpiarPerfilSesionAsync(_rutaPerfilWebView2);
+            _rutaPerfilWebView2 = null;
         }
         catch (Exception ex)
         {
@@ -569,6 +574,8 @@ public partial class VentanaPrincipal : Window
         try
         {
             VistaCliente.Dispose();
+            _servicioArranqueWebView2.LimpiarPerfilSesionSinEspera(_rutaPerfilWebView2);
+            _rutaPerfilWebView2 = null;
         }
         catch
         {

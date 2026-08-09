@@ -31,6 +31,7 @@ reviews:
     - "!ClienteWeb/assets/**"
     - "!semgrep-results.json"
     - "!**/*.exe"
+    - "!**/*.msi"
     - "!**/*.dll"
     - "!**/*.pdb"
     - "!**/*.zip"
@@ -51,6 +52,11 @@ reviews:
       instructions: >-
         Revisa condiciones de carrera, bloqueo entre procesos, escritura
         atomica, restauracion .bak y conservacion del ConjuntoId en la pareja.
+    - path: "Servicios/ServicioAuditoria.cs"
+      instructions: >-
+        Revisa fallo cerrado antes de crear procesos, eventos CreateNew, limites,
+        ACL remotas, inmutabilidad, cola solo en memoria, reintentos y cierre
+        compartido de 30 segundos. La auditoria remota nunca debe eliminarse.
     - path: "Servicios/**/*Rutas*.cs"
       instructions: >-
         Comprueba traversal, rutas UNC, normalizacion Windows, reparse points,
@@ -63,6 +69,16 @@ reviews:
       instructions: >-
         Revisa desbordamientos, conversiones de tamano, handles, rutas temporales,
         herencia de procesos, limpieza y validacion del recurso PE embebido.
+    - path: "Instalador/**/*"
+      instructions: >-
+        Revisa x64, rutas conocidas, acciones MSI, condiciones de reparacion,
+        actualizacion y desinstalacion, handles, puntos de reanalisis y que la
+        limpieza no alcance recursos UNC ni datos ajenos.
+    - path: "Herramientas/*Msi.ps1"
+      instructions: >-
+        Revisa tablas MSI, condiciones de secuencia, COM liberado, firma antes
+        de empaquetar, timestamp, rutas confinadas y uso exclusivo de Visual
+        Studio Professional 2026.
     - path: "Pruebas/**/*.cs"
       instructions: >-
         Exige pruebas negativas para seguridad, concurrencia y corrupcion. Evita

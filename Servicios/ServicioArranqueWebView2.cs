@@ -11,7 +11,8 @@ namespace LanzadorScripts.Servicios;
 
 public sealed class ServicioArranqueWebView2
 {
-    private const int MaximoSesionesAnteriores = 2;
+    private const int MaximoSesionesAnteriores = 0;
+    private static readonly TimeSpan TiempoMaximoLimpiezaPerfil = TimeSpan.FromSeconds(15);
     private const string EjecutableWebView2 = "msedgewebview2.exe";
 
     private readonly ServicioDisponibilidadWebView2 _servicioDisponibilidadWebView2 = new();
@@ -252,6 +253,18 @@ public sealed class ServicioArranqueWebView2
         throw new IOException("No se pudo reservar una ruta nueva para el perfil de WebView2.");
     }
 
+    public Task LimpiarPerfilSesionAsync(string? rutaPerfil)
+    {
+        // Espera la salida de WebView2 antes de retirar su perfil temporal.
+        return Task.Run(() => LimpiarPerfilSesionConReintentos(rutaPerfil, TiempoMaximoLimpiezaPerfil));
+    }
+
+    public void LimpiarPerfilSesionSinEspera(string? rutaPerfil)
+    {
+        // Aplica un unico intento durante el cierre forzado de Windows.
+        LimpiarPerfilSesionConReintentos(rutaPerfil, TimeSpan.Zero);
+    }
+
     internal static string? ResolverRuntimeFijoPortable()
     {
         // Localiza un runtime fijo copiado junto al EXE.
@@ -359,7 +372,9 @@ public sealed class ServicioArranqueWebView2
         {
             try
             {
-                directorio.Delete(recursive: true);
+                ServicioDirectoriosAplicacion.EliminarArbolSinAtravesarReanalisis(
+                    raiz,
+                    directorio.FullName);
             }
             catch
             {
@@ -373,6 +388,75 @@ public sealed class ServicioArranqueWebView2
         var nombre = Path.GetFileName(ruta);
         return nombre.StartsWith("Sesion-", StringComparison.Ordinal)
             && Guid.TryParseExact(nombre["Sesion-".Length..], "N", out _);
+    }
+
+    private static void LimpiarPerfilSesionConReintentos(string? rutaPerfil, TimeSpan espera)
+    {
+        if (string.IsNullOrWhiteSpace(rutaPerfil))
+        {
+            return;
+        }
+
+        var raizGestionada = ResolverRaizPerfilGestionado(rutaPerfil);
+        if (raizGestionada is null)
+        {
+            return;
+        }
+
+        var limite = DateTime.UtcNow + espera;
+        do
+        {
+            try
+            {
+                if (!Directory.Exists(rutaPerfil))
+                {
+                    return;
+                }
+
+                ServicioDirectoriosAplicacion.EliminarArbolSinAtravesarReanalisis(
+                    raizGestionada,
+                    rutaPerfil);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (DateTime.UtcNow >= limite)
+                {
+                    return;
+                }
+
+                Thread.Sleep(250);
+            }
+        } while (DateTime.UtcNow <= limite);
+    }
+
+    private static string? ResolverRaizPerfilGestionado(string rutaPerfil)
+    {
+        try
+        {
+            var completa = Path.GetFullPath(rutaPerfil);
+            if (!EsRutaSesionWebView2(completa))
+            {
+                return null;
+            }
+
+            if (ServicioRutasSeguras.EstaDentroDeCarpeta(
+                    RutasAplicacion.RutaRaizWebView2Usuario,
+                    completa))
+            {
+                return RutasAplicacion.RutaRaizWebView2Usuario;
+            }
+
+            return ServicioRutasSeguras.EstaDentroDeCarpeta(
+                    RutasAplicacion.RutaRaizWebView2RecuperacionLocal,
+                    completa)
+                ? RutasAplicacion.RutaRaizWebView2RecuperacionLocal
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void RegistrarFalloProcesoWebView2(CoreWebView2Environment entorno, string rutaPerfil, CoreWebView2ProcessFailedEventArgs evento)

@@ -87,7 +87,7 @@ public sealed class ServicioTokensAdmin
     {
         // Copia el token anterior a la carpeta local segura.
         var rutaNueva = ObtenerRutaToken(usuarioWindows);
-        if (File.Exists(rutaNueva))
+        if (File.Exists(rutaNueva) || RutasAplicacion.Distribucion.EsPortable)
         {
             return rutaNueva;
         }

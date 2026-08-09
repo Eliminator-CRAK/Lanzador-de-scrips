@@ -1,6 +1,7 @@
 // (Autor: Alex Roman)
 // Descripcion: Servidor local que entrega el cliente web y la API de ejecucion.
 
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -45,9 +46,10 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioArtefactosFirmados _servicioArtefactos;
     private readonly ServicioConjuntoArtefactos _servicioConjuntoArtefactos;
     private readonly ServicioCatalogoScripts _servicioCatalogoScripts;
-    private readonly ServicioAuditoria _servicioAuditoria = new();
+    private readonly ServicioAuditoria _servicioAuditoria;
     private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
+    private readonly TimeSpan _tiempoMaximoCierre;
     private readonly object _bloqueoEmergencia = new();
     private readonly object _bloqueoDiagnosticoAjustes = new();
     private readonly string _tokenSesion = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -67,7 +69,9 @@ public sealed class ServidorLocalWeb : IDisposable
         int puerto,
         ServicioTokenMaestro servicioTokenMaestro,
         string? rutaStaging = null,
-        ServicioArtefactosFirmados? servicioArtefactos = null)
+        ServicioArtefactosFirmados? servicioArtefactos = null,
+        ServicioAuditoria? servicioAuditoria = null,
+        TimeSpan? tiempoMaximoCierre = null)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
@@ -78,6 +82,9 @@ public sealed class ServidorLocalWeb : IDisposable
             new ServicioCifradoAplicacion(),
             _servicioArtefactos);
         _servicioCatalogoScripts = new ServicioCatalogoScripts(_servicioArtefactos);
+        _servicioAuditoria = servicioAuditoria ?? new ServicioAuditoria(
+            () => CargarConfiguracion().RutaPermisos);
+        _tiempoMaximoCierre = tiempoMaximoCierre ?? TimeSpan.FromSeconds(30);
         _gestorEjecuciones = new GestorEjecucionesWeb(
             _servicioAuditoria,
             _servicioSeguridadScripts,
@@ -88,7 +95,9 @@ public sealed class ServidorLocalWeb : IDisposable
         : this(
             puerto,
             new ServicioTokenMaestro(),
-            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"))
+            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
+            servicioAuditoria: CrearAuditoriaParaPruebas(configuracion),
+            tiempoMaximoCierre: TimeSpan.Zero)
     {
         _configuracionFija = configuracion;
     }
@@ -97,7 +106,9 @@ public sealed class ServidorLocalWeb : IDisposable
         : this(
             puerto,
             servicioTokenMaestro,
-            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"))
+            Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
+            servicioAuditoria: CrearAuditoriaParaPruebas(configuracion),
+            tiempoMaximoCierre: TimeSpan.Zero)
     {
         _configuracionFija = configuracion;
     }
@@ -111,7 +122,9 @@ public sealed class ServidorLocalWeb : IDisposable
             puerto,
             servicioTokenMaestro,
             Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
-            servicioArtefactos)
+            servicioArtefactos,
+            CrearAuditoriaParaPruebas(configuracion),
+            TimeSpan.Zero)
     {
         _configuracionFija = configuracion;
     }
@@ -119,6 +132,14 @@ public sealed class ServidorLocalWeb : IDisposable
     public Uri UrlBase { get; }
 
     public string TokenApiInterno => _tokenApiInterno;
+
+    private static ServicioAuditoria CrearAuditoriaParaPruebas(ConfiguracionLanzador configuracion)
+    {
+        // Conserva el comportamiento fail-closed sin modificar ACL del equipo de pruebas.
+        return new ServicioAuditoria(
+            () => configuracion.RutaPermisos,
+            protegerEventos: false);
+    }
 
     public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas()
     {
@@ -185,16 +206,25 @@ public sealed class ServidorLocalWeb : IDisposable
 
     public void Dispose()
     {
+        // Comparte un unico limite de cierre entre ejecuciones y auditoria.
+        var cierre = Stopwatch.StartNew();
+        var tiempoMaximo = _tiempoMaximoCierre;
         _cancelacion.Cancel();
-        _gestorEjecuciones.Dispose();
-
         if (_escuchador.IsListening)
         {
             _escuchador.Stop();
         }
 
         _escuchador.Close();
+        _gestorEjecuciones.Cerrar(TiempoRestante(cierre, tiempoMaximo));
+        _servicioAuditoria.Cerrar(TiempoRestante(cierre, tiempoMaximo));
         _cancelacion.Dispose();
+    }
+
+    private static TimeSpan TiempoRestante(Stopwatch cierre, TimeSpan tiempoMaximo)
+    {
+        var restante = tiempoMaximo - cierre.Elapsed;
+        return restante > TimeSpan.Zero ? restante : TimeSpan.Zero;
     }
 
     private async Task EscucharAsync()
@@ -304,7 +334,8 @@ public sealed class ServidorLocalWeb : IDisposable
             var configuracion = CargarConfiguracion();
             var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
             var emergencia = ObtenerEmergenciaActiva();
-            var auditoriaCorrecta = string.IsNullOrWhiteSpace(_servicioAuditoria.UltimoError);
+            var diagnosticoAuditoria = _servicioAuditoria.ComprobarDisponibilidad();
+            var auditoriaCorrecta = diagnosticoAuditoria.Exito;
             var saludAutenticada = SesionApiValidaPrivada(contexto.Request);
             var politica = diagnosticoPermisos.EstaDisponible
                 ? ServicioSeguridadScripts.LeerPolitica(diagnosticoPermisos.Permisos)
@@ -333,7 +364,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     scripts = configuracion.RutaScripts,
                     permisos = diagnosticoPermisos.Ruta,
                     logs = configuracion.RutaLogs,
-                    auditoria = RutasAplicacion.RutaAuditoria,
+                    auditoria = diagnosticoAuditoria.RutaSanitizada,
                     perfilWebView2 = RutasAplicacion.RutaRaizWebView2Usuario
                 },
                 permisos = new
@@ -345,7 +376,11 @@ public sealed class ServidorLocalWeb : IDisposable
                 auditoria = new
                 {
                     disponible = auditoriaCorrecta,
-                    ultimoError = _servicioAuditoria.UltimoError
+                    ruta = diagnosticoAuditoria.RutaSanitizada,
+                    pendientes = _servicioAuditoria.TotalPendientes,
+                    ultimoError = string.IsNullOrWhiteSpace(_servicioAuditoria.UltimoError)
+                        ? diagnosticoAuditoria.Mensaje
+                        : _servicioAuditoria.UltimoError
                 },
                 webView2 = new
                 {
@@ -372,7 +407,11 @@ public sealed class ServidorLocalWeb : IDisposable
                     venceUtc = emergencia?.VenceUtc,
                     motivo = emergencia?.Motivo ?? string.Empty
                 },
-                ultimoErrorCritico = auditoriaCorrecta ? string.Empty : _servicioAuditoria.UltimoError
+                ultimoErrorCritico = auditoriaCorrecta
+                    ? string.Empty
+                    : string.IsNullOrWhiteSpace(_servicioAuditoria.UltimoError)
+                        ? diagnosticoAuditoria.Mensaje
+                        : _servicioAuditoria.UltimoError
             });
             return;
         }
@@ -780,7 +819,7 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (Guid.TryParse(partes[2], out var ejecucionId))
             {
-                _gestorEjecuciones.Cancelar(ejecucionId);
+                await _gestorEjecuciones.CancelarAsync(ejecucionId);
             }
 
             await EscribirJsonAsync(contexto, 200, new { exito = true });
@@ -951,15 +990,29 @@ public sealed class ServidorLocalWeb : IDisposable
 
         var catalogoEjecucion = diagnosticoCatalogo.Catalogo
             ?? new CatalogoScripts(1, DateTimeOffset.UtcNow, diagnosticoPermisos.ConjuntoId, []);
-        var ejecucionId = _gestorEjecuciones.Iniciar(
+        var inicio = await _gestorEjecuciones.IniciarAsync(
             script,
             configuracion.RutaLogs,
             usuario,
             diagnosticoSeguridad.ExecutionPolicyBypassPermitido,
             diagnosticoPermisos.Permisos,
             catalogoEjecucion,
-            _modoDesarrolloFirmas);
-        await EscribirJsonAsync(contexto, 200, new { id = ejecucionId });
+            _modoDesarrolloFirmas,
+            diagnosticoSeguridad.Sha256);
+        if (!inicio.Exito)
+        {
+            await EscribirJsonAsync(
+                contexto,
+                503,
+                new
+                {
+                    error = "No se pudo confirmar la auditoria remota. La ejecucion ha sido bloqueada.",
+                    detalle = inicio.Mensaje
+                });
+            return;
+        }
+
+        await EscribirJsonAsync(contexto, 200, new { id = inicio.EjecucionId });
     }
 
     private async Task ProcesarModoDesarrolloFirmasAsync(HttpListenerContext contexto, string metodo)

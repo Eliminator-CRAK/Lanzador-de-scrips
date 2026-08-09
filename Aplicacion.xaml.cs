@@ -13,14 +13,15 @@ namespace LanzadorScripts;
 
 public partial class Aplicacion : System.Windows.Application
 {
-    private const string NombreMutex = "Local\\LanzadorScripts_AlexRoman";
-    private const string NombrePipe = "LanzadorScripts_AlexRoman_ConfigPipe";
+    private const string PrefijoMutex = "Local\\LanzadorScripts_AlexRoman";
+    private const string PrefijoPipe = "LanzadorScripts_AlexRoman_ConfigPipe";
     private const int IntentosConexionInstancia = 20;
 
     private Mutex? _mutex;
     private CancellationTokenSource? _cancelacionPipe;
     private VentanaPrincipal? _ventanaPrincipal;
     private bool _instanciaPrincipal;
+    private string _nombrePipe = string.Empty;
     private readonly ServicioLogInicio _servicioLogInicio = new();
 
     protected override void OnStartup(StartupEventArgs e)
@@ -43,7 +44,29 @@ public partial class Aplicacion : System.Windows.Application
             return;
         }
 
-        _mutex = new Mutex(initiallyOwned: true, NombreMutex, out _instanciaPrincipal);
+        ContextoDistribucion distribucion;
+        try
+        {
+            distribucion = ContextoDistribucion.ObtenerActual();
+            distribucion.ValidarEjecutablePortable(Environment.ProcessPath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo validar la distribucion de LanzadorScripts.\n\n{ex.Message}",
+                "LanzadorScripts",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
+
+        var sufijoDistribucion = distribucion.EsPortable ? "Portable" : "Instalada";
+        _nombrePipe = $"{PrefijoPipe}_{sufijoDistribucion}";
+        _mutex = new Mutex(
+            initiallyOwned: true,
+            $"{PrefijoMutex}_{sufijoDistribucion}",
+            out _instanciaPrincipal);
         if (!_instanciaPrincipal)
         {
             if (!EnviarMensajesAInstanciaPrincipal(e.Args))
@@ -76,7 +99,6 @@ public partial class Aplicacion : System.Windows.Application
 
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        ServicioAsociacionArchivos.Registrar();
         _cancelacionPipe = new CancellationTokenSource();
         _ventanaPrincipal = new VentanaPrincipal();
         _ventanaPrincipal.Show();
@@ -114,7 +136,7 @@ public partial class Aplicacion : System.Windows.Application
             try
             {
                 await using var pipe = new NamedPipeServerStream(
-                    NombrePipe,
+                    _nombrePipe,
                     PipeDirection.In,
                     1,
                     PipeTransmissionMode.Byte,
@@ -139,7 +161,7 @@ public partial class Aplicacion : System.Windows.Application
         }
     }
 
-    private static bool EnviarMensajesAInstanciaPrincipal(string[] argumentos)
+    private bool EnviarMensajesAInstanciaPrincipal(string[] argumentos)
     {
         // Restaura siempre la instancia existente y despues entrega los paquetes.
         var mensajes = new List<MensajeInstanciaAplicacion>
@@ -156,7 +178,7 @@ public partial class Aplicacion : System.Windows.Application
         return mensajes.All(EnviarMensajeAInstanciaPrincipal);
     }
 
-    private static bool EnviarMensajeAInstanciaPrincipal(MensajeInstanciaAplicacion mensaje)
+    private bool EnviarMensajeAInstanciaPrincipal(MensajeInstanciaAplicacion mensaje)
     {
         // Reintenta durante el arranque temprano de la instancia principal.
         var json = ProtocoloInstanciaAplicacion.Serializar(mensaje);
@@ -166,7 +188,7 @@ public partial class Aplicacion : System.Windows.Application
             {
                 using var pipe = new NamedPipeClientStream(
                     ".",
-                    NombrePipe,
+                    _nombrePipe,
                     PipeDirection.Out,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
                     TokenImpersonationLevel.Identification,

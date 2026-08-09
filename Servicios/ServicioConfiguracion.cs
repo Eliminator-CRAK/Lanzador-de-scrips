@@ -38,13 +38,25 @@ public sealed class ServicioConfiguracion
     public ServicioConfiguracion()
         : this(
             RutasAplicacion.RutaConfiguracionUsuario,
-            [
-                RutasAplicacion.RutaConfiguracionUsuarioLegadaDat,
-                RutasAplicacion.RutaConfiguracionUsuarioLegadaJson,
-                RutasAplicacion.RutaConfiguracionLegada
-            ],
+            ObtenerRutasLegadasPermitidas(),
             prepararDatosUsuario: true)
     {
+    }
+
+    private static IReadOnlyList<string> ObtenerRutasLegadasPermitidas()
+    {
+        // La portable no consulta datos persistentes de ejecuciones anteriores.
+        if (RutasAplicacion.Distribucion.EsPortable)
+        {
+            return [];
+        }
+
+        return
+        [
+            RutasAplicacion.RutaConfiguracionUsuarioLegadaDat,
+            RutasAplicacion.RutaConfiguracionUsuarioLegadaJson,
+            RutasAplicacion.RutaConfiguracionLegada
+        ];
     }
 
     internal ServicioConfiguracion(string rutaConfiguracion)

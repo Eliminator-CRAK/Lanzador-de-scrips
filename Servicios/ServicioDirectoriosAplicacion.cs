@@ -28,6 +28,14 @@ public static class ServicioDirectoriosAplicacion
 
     public static void PrepararEstructuraAplicacion()
     {
+        if (RutasAplicacion.Distribucion.EsPortable)
+        {
+            // Aisla todos los datos dentro de la sesion temporal validada.
+            PrepararDirectorioPrivado(RutasAplicacion.Distribucion.RaizPortable!);
+            PrepararDatosUsuario();
+            return;
+        }
+
         // Protege la raiz comun antes de crear los datos del usuario.
         PrepararDirectorioBase(RutasAplicacion.RaizProgramData);
         PrepararDirectorioBase(RutasAplicacion.RutaUsuarios);
@@ -125,6 +133,85 @@ public static class ServicioDirectoriosAplicacion
                 throw new IOException($"La ruta local no puede contener puntos de reanalisis: {actual}");
             }
         }
+    }
+
+    internal static void EliminarArbolSinAtravesarReanalisis(
+        string raizAutorizada,
+        string rutaObjetivo)
+    {
+        // Limita el borrado a una subcarpeta y elimina los enlaces sin seguirlos.
+        var raiz = ServicioRutasSeguras.ResolverCarpetaAbsoluta(
+            raizAutorizada,
+            "raiz autorizada de limpieza");
+        var objetivo = ServicioRutasSeguras.ResolverCarpetaAbsoluta(
+            rutaObjetivo,
+            "carpeta de limpieza");
+        if (string.Equals(raiz, objetivo, StringComparison.OrdinalIgnoreCase)
+            || !ServicioRutasSeguras.EstaDentroDeCarpeta(raiz, objetivo))
+        {
+            throw new InvalidOperationException("La carpeta de limpieza queda fuera de la raiz autorizada.");
+        }
+
+        RechazarPuntosReanalisis(raiz);
+        var carpetaPadre = Path.GetDirectoryName(objetivo)
+            ?? throw new IOException("La carpeta de limpieza no tiene un directorio padre valido.");
+        RechazarPuntosReanalisis(carpetaPadre);
+        EliminarEntradaSinAtravesarReanalisis(objetivo);
+    }
+
+    private static void EliminarEntradaSinAtravesarReanalisis(string ruta)
+    {
+        FileAttributes atributos;
+        try
+        {
+            atributos = File.GetAttributes(ruta);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return;
+        }
+
+        var esDirectorio = atributos.HasFlag(FileAttributes.Directory);
+        if (atributos.HasFlag(FileAttributes.ReparsePoint))
+        {
+            // Retira el enlace encontrado sin acceder a su destino.
+            if (esDirectorio)
+            {
+                Directory.Delete(ruta, recursive: false);
+            }
+            else
+            {
+                File.Delete(ruta);
+            }
+
+            return;
+        }
+
+        if (!esDirectorio)
+        {
+            if (atributos.HasFlag(FileAttributes.ReadOnly))
+            {
+                File.SetAttributes(ruta, atributos & ~FileAttributes.ReadOnly);
+            }
+
+            File.Delete(ruta);
+            return;
+        }
+
+        foreach (var entrada in Directory.EnumerateFileSystemEntries(
+                     ruta,
+                     "*",
+                     SearchOption.TopDirectoryOnly))
+        {
+            EliminarEntradaSinAtravesarReanalisis(entrada);
+        }
+
+        if (atributos.HasFlag(FileAttributes.ReadOnly))
+        {
+            File.SetAttributes(ruta, atributos & ~FileAttributes.ReadOnly);
+        }
+
+        Directory.Delete(ruta, recursive: false);
     }
 
     private static void AsegurarPropietario(

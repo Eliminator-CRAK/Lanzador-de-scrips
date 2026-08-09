@@ -22,16 +22,16 @@ concurrency:
 
 jobs:
   build-test-publish:
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, vs-professional-2026]
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: 10.0.x
+      - name: Verify .NET SDK
+        shell: powershell
+        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarDotnet
 
       - name: Setup PowerShell 7.6
         shell: powershell
@@ -41,13 +41,13 @@ jobs:
         run: dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
 
       - name: Build Release
-        run: dotnet build .\LanzadorScripts.slnx -c Release --no-restore
+        run: dotnet build .\LanzadorScripts.csproj -c Release --no-restore
 
       - name: Test
-        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-build
+        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
 
       - name: Audit NuGet packages
-        run: dotnet list .\LanzadorScripts.slnx package --vulnerable --include-transitive
+        run: dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
 
       - name: Verify Visual C++ x64
         shell: powershell

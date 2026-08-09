@@ -10,7 +10,7 @@ GitLab es el repositorio principal. GitHub es una replica del mismo historial pa
 ## Ramas
 
 1. Actualice `main` desde GitLab.
-2. Cree una rama descriptiva, por ejemplo `codex/firma-digital-sin-aes`.
+2. Cree una rama descriptiva, por ejemplo `codex/instalador-msi-auditoria-remota`.
 3. Publique la rama en GitLab y GitHub con `Herramientas\SincronizarRepositorios.ps1 -Modo PublicarRama`.
 4. Abra una unica merge request en GitLab.
 
@@ -19,10 +19,10 @@ No se permiten pushes directos ni `force-push` sobre `main`. No reescriba una ra
 ## Validacion Local
 
 ```powershell
-dotnet restore LanzadorScripts.slnx
-dotnet build LanzadorScripts.slnx -c Release --no-restore
-dotnet test LanzadorScripts.slnx -c Release --no-build
-dotnet list LanzadorScripts.slnx package --vulnerable --include-transitive
+dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
+dotnet build .\LanzadorScripts.csproj -c Release --no-restore
+dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
+dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
 ```
 
 Ejecute Semgrep estricto y Gitleaks antes de solicitar la fusion. No se utiliza Aikido.
@@ -49,6 +49,6 @@ La herramienta solo permite un avance rapido de GitHub al SHA exacto de `origin/
 
 ## Publicacion
 
-Los builds de ramas son de desarrollo. La firma y publicacion definitiva se realizan unicamente desde `main` o una etiqueta `v*`.
+Los builds de ramas son de desarrollo y no se firman. La firma y publicacion definitiva se realizan unicamente desde `main` o una etiqueta `v*`. El empaquetado requiere el runner Windows corporativo `vs-professional-2026`.
 
 No incluya claves privadas, PFX, perfiles WebView2, runtimes descargados, `bin`, `obj`, EXE, scripts operativos ni JSON firmados generados.

@@ -1,8 +1,8 @@
 # (Autor: Alex Roman)
-# Descripcion: Publica los ejecutables y, opcionalmente, los artefactos firmados.
+# Descripcion: Publica el MSI instalado, el EXE portable y los artefactos opcionales.
 
 param(
-    [string]$CertThumbprint = '',
+    [string]$CertThumbprint = '6C654649369000DDE0AA70F62645058D9A3437F5',
     [string]$CertPath = '',
     [securestring]$CertPassword,
     [string]$TimestampServer = 'http://timestamp.digicert.com',
@@ -30,6 +30,8 @@ $salidaRuntimeStaging = Join-Path $raiz 'obj\PublicacionRuntime'
 $salidaLanzadorNativo = Join-Path $raiz 'obj\LanzadorNativoBuild'
 $salidaAnterior = Join-Path $raiz "obj\PublicacionAnterior-$PID"
 $tamanoMinimoExe = 209715200
+$tamanoMinimoMsi = 209715200
+$scriptCompilarMsi = Join-Path $PSScriptRoot 'CompilarMsi.ps1'
 $cacheWebView2 = Join-Path $raiz 'Recursos\WebView2'
 $runtimeZipIntermedio = Join-Path $raiz 'obj\WebView2Runtime\WebView2Runtime.zip'
 $huellaCertificadoArtefactos = '500266A64E574889370D92E5CE0D65D55CC963B7'
@@ -78,6 +80,13 @@ if ($null -eq $propiedadesVersion -or
 
 $versionProductoEsperada = [string]$propiedadesVersion.Version
 $versionArchivoEsperada = [string]$propiedadesVersion.FileVersion
+if ($versionProductoEsperada -ne '1.7.0' -or $versionArchivoEsperada -ne '1.7.0.0') {
+    throw 'La publicacion MSI y portable requiere la version 1.7.0.'
+}
+
+$nombreMsiFinal = 'LanzadorScripts-1.7.0-x64.msi'
+$nombrePortableFinal = 'LanzadorScripts_Portable-1.7.0-x64.exe'
+$msiCompilado = Join-Path $raiz "Instalador\Release\$nombreMsiFinal"
 $revisionGitEsperada = (& git -C $raiz rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revisionGitEsperada)) {
     throw 'No se pudo obtener la revision Git que identificara el EXE.'
@@ -98,7 +107,10 @@ function Get-SigningCertificate {
             Where-Object { $_.Thumbprint -eq $CertThumbprint } |
             Select-Object -First 1
 
-        if ($null -eq $cert) {
+        if ($null -eq $cert -or
+            -not $cert.HasPrivateKey -or
+            $cert.NotAfter.ToUniversalTime() -le [DateTime]::UtcNow -or
+            $cert.EnhancedKeyUsageList.ObjectId -notcontains '1.3.6.1.5.5.7.3.3') {
             throw "No se encontro el certificado de firma con thumbprint $CertThumbprint."
         }
 
@@ -130,19 +142,19 @@ function Invoke-NativeChecked {
 }
 
 function Get-VisualStudioDeveloperCommand {
-    # Localiza las herramientas nativas x64 usadas para crear el EXE exterior.
+    # Localiza las herramientas nativas x64 de Visual Studio Professional 2026.
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
         throw 'No se encontro vswhere.exe para localizar las herramientas nativas de Visual Studio.'
     }
 
     $instalacion = (& $vswhere `
-        -latest `
-        -products * `
+        -products Microsoft.VisualStudio.Product.Professional `
+        -version '[18.0,19.0)' `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
         -property installationPath | Select-Object -First 1)
     if ([string]::IsNullOrWhiteSpace($instalacion)) {
-        throw 'No se encontraron las herramientas C++ x64 de Visual Studio.'
+        throw 'No se encontraron las herramientas C++ x64 de Visual Studio Professional 2026.'
     }
 
     $comando = Join-Path $instalacion 'Common7\Tools\VsDevCmd.bat'
@@ -317,9 +329,7 @@ function New-NativeLauncher {
     param(
         [string]$RutaPayload,
         [string]$HashPayload,
-        [string]$RutaSalida,
-        [ValidateSet('normal', 'portable')]
-        [string]$Variante
+        [string]$RutaSalida
     )
 
     # Genera el lanzador que prepara las rutas antes de iniciar .NET.
@@ -351,16 +361,10 @@ function New-NativeLauncher {
         throw "La version de archivo no es valida para VERSIONINFO: $versionArchivoEsperada"
     }
 
-    $esLimpiezaCompleta = $Variante -eq 'portable'
-    $valorLimpiezaCompleta = if ($esLimpiezaCompleta) { 1 } else { 0 }
     $nombreArchivo = Split-Path -Leaf $RutaSalida
     $nombreInterno = [System.IO.Path]::GetFileNameWithoutExtension($nombreArchivo)
-    $descripcionArchivo = if ($esLimpiezaCompleta) {
-        'Lanzador de Scripts Portable'
-    } else {
-        'Lanzador de Scripts'
-    }
-    $producto = "$versionProductoEsperada+$revisionGitEsperada.$Variante"
+    $descripcionArchivo = 'Lanzador de Scripts Portable'
+    $producto = "$versionProductoEsperada+$revisionGitEsperada.portable"
     $contenidoRecursos = Get-Content -LiteralPath $plantillaRecursos -Raw
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__RUTA_MANIFIESTO__',
@@ -404,7 +408,7 @@ function New-NativeLauncher {
     $vsDevCmd = Get-VisualStudioDeveloperCommand
     $lineaCompilacion = @(
         'cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf',
-        "/DUNICODE /D_UNICODE /DLANZADOR_LIMPIEZA_COMPLETA=$valorLimpiezaCompleta",
+        '/DUNICODE /D_UNICODE',
         "/Fo:`"$objetoCompilado`"",
         "/Fe:`"$RutaSalida`"",
         "`"$fuente`"",
@@ -483,6 +487,7 @@ function Set-ExecutableSignature {
     $firma = Set-AuthenticodeSignature `
         -FilePath $RutaExe `
         -Certificate $Certificado `
+        -HashAlgorithm SHA256 `
         -TimestampServer $TimestampServer
     if ($firma.Status -ne 'Valid') {
         throw "No se pudo firmar $Descripcion correctamente: $($firma.Status)."
@@ -536,6 +541,23 @@ function Get-PortableExecutableMachine {
         $lector.Dispose()
         $flujo.Dispose()
     }
+}
+
+function ConvertTo-WindowsExtendedPath {
+    param(
+        [string]$Ruta
+    )
+
+    # Permite que las API Win32 lean metadatos en rutas superiores a MAX_PATH.
+    $rutaCompleta = [System.IO.Path]::GetFullPath($Ruta)
+    if ($rutaCompleta.StartsWith('\\?\', [System.StringComparison]::Ordinal)) {
+        return $rutaCompleta
+    }
+    if ($rutaCompleta.StartsWith('\\', [System.StringComparison]::Ordinal)) {
+        return '\\?\UNC\' + $rutaCompleta.Substring(2)
+    }
+
+    return '\\?\' + $rutaCompleta
 }
 
 function Get-RuntimeContentHash {
@@ -610,8 +632,10 @@ function Test-WebView2RuntimeFolder {
         -HashEsperado $hashEjecutableWebView2Fijado `
         -Descripcion 'msedgewebview2.exe' | Out-Null
 
-    $versionEjecutable = $ejecutableWebView2.VersionInfo.FileVersion
-    $versionProducto = $ejecutableWebView2.VersionInfo.ProductVersion
+    $rutaVersion = ConvertTo-WindowsExtendedPath -Ruta $ejecutableWebView2.FullName
+    $informacionVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($rutaVersion)
+    $versionEjecutable = $informacionVersion.FileVersion
+    $versionProducto = $informacionVersion.ProductVersion
     if ($versionEjecutable -ne $versionWebView2Fijada -or $versionProducto -ne $versionWebView2Fijada) {
         throw "La version de msedgewebview2.exe no coincide. Esperada: $versionWebView2Fijada. Archivo: $versionEjecutable. Producto: $versionProducto."
     }
@@ -768,6 +792,17 @@ function Initialize-WebView2EmbeddedRuntime {
         -HashEsperado $hashZipWebView2Fijado `
         -Descripcion 'ZIP embebido de WebView2' | Out-Null
     Write-Host "WebView2 Runtime $versionWebView2Fijada x64 preparado. SHA-256 ZIP: $hashZipWebView2Fijado"
+    $ejecutableMsi = Get-ChildItem `
+        -LiteralPath $origen `
+        -Filter 'msedgewebview2.exe' `
+        -Recurse `
+        -File |
+        Select-Object -First 1
+    if ($null -eq $ejecutableMsi -or $null -eq $ejecutableMsi.Directory) {
+        throw 'No se pudo resolver la carpeta WebView2 que debe instalar el MSI.'
+    }
+
+    return $ejecutableMsi.Directory.FullName
 }
 
 function Assert-WebView2EmbeddedResource {
@@ -779,7 +814,9 @@ function Assert-WebView2EmbeddedResource {
         throw "No se encontro el ensamblado publicado para validar WebView2: $RutaEnsamblado"
     }
 
-    $ensamblado = [System.Reflection.Assembly]::LoadFile((Resolve-Path -LiteralPath $RutaEnsamblado).Path)
+    $bytesEnsamblado = [System.IO.File]::ReadAllBytes(
+        (Resolve-Path -LiteralPath $RutaEnsamblado).Path)
+    $ensamblado = [System.Reflection.Assembly]::Load($bytesEnsamblado)
     if ($ensamblado.GetManifestResourceNames() -notcontains $nombreRecursoWebView2) {
         throw "El ensamblado publicado no contiene el recurso $nombreRecursoWebView2."
     }
@@ -842,16 +879,89 @@ function Assert-PublishedExecutable {
     return $hashFinal
 }
 
-Write-Host 'Restaurando dependencias...'
-Invoke-NativeChecked -Descripcion 'dotnet restore' -Comando {
-    dotnet restore (Join-Path $raiz 'LanzadorScripts.slnx')
+function Assert-PublishedMsi {
+    param(
+        [string]$RutaMsi,
+        [bool]$DebeEstarFirmado
+    )
+
+    # Comprueba firma, metadatos y huella del instalador final.
+    if (-not (Test-Path -LiteralPath $RutaMsi -PathType Leaf)) {
+        throw "No se encontro el MSI publicado: $RutaMsi"
+    }
+
+    $tamano = (Get-Item -LiteralPath $RutaMsi).Length
+    if ($tamano -lt $tamanoMinimoMsi) {
+        throw "El MSI generado parece incompleto. Tamano: $tamano bytes."
+    }
+
+    $firma = Get-AuthenticodeSignature -LiteralPath $RutaMsi
+    if ($DebeEstarFirmado -and
+        ($firma.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+            $null -eq $firma.TimeStamperCertificate)) {
+        throw "La firma Authenticode del MSI no es valida: $($firma.Status)."
+    }
+
+    $instalador = New-Object -ComObject WindowsInstaller.Installer
+    $baseDatos = $null
+    $vista = $null
+    try {
+        $baseDatos = $instalador.OpenDatabase((Resolve-Path -LiteralPath $RutaMsi).Path, 0)
+        $vista = $baseDatos.OpenView('SELECT `Property`, `Value` FROM `Property`')
+        [void]$vista.Execute()
+        $propiedades = @{}
+        while ($true) {
+            $fila = $vista.Fetch()
+            if ($null -eq $fila) {
+                break
+            }
+
+            try {
+                $propiedades[[string]$fila.StringData(1)] = [string]$fila.StringData(2)
+            }
+            finally {
+                [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($fila) | Out-Null
+            }
+        }
+
+        if ($propiedades.ProductVersion -ne $versionProductoEsperada -or
+            $propiedades.ALLUSERS -ne '1' -or
+            $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}' -or
+            $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1') {
+            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.7.0.'
+        }
+    }
+    finally {
+        if ($null -ne $vista) {
+            try {
+                [void]$vista.Close()
+            }
+            catch {
+            }
+            [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($vista) | Out-Null
+        }
+        if ($null -ne $baseDatos) {
+            [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($baseDatos) | Out-Null
+        }
+        [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($instalador) | Out-Null
+    }
+
+    $hash = (Get-FileHash -LiteralPath $RutaMsi -Algorithm SHA256).Hash
+    Write-Host "MSI final: $RutaMsi"
+    Write-Host "SHA-256 final: $hash"
+    return $hash
 }
 
-Initialize-WebView2EmbeddedRuntime
+Write-Host 'Restaurando dependencias...'
+Invoke-NativeChecked -Descripcion 'dotnet restore' -Comando {
+    dotnet restore (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj')
+}
+
+$runtimeWebView2Source = Initialize-WebView2EmbeddedRuntime
 
 Write-Host 'Compilando aplicacion...'
 Invoke-NativeChecked -Descripcion 'dotnet build' -Comando {
-    dotnet build (Join-Path $raiz 'LanzadorScripts.slnx') -c Release --no-restore
+    dotnet build $proyecto -c Release --no-restore
 }
 
 Write-Host 'Ejecutando pruebas...'
@@ -916,36 +1026,59 @@ $hashRuntimeExe = Assert-PublishedExecutable `
     -RutaExe $runtimeExe `
     -DebeEstarFirmado ($null -ne $certificadoFirma)
 
-Write-Host 'Creando lanzadores nativos normal y portable...'
+Write-Host 'Creando el lanzador nativo portable...'
 New-Item -ItemType Directory -Path $stagingCompleta | Out-Null
-$exeNormal = Join-Path $stagingCompleta 'LanzadorScripts.exe'
-$exePortable = Join-Path $stagingCompleta 'LanzadorScripts_Portable.exe'
+$exePortable = Join-Path $stagingCompleta $nombrePortableFinal
 New-NativeLauncher `
     -RutaPayload $runtimeExe `
     -HashPayload $hashRuntimeExe `
-    -RutaSalida $exeNormal `
-    -Variante normal
-New-NativeLauncher `
+    -RutaSalida $exePortable
+Assert-NativeLauncherPayload `
+    -RutaLanzador $exePortable `
     -RutaPayload $runtimeExe `
-    -HashPayload $hashRuntimeExe `
-    -RutaSalida $exePortable `
-    -Variante portable
-foreach ($exePublicado in @($exeNormal, $exePortable)) {
-    Assert-NativeLauncherPayload `
-        -RutaLanzador $exePublicado `
-        -RutaPayload $runtimeExe `
-        -HashPayload $hashRuntimeExe
+    -HashPayload $hashRuntimeExe
+
+if ($null -ne $certificadoFirma) {
+    Write-Host 'Firmando el lanzador portable final...'
+    Set-ExecutableSignature `
+        -RutaExe $exePortable `
+        -Certificado $certificadoFirma `
+        -Descripcion (Split-Path -Leaf $exePortable)
+}
+
+Write-Host 'Compilando el instalador MSI con Visual Studio Professional 2026...'
+if (-not (Test-Path -LiteralPath $scriptCompilarMsi -PathType Leaf)) {
+    throw "No se encontro el compilador MSI: $scriptCompilarMsi"
 }
 
 if ($null -ne $certificadoFirma) {
-    Write-Host 'Firmando los dos lanzadores finales...'
-    foreach ($exePublicado in @($exeNormal, $exePortable)) {
-        Set-ExecutableSignature `
-            -RutaExe $exePublicado `
-            -Certificado $certificadoFirma `
-            -Descripcion (Split-Path -Leaf $exePublicado)
+    $certificadoEnAlmacen = Get-ChildItem -Path Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Thumbprint -eq $certificadoFirma.Thumbprint -and
+            $_.HasPrivateKey
+        } |
+        Select-Object -First 1
+    if ($null -eq $certificadoEnAlmacen) {
+        throw 'El certificado Authenticode debe estar importado con clave privada para firmar el MSI.'
     }
+
+    & $scriptCompilarMsi `
+        -CertThumbprint $certificadoFirma.Thumbprint `
+        -TimestampServer $TimestampServer `
+        -RutaRuntimeWebView2 $runtimeWebView2Source
 }
+else {
+    & $scriptCompilarMsi `
+        -RutaRuntimeWebView2 $runtimeWebView2Source `
+        -DesarrolloSinFirma
+}
+
+if (-not (Test-Path -LiteralPath $msiCompilado -PathType Leaf)) {
+    throw 'No se genero el instalador MSI final.'
+}
+
+$msiPublicado = Join-Path $stagingCompleta $nombreMsiFinal
+Copy-Item -LiteralPath $msiCompilado -Destination $msiPublicado
 
 if ($InicializarArtefactos) {
     $certificadoArtefactos = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My |
@@ -1001,7 +1134,7 @@ if ($InicializarArtefactos) {
 }
 
 $archivosPublicados = @(Get-ChildItem -LiteralPath $stagingCompleta -Recurse -File)
-$rutasEsperadas = @($exeNormal, $exePortable)
+$rutasEsperadas = @($msiPublicado, $exePortable)
 $inesperados = @($archivosPublicados | Where-Object {
     $_.FullName -notin $rutasEsperadas
 })
@@ -1021,19 +1154,19 @@ if ($archivosLaterales.Count -gt 0) {
     throw "La publicacion contiene archivos laterales de .NET:$([Environment]::NewLine)$lista"
 }
 
-$hashesValidados = @{}
-foreach ($exePublicado in @($exeNormal, $exePortable)) {
-    $tamanoExe = (Get-Item -LiteralPath $exePublicado).Length
-    if ($tamanoExe -lt $tamanoMinimoExe) {
-        throw "El EXE generado parece incompleto. Archivo: $exePublicado. Tamano: $tamanoExe bytes."
-    }
-
-    $sufijoProducto = if ($exePublicado -eq $exePortable) { '.portable' } else { '.normal' }
-    $hashesValidados[(Split-Path -Leaf $exePublicado)] = Assert-PublishedExecutable `
-        -RutaExe $exePublicado `
-        -DebeEstarFirmado ($null -ne $certificadoFirma) `
-        -SufijoProducto $sufijoProducto
+$tamanoExe = (Get-Item -LiteralPath $exePortable).Length
+if ($tamanoExe -lt $tamanoMinimoExe) {
+    throw "El EXE portable parece incompleto. Tamano: $tamanoExe bytes."
 }
+
+$hashesValidados = @{}
+$hashesValidados[$nombrePortableFinal] = Assert-PublishedExecutable `
+    -RutaExe $exePortable `
+    -DebeEstarFirmado ($null -ne $certificadoFirma) `
+    -SufijoProducto '.portable'
+$hashesValidados[$nombreMsiFinal] = Assert-PublishedMsi `
+    -RutaMsi $msiPublicado `
+    -DebeEstarFirmado ($null -ne $certificadoFirma)
 
 # Sustituye la publicacion solo despues de validar todo el staging.
 $habiaPublicacionAnterior = Test-Path -LiteralPath $salidaCompleta
@@ -1046,12 +1179,12 @@ try {
     Move-Item -LiteralPath $stagingCompleta -Destination $salidaCompleta
     $publicacionNuevaInstalada = $true
 
-    foreach ($nombreExe in $hashesValidados.Keys) {
-        $exeFinal = Join-Path $salidaCompleta $nombreExe
-        $hashExeFinal = (Get-FileHash -LiteralPath $exeFinal -Algorithm SHA256).Hash
-        $hashEsperado = $hashesValidados[$nombreExe]
-        if (-not $hashExeFinal.Equals($hashEsperado, [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "El EXE $nombreExe cambio durante la sustitucion final. Esperado: $hashEsperado. Detectado: $hashExeFinal."
+    foreach ($nombreArchivo in $hashesValidados.Keys) {
+        $archivoFinal = Join-Path $salidaCompleta $nombreArchivo
+        $hashFinal = (Get-FileHash -LiteralPath $archivoFinal -Algorithm SHA256).Hash
+        $hashEsperado = $hashesValidados[$nombreArchivo]
+        if (-not $hashFinal.Equals($hashEsperado, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "El archivo $nombreArchivo cambio durante la sustitucion final. Esperado: $hashEsperado. Detectado: $hashFinal."
         }
     }
 } catch {
@@ -1091,8 +1224,8 @@ foreach ($temporalPublicacion in @($runtimeStagingCompleta, $lanzadorNativoCompl
     }
 }
 
-Write-Host "EXE normal generado: $(Join-Path $salidaCompleta 'LanzadorScripts.exe')"
-Write-Host "EXE portable generado: $(Join-Path $salidaCompleta 'LanzadorScripts_Portable.exe')"
+Write-Host "MSI instalado generado: $(Join-Path $salidaCompleta $nombreMsiFinal)"
+Write-Host "EXE portable generado: $(Join-Path $salidaCompleta $nombrePortableFinal)"
 Write-Host "Carpeta operativa de permisos: $RutaCarpetaPermisos"
 if (-not $InicializarArtefactos) {
     Write-Host 'Los archivos operativos existentes no se han modificado.'

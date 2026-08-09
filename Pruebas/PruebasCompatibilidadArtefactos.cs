@@ -28,7 +28,13 @@ public sealed class PruebasCompatibilidadArtefactos
         Assert.Contains("\"Version\": 3", contenedor, StringComparison.Ordinal);
         Assert.Contains("\"Contenido\"", contenedor, StringComparison.Ordinal);
         Assert.Contains("\"usuarios\"", contenedor, StringComparison.Ordinal);
-        Assert.DoesNotContain("AES", contenedor, StringComparison.OrdinalIgnoreCase);
+        using var documento = JsonDocument.Parse(contenedor);
+        Assert.Equal(
+            ServicioArtefactosFirmados.AlgoritmoActual,
+            documento.RootElement.GetProperty("Algoritmo").GetString());
+        Assert.False(documento.RootElement.TryGetProperty("Nonce", out _));
+        Assert.False(documento.RootElement.TryGetProperty("Tag", out _));
+        Assert.False(documento.RootElement.TryGetProperty("TextoCifrado", out _));
         Assert.True(servicio.IntentarValidarTexto(
             ServicioArtefactosFirmados.TipoPermisos,
             contenedor,

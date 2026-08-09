@@ -3,20 +3,27 @@
 
 # Manual De Administradores Y Desarrolladores
 
-## Arquitectura
+## Arquitectura 1.7.0
 
-`LanzadorScripts.exe` inicia una ventana WPF, un backend HTTP limitado a `127.0.0.1` y un cliente WebView2 embebido. El backend resuelve la identidad Windows, carga permisos, valida el catalogo y ejecuta una copia controlada del script.
+LanzadorScripts inicia una ventana WPF, un backend HTTP limitado a `127.0.0.1` y un cliente WebView2 embebido. El backend identifica al usuario, carga permisos, valida el catalogo y ejecuta una copia controlada del script.
 
-Los dos artefactos operativos se ubican en:
+Las distribuciones son:
+
+```text
+LanzadorScripts-1.7.0-x64.msi
+LanzadorScripts_Portable-1.7.0-x64.exe
+```
+
+La instalada conserva binarios y runtimes en `Program Files`, y datos por usuario en `ProgramData`. La portable confina todo el estado local a una sesion aleatoria de `%TEMP%` y el lanzador nativo la elimina al finalizar.
+
+## Contrato Firmado V3
+
+Los artefactos operativos son:
 
 ```text
 \\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS\permisos.json
 \\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS\catalogo-scripts.json
 ```
-
-No existe un tercer paquete de clave en `1.6.0`.
-
-## Contrato Firmado V3
 
 Cada JSON contiene exactamente `Autor`, `Descripcion`, `Version`, `Tipo`, `Algoritmo`, `ConjuntoId`, `Contenido` y `Firma`.
 
@@ -27,26 +34,16 @@ Cada JSON contiene exactamente `Autor`, `Descripcion`, `Version`, `Tipo`, `Algor
 - `Contenido`: objeto JSON legible.
 - `Firma`: Base64 de la firma RSA.
 
-La firma cubre un encuadre binario con longitudes, metadatos y los bytes UTF-8 exactos de `Contenido`. No depende de canonicalizar JSON. Se rechazan propiedades desconocidas o duplicadas, UTF-8 incorrecto, Base64 invalido, limites excedidos, tipos intercambiados, enlaces del sistema y cualquier modificacion.
+No existe un paquete AES, DPAPI ni `artefactos.key`. La clave publica esta embebida. La clave privada con huella `500266A64E574889370D92E5CE0D65D55CC963B7` solo debe estar en equipos administradores.
 
-La clave publica esta embebida. La clave privada con huella `500266A64E574889370D92E5CE0D65D55CC963B7` solo debe existir en equipos administradores autorizados.
-
-Los clientes no necesitan certificados privados ni acceso a secretos. `artefactos.key` y `clave-artefactos.dpng.json` son obsoletos e inactivos.
-
-## Administradores Iniciales
-
-La generacion predeterminada autoriza exclusivamente como administradores a:
+Los administradores iniciales son:
 
 ```text
 MAD00\aroperez_micro
 PCERA\alero
 ```
 
-La autorizacion usa el nombre Windows que devuelve el equipo cliente. No depende de SID ni de una consulta al controlador de dominio durante la generacion.
-
-## Generacion
-
-Ejecute desde la raiz del repositorio:
+## Generar Artefactos
 
 ```powershell
 pwsh -NoProfile -File .\PrepararArtefactosFirmados.ps1 `
@@ -54,99 +51,121 @@ pwsh -NoProfile -File .\PrepararArtefactosFirmados.ps1 `
   -TotalScriptsEsperado 37
 ```
 
-La herramienta:
+La herramienta valida cuentas, rutas, 37 scripts, SHA-256 y certificado privado; genera exactamente dos JSON con el mismo `ConjuntoId` y vuelve a validar la pareja.
 
-1. Valida dos cuentas en formato `DOMINIO\usuario`.
-2. Rechaza enlaces y rutas que salgan de la carpeta de scripts.
-3. Copia y compara SHA-256 de los 37 scripts.
-4. Comprueba el certificado privado de artefactos.
-5. Genera exactamente dos JSON con un `ConjuntoId` comun.
-6. Vuelve a validar tipos, metadatos, administradores, recuento y hashes.
+Las escrituras desde la interfaz conservan `ConjuntoId`, verifican el archivo compañero, usan bloqueo entre procesos, escritura atomica y copia `.bak`.
 
-La salida queda ignorada por Git bajo `ArtefactosGenerados`.
+## Preparar Auditoria
 
-## Escrituras Administrativas
-
-La interfaz puede modificar permisos o volver a publicar el catalogo solo si la pareja actual es valida. Cada escritura:
-
-- conserva el `ConjuntoId` existente;
-- verifica el archivo compañero;
-- adquiere un bloqueo exclusivo en la carpeta compartida;
-- escribe mediante archivo temporal y reemplazo atomico;
-- conserva una copia `.bak`;
-- valida la pareja resultante y restaura el respaldo si falla.
-
-No edite manualmente el JSON porque cualquier cambio invalida la firma.
-
-## Corte A 1.6.0
-
-El formato v3 es un corte inmediato. Prepare primero los EXE y los JSON sin modificar el servidor.
-
-Durante la ventana de mantenimiento:
-
-1. Impida nuevos inicios y cierre todos los clientes.
-2. Cree un respaldo fechado de ambos EXE anteriores.
-3. Respalde juntos `permisos.json`, `catalogo-scripts.json` y `clave-artefactos.dpng.json` anteriores.
-4. Compruebe SHA-256 y firma Authenticode de los EXE `1.6.0`.
-5. Sustituya conjuntamente los dos JSON centrales.
-6. Distribuya los dos EXE `1.6.0`.
-7. Pruebe con `MAD00\aroperez_micro` y con una cuenta nominal.
-8. Compruebe lectura de permisos, catalogo, ejecucion y auditoria.
-
-No mezcle componentes de ambas versiones.
-
-## Rollback
-
-Restaure como una unidad los EXE anteriores y los tres artefactos AES respaldados. No intente convertir un JSON v3 en el cliente.
-
-El archivo local inactivo `%ProgramData%\LanzadorScripts\Seguridad\artefactos.key` puede conservarse siete dias. `1.6.0` no crea, lee, rota ni elimina ese archivo. Tras cerrar la ventana de rollback, una limpieza administrativa opcional puede retirarlo.
-
-## Compilacion Y Pruebas
-
-```powershell
-dotnet restore LanzadorScripts.slnx
-dotnet build LanzadorScripts.slnx -c Release --no-restore
-dotnet test LanzadorScripts.slnx -c Release --no-build
-dotnet list LanzadorScripts.slnx package --vulnerable --include-transitive
-```
-
-Las pruebas cubren firma, manipulacion de metadatos y contenido, clave publica incorrecta, tipos, JSON duplicado, UTF-8, `.bak`, bloqueos y `ConjuntoId` distinto.
-
-En un entorno con las herramientas instaladas, ejecute tambien:
+La auditoria se deriva de `RutaPermisos`:
 
 ```text
-Semgrep estricto
-Gitleaks sobre todo el historial
+<RutaPermisos>\Auditoria\<dominio_usuario__sid-hash>
 ```
 
-Aikido no se utiliza en este proyecto.
+Ejecute una vez como administrador del servidor o recurso compartido:
 
-## Publicacion
+```powershell
+pwsh -NoProfile -File .\Herramientas\PrepararAuditoriaServidor.ps1 `
+  -RutaPermisos "\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS"
+```
+
+La raiz permite a usuarios autenticados crear su carpeta, pero no modificar ni borrar eventos confirmados. Administradores y SYSTEM conservan control completo.
+
+Cada evento usa `FileMode.CreateNew`, nombre impredecible y JSON de tamano limitado. El inicio debe confirmarse antes de crear el proceso. Un fallo final se conserva solo en memoria, bloquea nuevas ejecuciones y se reintenta hasta el cierre. No existe cola persistente local.
+
+## MSI
+
+El proyecto `Instalador\LanzadorScripts.Instalador.vdproj` usa `Publish Items` y el perfil `Properties\PublishProfiles\Instalada.pubxml`.
+
+Contrato:
+
+- Visual Studio Professional 2026 y Visual Studio Installer Projects 3.0.0 o posterior.
+- x64 y todos los usuarios.
+- Destino fijo `C:\Program Files\LanzadorScripts`.
+- `UpgradeCode` estable `{24169C78-5164-45C8-AB1A-AFC281D86DE9}`.
+- Menu Inicio y asociacion `.lanzadorconfig` obligatorios.
+- Escritorio opcional con `CREATE_DESKTOP_SHORTCUT=1`.
+- Apertura final desmarcada y solo disponible en UI interactiva.
+- Sin inicio automatico con Windows.
+
+Comandos:
+
+```powershell
+msiexec /i LanzadorScripts-1.7.0-x64.msi
+msiexec /i LanzadorScripts-1.7.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-1.7.0-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.7.0-x64.msi /qn /norestart
+```
+
+Instalacion, reparacion, actualizacion y desinstalacion se bloquean si hay una variante activa. Las actualizaciones y reparaciones conservan configuracion. La desinstalacion completa elimina solo `Program Files`, `ProgramData`, perfiles WebView2 locales y Registro conocidos; nunca toca auditoria ni artefactos remotos.
+
+La primera instalacion retira runtimes antiguos administrados por las versiones portables anteriores sin eliminar configuracion.
+
+## Portable
+
+El lanzador nativo:
+
+1. Crea `%TEMP%\LanzadorScripts\Portable\Sesion-<guid>` con ACL privada.
+2. Extrae el payload firmado, .NET y WebView2 dentro de esa sesion.
+3. Define `LANZADOR_VARIANTE=portable` y rutas confinadas.
+4. Espera el cierre definitivo y comprueba procesos auxiliares.
+5. Elimina el arbol sin seguir enlaces.
+6. En el siguiente arranque, limpia sesiones abandonadas sin bloqueo o proceso activo.
+
+La portable no consulta configuracion o tokens heredados, no registra `.lanzadorconfig` y no modifica el Registro. Los recursos remotos y archivos exportados expresamente quedan fuera de la limpieza.
+
+## Compilacion
+
+```powershell
+pwsh -NoProfile -File .\Herramientas\PrepararVisualStudioInstalador.ps1
+dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
+dotnet build .\LanzadorScripts.csproj -c Release --no-restore
+dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
+dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+```
+
+Compilar solo el MSI:
+
+```powershell
+pwsh -NoProfile -File .\Herramientas\CompilarMsi.ps1 `
+  -CertThumbprint "HUELLA_AUTHENTICODE"
+```
+
+Publicar las dos distribuciones:
 
 ```powershell
 pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1 `
   -CertThumbprint "HUELLA_AUTHENTICODE"
 ```
 
-Compruebe para ambos EXE:
+La publicacion exige un arbol Git limpio y produce solo el MSI y la portable. Valida firma, sello de tiempo, version, revision Git, x64 y SHA-256.
 
-- producto y archivo `1.6.0`;
-- arquitectura x64;
-- firma Authenticode valida;
-- timestamp valido;
-- SHA-256 registrado en `SHA256SUMS.txt`;
-- arranque y lectura real de la pareja v3.
+## Pruebas Operativas
 
-La Release `v1.6.0` de ambos proveedores debe contener bytes identicos. Nunca publique PFX, claves privadas, perfiles WebView2, runtimes descargados o artefactos operativos sin control de acceso.
+Antes de liberar:
 
-## Frontend
+1. Ejecute xUnit, auditoria NuGet, Semgrep estricto y Gitleaks sobre todo el historial.
+2. Verifique firma Authenticode del MSI, portable, EXE instalado y helper.
+3. Pruebe instalacion interactiva y silenciosa, reparacion, actualizacion y desinstalacion en un equipo limpio.
+4. Compruebe menu Inicio, escritorio opcional, asociacion y funcionamiento sin Internet.
+5. Fuerce un cierre portable y confirme la limpieza en el siguiente arranque.
+6. Corte la red de auditoria y confirme HTTP `503` antes de crear el proceso.
+7. Confirme que ninguna limpieza elimina `Auditoria` ni los JSON firmados.
 
-`ClienteWeb` contiene el bundle compilado que se incrusta en el ejecutable. No esta disponible el proyecto frontend original. Los cambios de servidor y WPF son reproducibles; un cambio estructural del bundle requiere recuperar primero sus fuentes y su cadena de build.
+Aikido no se utiliza. CodeRabbit no sustituye xUnit, Semgrep, Gitleaks ni revision humana.
 
-## Repositorios Y Revision
+## Repositorios Y Release
 
-GitLab es el origen principal. Todo cambio se desarrolla en una rama, se publica en ambos proveedores y abre una unica merge request en GitLab. La MR debe tener pipeline correcto, discusiones resueltas, revision humana y comentarios accionables de CodeRabbit resueltos o justificados.
+GitLab es el origen principal. Todo cambio se publica en la misma rama de GitLab y GitHub, con una unica merge request en GitLab. CodeRabbit revisa la MR.
 
-CodeRabbit no sustituye xUnit, Semgrep, Gitleaks ni la revision humana. GitHub recibe el SHA exacto fusionado en GitLab sin `force-push`.
+La Release `v1.7.0` debe contener bytes identicos en ambos proveedores:
 
-Consulte `CONTRIBUTING.md` y la plantilla de merge request para el proceso completo.
+- `LanzadorScripts-1.7.0-x64.msi`.
+- `LanzadorScripts_Portable-1.7.0-x64.exe`.
+- `SHA256SUMS.txt`.
+- Certificado publico Authenticode.
+- ZIP con `permisos.json` y `catalogo-scripts.json`.
+- Notas de despliegue.
+
+`main`, etiqueta, hashes y releases deben apuntar al mismo commit en GitLab y GitHub.

@@ -13,9 +13,9 @@
     <ApplicationIcon>Recursos\IconoLanzador.ico</ApplicationIcon>
     <AssemblyName>LanzadorScripts</AssemblyName>
     <RootNamespace>LanzadorScripts</RootNamespace>
-    <Version>1.6.0</Version>
-    <AssemblyVersion>1.6.0.0</AssemblyVersion>
-    <FileVersion>1.6.0.0</FileVersion>
+    <Version>1.7.0</Version>
+    <AssemblyVersion>1.7.0.0</AssemblyVersion>
+    <FileVersion>1.7.0.0</FileVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
@@ -29,6 +29,9 @@
     <AllowedReferenceRelatedFileExtensions></AllowedReferenceRelatedFileExtensions>
     <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
     <WebView2RuntimeZip>$(BaseIntermediateOutputPath)WebView2Runtime\WebView2Runtime.zip</WebView2RuntimeZip>
+    <EmbedWebView2Runtime Condition="'$(EmbedWebView2Runtime)' == ''">true</EmbedWebView2Runtime>
+    <InstalledWebView2RuntimeSource Condition="'$(InstalledWebView2RuntimeSource)' == ''">$(MSBuildProjectDirectory)\Recursos\WebView2\FixedRuntime-150.0.4078.48-x64\Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64</InstalledWebView2RuntimeSource>
+    <LANZADOR_GIT_REVISION Condition="'$(LANZADOR_GIT_REVISION)' == ''">dev</LANZADOR_GIT_REVISION>
   </PropertyGroup>
 
   <ItemGroup>
@@ -46,7 +49,7 @@
     <EmbeddedResource Include="ClienteWeb\**\*">
       <LogicalName>ClienteWeb.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="$(WebView2RuntimeZip)" Condition="Exists('$(WebView2RuntimeZip)')">
+    <EmbeddedResource Include="$(WebView2RuntimeZip)" Condition="'$(EmbedWebView2Runtime)' == 'true' and Exists('$(WebView2RuntimeZip)')">
       <LogicalName>Recursos.WebView2Runtime.zip</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
@@ -60,6 +63,48 @@
       <DocumentacionWebView2 Include="$(PublishDir)Microsoft.Web.WebView2*.xml" />
     </ItemGroup>
     <Delete Files="@(DocumentacionWebView2)" />
+  </Target>
+
+  <Target Name="PrepararPublishItemsInstalador" BeforeTargets="PublishItemsOutputGroup">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.Extension)' == '.xml' and ('%(ResolvedFileToPublish.Filename)' == 'Microsoft.Web.WebView2.Core' or '%(ResolvedFileToPublish.Filename)' == 'Microsoft.Web.WebView2.Wpf' or '%(ResolvedFileToPublish.Filename)' == 'Microsoft.Web.WebView2.WinForms')" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'$(EmbedWebView2Runtime)' != 'true' and '%(ResolvedFileToPublish.RelativePath)' == 'runtimes\win-x64\native\WebView2Loader.dll'" />
+      <EjecutablePublishItems Include="@(ResolvedFileToPublish)"
+                              Condition="'%(ResolvedFileToPublish.RelativePath)' == 'LanzadorScripts.exe'" />
+    </ItemGroup>
+    <Error Condition="'$(FirmarPublicacionInstalada)' == 'true' and '$(LANZADOR_SIGNING_THUMBPRINT)' != '' and '@(EjecutablePublishItems->Count())' != '1'"
+           Text="Publish Items no contiene exactamente un ejecutable principal para firmar." />
+    <Exec Condition="'$(FirmarPublicacionInstalada)' == 'true' and '$(LANZADOR_SIGNING_THUMBPRINT)' != ''"
+          Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)\Herramientas\FirmarPublicacionInstalada.ps1&quot; -RutaArchivo &quot;@(EjecutablePublishItems->'%(FullPath)')&quot; -Thumbprint &quot;$(LANZADOR_SIGNING_THUMBPRINT)&quot; -TimestampServer &quot;$(LANZADOR_TIMESTAMP_SERVER)&quot;" />
+  </Target>
+
+  <Target Name="IncluirRuntimeWebView2Instalado"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(EmbedWebView2Runtime)' != 'true' and Exists('$(InstalledWebView2RuntimeSource)')">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="$(InstalledWebView2RuntimeSource)\**\*" />
+      <RuntimeWebView2Instalado Remove="@(RuntimeWebView2Instalado)" />
+      <RuntimeWebView2Instalado Include="$(InstalledWebView2RuntimeSource)\**\*" />
+      <ResolvedFileToPublish Include="@(RuntimeWebView2Instalado)">
+        <RelativePath>Runtimes\WebView2\Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64\%(RuntimeWebView2Instalado.RecursiveDir)%(RuntimeWebView2Instalado.Filename)%(RuntimeWebView2Instalado.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ValidarRuntimeWebView2Instalado"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(EmbedWebView2Runtime)' != 'true' and !Exists('$(InstalledWebView2RuntimeSource)\msedgewebview2.exe')">
+    <Error Text="No se encontro WebView2 Fixed Runtime en $(InstalledWebView2RuntimeSource)." />
+  </Target>
+
+  <Target Name="FirmarEjecutableInstalado"
+          AfterTargets="Publish"
+          Condition="'$(FirmarPublicacionInstalada)' == 'true' and '$(LANZADOR_SIGNING_THUMBPRINT)' != ''">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)\Herramientas\FirmarPublicacionInstalada.ps1&quot; -RutaArchivo &quot;$(PublishDir)LanzadorScripts.exe&quot; -Thumbprint &quot;$(LANZADOR_SIGNING_THUMBPRINT)&quot; -TimestampServer &quot;$(LANZADOR_TIMESTAMP_SERVER)&quot;" />
   </Target>
 
 </Project>
