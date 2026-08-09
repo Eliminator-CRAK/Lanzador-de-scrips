@@ -200,6 +200,24 @@ namespace
             : base + L"\\" + nombre;
     }
 
+    // Prepara una ruta absoluta para las API Win32 con soporte de rutas largas.
+    std::wstring PrepararRutaWin32(const std::wstring& ruta)
+    {
+        if (ruta.rfind(L"\\\\?\\", 0) == 0)
+        {
+            return ruta;
+        }
+
+        if (ruta.rfind(L"\\\\", 0) == 0)
+        {
+            return L"\\\\?\\UNC\\" + ruta.substr(2);
+        }
+
+        return ruta.size() >= 3 && ruta[1] == L':' && ruta[2] == L'\\'
+            ? L"\\\\?\\" + ruta
+            : ruta;
+    }
+
     // Convierte texto de Windows para escribir el log en UTF-8.
     std::string ConvertirUtf8(const std::wstring& texto)
     {
@@ -273,8 +291,9 @@ namespace
             return;
         }
 
+        const std::wstring rutaLogWin32 = PrepararRutaWin32(RutaLogNativo);
         HANDLE archivo = CreateFileW(
-            RutaLogNativo.c_str(),
+            rutaLogWin32.c_str(),
             FILE_APPEND_DATA,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr,
@@ -342,8 +361,9 @@ namespace
     HANDLE AbrirBloqueoUsoCompartido(const std::wstring& raizPrograma)
     {
         const std::wstring ruta = UnirRuta(raizPrograma, NombreBloqueoUso);
+        const std::wstring rutaWin32 = PrepararRutaWin32(ruta);
         return CreateFileW(
-            ruta.c_str(),
+            rutaWin32.c_str(),
             GENERIC_READ,
             FILE_SHARE_READ,
             nullptr,
@@ -356,8 +376,9 @@ namespace
     bool BloqueoUsoDisponibleEnExclusiva(const std::wstring& raizPrograma)
     {
         const std::wstring ruta = UnirRuta(raizPrograma, NombreBloqueoUso);
+        const std::wstring rutaWin32 = PrepararRutaWin32(ruta);
         HANDLE bloqueo = CreateFileW(
-            ruta.c_str(),
+            rutaWin32.c_str(),
             GENERIC_READ | GENERIC_WRITE,
             0,
             nullptr,
@@ -449,7 +470,8 @@ namespace
             return false;
         }
 
-        const DWORD atributos = GetFileAttributesW(completa.c_str());
+        const std::wstring completaWin32 = PrepararRutaWin32(completa);
+        const DWORD atributos = GetFileAttributesW(completaWin32.c_str());
         if (atributos == INVALID_FILE_ATTRIBUTES)
         {
             return GetLastError() == ERROR_FILE_NOT_FOUND
@@ -460,8 +482,8 @@ namespace
         {
             // Elimina el enlace sin acceder a la ubicacion que referencia.
             const BOOL eliminado = (atributos & FILE_ATTRIBUTE_DIRECTORY) != 0
-                ? RemoveDirectoryW(completa.c_str())
-                : DeleteFileW(completa.c_str());
+                ? RemoveDirectoryW(completaWin32.c_str())
+                : DeleteFileW(completaWin32.c_str());
             if (eliminado != FALSE)
             {
                 RegistrarLog(L"runtime.limpieza.reparse_retirado", completa);
@@ -473,14 +495,13 @@ namespace
 
         if ((atributos & FILE_ATTRIBUTE_DIRECTORY) == 0)
         {
-            SetFileAttributesW(completa.c_str(), FILE_ATTRIBUTE_NORMAL);
-            return DeleteFileW(completa.c_str()) != FALSE;
+            SetFileAttributesW(completaWin32.c_str(), FILE_ATTRIBUTE_NORMAL);
+            return DeleteFileW(completaWin32.c_str()) != FALSE;
         }
 
         WIN32_FIND_DATAW datos{};
-        HANDLE busqueda = FindFirstFileW(
-            UnirRuta(completa, L"*").c_str(),
-            &datos);
+        const std::wstring patronWin32 = PrepararRutaWin32(UnirRuta(completa, L"*"));
+        HANDLE busqueda = FindFirstFileW(patronWin32.c_str(), &datos);
         if (busqueda != INVALID_HANDLE_VALUE)
         {
             bool correcto = true;
@@ -511,8 +532,8 @@ namespace
             return false;
         }
 
-        SetFileAttributesW(completa.c_str(), FILE_ATTRIBUTE_NORMAL);
-        return RemoveDirectoryW(completa.c_str()) != FALSE;
+        SetFileAttributesW(completaWin32.c_str(), FILE_ATTRIBUTE_NORMAL);
+        return RemoveDirectoryW(completaWin32.c_str()) != FALSE;
     }
 
     // Reintenta bloqueos transitorios durante un tiempo limitado.
@@ -539,9 +560,9 @@ namespace
     void LimpiarSesionesAbandonadas(const std::wstring& raizSesiones)
     {
         WIN32_FIND_DATAW datos{};
-        HANDLE busqueda = FindFirstFileW(
-            UnirRuta(raizSesiones, L"Sesion-*").c_str(),
-            &datos);
+        const std::wstring patronWin32 = PrepararRutaWin32(
+            UnirRuta(raizSesiones, L"Sesion-*"));
+        HANDLE busqueda = FindFirstFileW(patronWin32.c_str(), &datos);
         if (busqueda == INVALID_HANDLE_VALUE)
         {
             return;
@@ -580,7 +601,8 @@ namespace
 
         const auto validarDirectorio = [](const std::wstring& directorio)
         {
-            const DWORD atributos = GetFileAttributesW(directorio.c_str());
+            const std::wstring directorioWin32 = PrepararRutaWin32(directorio);
+            const DWORD atributos = GetFileAttributesW(directorioWin32.c_str());
             if (atributos == INVALID_FILE_ATTRIBUTES)
             {
                 LanzarErrorWindows(L"No se pudo comprobar la carpeta local " + directorio);
@@ -632,6 +654,98 @@ namespace
         }
 
         ValidarSinPuntosReanalisis(ruta, raizConfiable);
+    }
+
+    // Comprueba la eliminacion real de un arbol que supera MAX_PATH.
+    bool ValidarLimpiezaRutaLarga()
+    {
+        const std::wstring raizTemporal = ObtenerCarpetaTemporal();
+        const std::wstring raizPrueba = UnirRuta(
+            raizTemporal,
+            L"LanzadorScripts-Prueba-" + CrearNombreSesion().substr(7));
+        std::wstring directorio = raizPrueba;
+        const auto crearDirectorio = [](const std::wstring& ruta)
+        {
+            const std::wstring rutaWin32 = PrepararRutaWin32(ruta);
+            return CreateDirectoryW(rutaWin32.c_str(), nullptr) != FALSE
+                || GetLastError() == ERROR_ALREADY_EXISTS;
+        };
+
+        if (!crearDirectorio(raizPrueba))
+        {
+            return false;
+        }
+
+        while (UnirRuta(directorio, L"archivo-prueba-ruta-larga.dat").size() <= 280)
+        {
+            directorio = UnirRuta(directorio, L"segmento-ruta-larga-0123456789");
+            if (!crearDirectorio(directorio))
+            {
+                EliminarArbolSeguroConReintentos(raizPrueba, raizTemporal);
+                return false;
+            }
+        }
+
+        const std::wstring rutaArchivo = UnirRuta(
+            directorio,
+            L"archivo-prueba-ruta-larga.dat");
+        const std::wstring rutaArchivoWin32 = PrepararRutaWin32(rutaArchivo);
+        HANDLE archivo = CreateFileW(
+            rutaArchivoWin32.c_str(),
+            GENERIC_WRITE,
+            0,
+            nullptr,
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+        if (archivo == INVALID_HANDLE_VALUE)
+        {
+            EliminarArbolSeguroConReintentos(raizPrueba, raizTemporal);
+            return false;
+        }
+
+        constexpr BYTE Contenido[] = { 0x4C, 0x53 };
+        DWORD escritos = 0;
+        const BOOL escrituraCorrecta = WriteFile(
+            archivo,
+            Contenido,
+            static_cast<DWORD>(sizeof(Contenido)),
+            &escritos,
+            nullptr);
+        CloseHandle(archivo);
+        if (escrituraCorrecta == FALSE
+            || escritos != static_cast<DWORD>(sizeof(Contenido))
+            || rutaArchivo.size() <= MAX_PATH)
+        {
+            EliminarArbolSeguroConReintentos(raizPrueba, raizTemporal);
+            return false;
+        }
+
+        if (!EliminarArbolSeguroConReintentos(raizPrueba, raizTemporal))
+        {
+            return false;
+        }
+
+        const std::wstring raizPruebaWin32 = PrepararRutaWin32(raizPrueba);
+        const DWORD atributos = GetFileAttributesW(raizPruebaWin32.c_str());
+        const DWORD error = GetLastError();
+        return atributos == INVALID_FILE_ATTRIBUTES
+            && (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
+    }
+
+    // Comprueba si la linea de comandos contiene una unica accion interna.
+    bool EsAccionInterna(const wchar_t* accion)
+    {
+        int cantidad = 0;
+        LPWSTR* argumentos = CommandLineToArgvW(GetCommandLineW(), &cantidad);
+        if (argumentos == nullptr)
+        {
+            return false;
+        }
+
+        const bool coincide = cantidad == 2 && wcscmp(argumentos[1], accion) == 0;
+        LocalFree(argumentos);
+        return coincide;
     }
 
     // Obtiene el SID de la identidad que abre la aplicacion.
@@ -701,8 +815,9 @@ namespace
             throw ErrorLanzador(L"No se pudo leer la seguridad preparada para " + ruta);
         }
 
+        std::wstring rutaWin32 = PrepararRutaWin32(ruta);
         const DWORD resultado = SetNamedSecurityInfoW(
-            const_cast<LPWSTR>(ruta.c_str()),
+            rutaWin32.data(),
             SE_FILE_OBJECT,
             OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
             propietario,
@@ -802,8 +917,9 @@ namespace
     // Calcula SHA-256 sobre un archivo local.
     std::wstring CalcularHashArchivo(const std::wstring& ruta)
     {
+        const std::wstring rutaWin32 = PrepararRutaWin32(ruta);
         HANDLE archivo = CreateFileW(
-            ruta.c_str(),
+            rutaWin32.c_str(),
             GENERIC_READ,
             FILE_SHARE_READ,
             nullptr,
@@ -958,7 +1074,8 @@ namespace
         const std::wstring& hashEsperado)
     {
         WIN32_FILE_ATTRIBUTE_DATA datos{};
-        if (!GetFileAttributesExW(ruta.c_str(), GetFileExInfoStandard, &datos)
+        const std::wstring rutaWin32 = PrepararRutaWin32(ruta);
+        if (!GetFileAttributesExW(rutaWin32.c_str(), GetFileExInfoStandard, &datos)
             || (datos.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
             || (datos.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
         {
@@ -987,9 +1104,11 @@ namespace
             + L"."
             + std::to_wstring(GetCurrentProcessId())
             + L".tmp";
-        DeleteFileW(temporal.c_str());
+        const std::wstring temporalWin32 = PrepararRutaWin32(temporal);
+        const std::wstring destinoWin32 = PrepararRutaWin32(destino);
+        DeleteFileW(temporalWin32.c_str());
         HANDLE archivo = CreateFileW(
-            temporal.c_str(),
+            temporalWin32.c_str(),
             GENERIC_WRITE,
             0,
             nullptr,
@@ -1025,24 +1144,24 @@ namespace
         CloseHandle(archivo);
         if (!correcto)
         {
-            DeleteFileW(temporal.c_str());
+            DeleteFileW(temporalWin32.c_str());
             SetLastError(errorEscritura);
             LanzarErrorWindows(L"No se pudo guardar el componente interno");
         }
 
         if (_wcsicmp(CalcularHashArchivo(temporal).c_str(), hashEsperado.c_str()) != 0)
         {
-            DeleteFileW(temporal.c_str());
+            DeleteFileW(temporalWin32.c_str());
             throw ErrorLanzador(L"El componente interno extraido no supera la validacion SHA-256.");
         }
 
         if (!MoveFileExW(
-                temporal.c_str(),
-                destino.c_str(),
+                temporalWin32.c_str(),
+                destinoWin32.c_str(),
                 MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         {
             const DWORD error = GetLastError();
-            DeleteFileW(temporal.c_str());
+            DeleteFileW(temporalWin32.c_str());
             SetLastError(error);
             LanzarErrorWindows(L"No se pudo publicar el componente interno");
         }
@@ -1306,11 +1425,14 @@ namespace
         }
 
         LiberarMutexLimpieza(mutexLimpieza);
-        RemoveDirectoryW(entorno.raizSesiones.c_str());
+        const std::wstring sesionesWin32 = PrepararRutaWin32(entorno.raizSesiones);
+        RemoveDirectoryW(sesionesWin32.c_str());
         const std::size_t separador = entorno.raizSesiones.find_last_of(L"\\/");
         if (separador != std::wstring::npos)
         {
-            RemoveDirectoryW(entorno.raizSesiones.substr(0, separador).c_str());
+            const std::wstring lanzadorWin32 = PrepararRutaWin32(
+                entorno.raizSesiones.substr(0, separador));
+            RemoveDirectoryW(lanzadorWin32.c_str());
         }
     }
 }
@@ -1322,6 +1444,11 @@ int WINAPI wWinMain(
     _In_ LPWSTR,
     _In_ int)
 {
+    if (EsAccionInterna(L"--validar-limpieza-ruta-larga"))
+    {
+        return ValidarLimpiezaRutaLarga() ? 0 : 1;
+    }
+
     EntornoPreparado entorno;
     bool entornoPreparado = false;
     try

@@ -8,7 +8,8 @@ namespace LanzadorScripts.Servicios;
 internal enum AccionInstanciaAplicacion
 {
     Mostrar,
-    ImportarPaquete
+    ImportarPaquete,
+    CerrarMantenimiento
 }
 
 internal sealed record MensajeInstanciaAplicacion(
@@ -17,6 +18,7 @@ internal sealed record MensajeInstanciaAplicacion(
 
 internal static class ProtocoloInstanciaAplicacion
 {
+    internal const string ArgumentoCerrarMantenimiento = "--cerrar-para-mantenimiento";
     internal const int LongitudMaximaMensaje = 16384;
 
     private static readonly JsonSerializerOptions OpcionesJson = new()

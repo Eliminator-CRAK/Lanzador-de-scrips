@@ -173,11 +173,12 @@ public sealed class PruebasLanzadorScripts
         var publicacion = File.ReadAllText(Path.Combine(raiz, "Herramientas", "PublicarPortable.ps1"));
 
         Assert.DoesNotContain("RuntimeInstaller", proyecto, StringComparison.Ordinal);
-        Assert.DoesNotContain("Start-Process", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("WebView2RuntimeInstaller", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet-runtime-", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("InicializarArtefactos", publicacion, StringComparison.Ordinal);
         Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.7.1-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.7.2-x64.msi", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));

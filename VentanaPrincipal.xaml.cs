@@ -38,7 +38,10 @@ public partial class VentanaPrincipal : Window
     private const int HtBottom = 15;
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
+    private const uint MsgfltAllow = 1;
     private const double GrosorRedimensionVentana = 10;
+    private static readonly uint MensajeCerrarMantenimiento = RegisterWindowMessage(
+        "LanzadorScripts.CerrarMantenimiento.v1");
 
     private readonly ServicioArranqueWebView2 _servicioArranqueWebView2 = new();
     private readonly ServicioLogInicio _servicioLogInicio = new();
@@ -471,6 +474,49 @@ public partial class VentanaPrincipal : Window
             _confirmacionCierreAbierta = false;
         }
 
+        await CerrarDefinitivamenteAsync(ejecuciones.Count, "bandeja");
+    }
+
+    public async void SolicitarCierrePorMantenimiento()
+    {
+        // Cierra para Windows Installer solo cuando no hay scripts activos.
+        if (_cierreEnCurso || _confirmacionCierreAbierta)
+        {
+            return;
+        }
+
+        var ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
+            ?? Array.Empty<EjecucionActivaResumen>();
+        if (ejecuciones.Count > 0)
+        {
+            MostrarVentana(WindowState.Normal);
+            MessageBox.Show(
+                this,
+                $"Windows Installer necesita cerrar LanzadorScripts, pero hay {ejecuciones.Count} script(s) en ejecucion. Finalicelos y vuelva a intentar la operacion.",
+                "LanzadorScripts",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            await _servicioLogInicio.RegistrarAsync(
+                "aplicacion.cierre_mantenimiento_bloqueado",
+                "El cierre de mantenimiento se bloqueo porque hay scripts activos.",
+                new Dictionary<string, string?>
+                {
+                    ["ejecucionesActivas"] = ejecuciones.Count.ToString()
+                });
+            return;
+        }
+
+        await CerrarDefinitivamenteAsync(0, "mantenimiento");
+    }
+
+    private async Task CerrarDefinitivamenteAsync(int ejecucionesActivas, string origen)
+    {
+        // Finaliza recursos locales y entrega un codigo reconocido por el lanzador.
+        if (_cierreEnCurso)
+        {
+            return;
+        }
+
         _cierreEnCurso = true;
         _cierreDefinitivo = true;
         MostrarVentana(WindowState.Normal);
@@ -479,10 +525,11 @@ public partial class VentanaPrincipal : Window
         await Dispatcher.Yield(DispatcherPriority.Render);
         await _servicioLogInicio.RegistrarAsync(
             "aplicacion.cierre_confirmado",
-            "Se inicio el cierre definitivo desde la bandeja.",
+            $"Se inicio el cierre definitivo desde {origen}.",
             new Dictionary<string, string?>
             {
-                ["ejecucionesActivas"] = ejecuciones.Count.ToString()
+                ["ejecucionesActivas"] = ejecucionesActivas.ToString(),
+                ["origen"] = origen
             });
         try
         {
@@ -624,10 +671,27 @@ public partial class VentanaPrincipal : Window
         }
 
         HwndSource.FromHwnd(hwnd)?.AddHook(ProcesarMensajeVentana);
+        if (MensajeCerrarMantenimiento != 0)
+        {
+            // Permite solo el mensaje registrado de cierre desde Windows Installer.
+            ChangeWindowMessageFilterEx(
+                hwnd,
+                MensajeCerrarMantenimiento,
+                MsgfltAllow,
+                IntPtr.Zero);
+        }
     }
 
     private IntPtr ProcesarMensajeVentana(IntPtr hwnd, int mensaje, IntPtr wParam, IntPtr lParam, ref bool procesado)
     {
+        if (MensajeCerrarMantenimiento != 0
+            && unchecked((uint)mensaje) == MensajeCerrarMantenimiento)
+        {
+            procesado = true;
+            Dispatcher.BeginInvoke(new Action(SolicitarCierrePorMantenimiento));
+            return IntPtr.Zero;
+        }
+
         if (mensaje != WmNcHitTest || WindowState == WindowState.Maximized || ResizeMode != ResizeMode.CanResize)
         {
             return IntPtr.Zero;
@@ -2762,4 +2826,15 @@ public partial class VentanaPrincipal : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterWindowMessage(string lpString);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ChangeWindowMessageFilterEx(
+        IntPtr hwnd,
+        uint message,
+        uint action,
+        IntPtr changeFilterStruct);
 }

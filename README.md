@@ -3,20 +3,21 @@
 
 # LanzadorScripts
 
-Aplicacion WPF para autorizar y ejecutar scripts PowerShell, BAT y CMD desde una interfaz WebView2 local. La version actual es `1.7.1`.
+Aplicacion WPF para autorizar y ejecutar scripts PowerShell, BAT y CMD desde una interfaz WebView2 local. La version actual es `1.7.2`.
 
 ## Distribuciones
 
 La publicacion genera exactamente dos opciones x64:
 
 ```text
-LanzadorScripts-1.7.1-x64.msi
-LanzadorScripts_Portable-1.7.1-x64.exe
+LanzadorScripts-1.7.2-x64.msi
+LanzadorScripts_Portable-1.7.2-x64.exe
 ```
 
 - El MSI instala para todos los usuarios en `C:\Program Files\LanzadorScripts` y conserva configuracion y runtimes entre sesiones.
 - La portable usa una sesion privada bajo `%TEMP%\LanzadorScripts\Portable\Sesion-<guid>` y elimina todos sus datos locales al cerrar.
 - El siguiente arranque portable retira sesiones abandonadas por un cierre forzado sin seguir enlaces ni puntos de reanalisis.
+- La limpieza nativa admite rutas superiores a `MAX_PATH` y se valida durante cada publicacion.
 - Ninguna variante configura inicio automatico con Windows.
 
 El boton de cerrar oculta la ventana. El cierre definitivo se realiza desde `Cerrar LanzadorScripts` en el icono de la bandeja. La confirmacion solo aparece cuando hay scripts activos.
@@ -121,7 +122,7 @@ pwsh -NoProfile -File .\Herramientas\CompilarMsi.ps1 `
 
 El proyecto de instalacion sigue el flujo de [Microsoft Visual Studio Installer Projects](https://learn.microsoft.com/es-es/visualstudio/deployment/installer-projects-net-core?view=visualstudio).
 
-## Publicar 1.7.1
+## Publicar 1.7.2
 
 La publicacion final requiere PowerShell 7.6, un arbol Git limpio y el certificado Authenticode con clave privada en el almacen de certificados:
 
@@ -137,31 +138,31 @@ La carpeta ignorada `publicacion` recibe solo el MSI y la portable versionados. 
 Instalacion interactiva:
 
 ```powershell
-msiexec /i LanzadorScripts-1.7.1-x64.msi
+msiexec /i LanzadorScripts-1.7.2-x64.msi
 ```
 
 Instalacion silenciosa sin acceso de escritorio:
 
 ```powershell
-msiexec /i LanzadorScripts-1.7.1-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.7.2-x64.msi /qn /norestart
 ```
 
 Instalacion silenciosa con acceso de escritorio:
 
 ```powershell
-msiexec /i LanzadorScripts-1.7.1-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /i LanzadorScripts-1.7.2-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
 ```
 
 Reparacion y desinstalacion:
 
 ```powershell
-msiexec /fa LanzadorScripts-1.7.1-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.7.1-x64.msi /qn /norestart
+msiexec /fa LanzadorScripts-1.7.2-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.7.2-x64.msi /qn /norestart
 ```
 
 El MSI crea siempre el acceso del menu Inicio y la asociacion `.lanzadorconfig`. El acceso de escritorio y la apertura al finalizar estan desmarcados. La apertura final solo existe en instalacion interactiva.
 
-Las actualizaciones y reparaciones conservan configuracion. Una desinstalacion completa elimina solo las rutas locales conocidas y la asociacion. La operacion se bloquea mientras LanzadorScripts o la portable estan activos.
+Durante una reparacion, actualizacion o desinstalacion, el MSI cierra ordenadamente la aplicacion instalada cuando no hay scripts activos. Si hay una ejecucion, muestra un aviso y exige terminarla antes de continuar; una portable independiente no bloquea la operacion. Las actualizaciones y reparaciones conservan configuracion. Una desinstalacion completa elimina solo las rutas locales conocidas y la asociacion.
 
 ## Datos Locales
 
