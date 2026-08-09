@@ -177,7 +177,7 @@ public sealed class PruebasLanzadorScripts
         Assert.Contains("InicializarArtefactos", publicacion, StringComparison.Ordinal);
         Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.7.0-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.7.1-x64.msi", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));

@@ -86,7 +86,7 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("LANZADOR_PORTABLE_ROOT", nativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_PORTABLE_SESSIONS_ROOT", nativo, StringComparison.Ordinal);
         Assert.Contains("Sesion-", nativo, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.7.0-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.7.1-x64.exe", publicacion, StringComparison.Ordinal);
 
         var tokens = File.ReadAllText(ObtenerRutaProyecto("Servicios", "ServicioTokensAdmin.cs"));
         Assert.Contains("RutasAplicacion.Distribucion.EsPortable", tokens, StringComparison.Ordinal);

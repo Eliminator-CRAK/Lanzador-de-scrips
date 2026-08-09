@@ -207,10 +207,19 @@ namespace
     {
         const std::wstring raiz = NormalizarRuta(raizPermitida);
         const std::wstring ruta = NormalizarRuta(destino);
-        return !raiz.empty()
-            && !ruta.empty()
-            && EstaDentroDeRuta(ruta, raiz)
-            && RutaSinPuntosReanalisis(raiz, ruta)
+        if (raiz.empty() || ruta.empty() || !EstaDentroDeRuta(ruta, raiz))
+        {
+            return false;
+        }
+
+        const DWORD atributosDestino = GetFileAttributesW(ruta.c_str());
+        if (atributosDestino == INVALID_FILE_ATTRIBUTES)
+        {
+            const DWORD error = GetLastError();
+            return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+        }
+
+        return RutaSinPuntosReanalisis(raiz, ruta)
             && EliminarArbolSeguroInterno(ruta);
     }
 
@@ -308,6 +317,29 @@ namespace
             raizDatos,
             UnirRuta(raizDatos, L"Runtimes"));
         return runtimePrograma && runtimeDatos;
+    }
+
+    // Comprueba que una ruta heredada ausente no bloquea la instalacion.
+    bool ValidarEliminacionRutaAusente()
+    {
+        const std::wstring programas = ObtenerCarpetaConocida(FOLDERID_ProgramFiles);
+        if (programas.empty())
+        {
+            return false;
+        }
+
+        const std::wstring raizPrueba = UnirRuta(
+            programas,
+            L"LanzadorScripts-PruebaAusente-" + std::to_wstring(GetCurrentProcessId()));
+        const DWORD atributos = GetFileAttributesW(raizPrueba.c_str());
+        if (atributos != INVALID_FILE_ATTRIBUTES)
+        {
+            return false;
+        }
+
+        const DWORD error = GetLastError();
+        return (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+            && EliminarArbolSeguro(raizPrueba, UnirRuta(raizPrueba, L"Runtimes"));
     }
 
     // Elimina los perfiles locales conocidos de todos los usuarios.
@@ -412,6 +444,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 
     const std::wstring accion = argumentos[1];
     LocalFree(argumentos);
+    if (accion == L"--validar-ruta-ausente")
+    {
+        return ValidarEliminacionRutaAusente() ? ERROR_SUCCESS : CodigoErrorInstalacion;
+    }
+
     if (HayLanzadorActivo())
     {
         return CodigoErrorInstalacion;
