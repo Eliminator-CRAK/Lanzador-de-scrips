@@ -187,6 +187,26 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("Remove-Item -LiteralPath $certPath", etapas, StringComparison.Ordinal);
     }
 
+    // Comprueba que las etiquetas publican sin consumir almacenamiento temporal.
+    [Fact]
+    public void CiPublicaEtiquetasDirectamenteEnLaRelease()
+    {
+        var ci = File.ReadAllText(ObtenerRutaProyecto(".github", "workflows", "ci.yml"));
+        var publicacion = File.ReadAllText(ObtenerRutaProyecto(
+            "Herramientas",
+            "PublicarReleaseGitHub.ps1"));
+
+        Assert.Contains("contents: write", ci, StringComparison.Ordinal);
+        Assert.Contains("startsWith(github.ref, 'refs/tags/v')", ci, StringComparison.Ordinal);
+        Assert.Contains("./Herramientas/PublicarReleaseGitHub.ps1", ci, StringComparison.Ordinal);
+        Assert.DoesNotContain("actions/upload-artifact@", ci, StringComparison.Ordinal);
+        Assert.Contains("release upload $Etiqueta @archivos", publicacion, StringComparison.Ordinal);
+        Assert.Contains("--clobber", publicacion, StringComparison.Ordinal);
+        Assert.Contains("--verify-tag", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$Etiqueta -notmatch '^v[0-9]+", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$Repositorio -notmatch", publicacion, StringComparison.Ordinal);
+    }
+
     // Localiza archivos desde la raiz del proyecto.
     private static string ObtenerRutaProyecto(params string[] partes)
     {

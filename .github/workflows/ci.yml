@@ -14,7 +14,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: windows-ci-${{ github.ref }}
@@ -81,14 +81,9 @@ jobs:
           RELEASE_BUILD: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
         run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarArtefacto
 
-      - name: Upload signed deliverables
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: LanzadorScripts-${{ github.sha }}
-          path: |
-            publicacion/LanzadorScripts-1.8.0-x64.msi
-            publicacion/LanzadorScripts_Portable-1.8.0-x64.exe
-            publicacion-servidor/LanzadorScripts_Servidor-1.8.0-x64.zip
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish signed deliverables to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./Herramientas/PublicarReleaseGitHub.ps1
