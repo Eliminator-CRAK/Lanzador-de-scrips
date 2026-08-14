@@ -13,9 +13,9 @@
     <ApplicationIcon>Recursos\IconoLanzador.ico</ApplicationIcon>
     <AssemblyName>LanzadorScripts</AssemblyName>
     <RootNamespace>LanzadorScripts</RootNamespace>
-    <Version>1.7.2</Version>
-    <AssemblyVersion>1.7.2.0</AssemblyVersion>
-    <FileVersion>1.7.2.0</FileVersion>
+    <Version>1.8.0</Version>
+    <AssemblyVersion>1.8.0.0</AssemblyVersion>
+    <FileVersion>1.8.0.0</FileVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
@@ -41,6 +41,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+    <ProjectReference Include="Compartido\LanzadorScripts.Protocolo\LanzadorScripts.Protocolo.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -56,6 +57,16 @@
 
   <ItemGroup>
     <Compile Remove="Pruebas\**\*.cs" />
+    <Compile Remove="Compartido\**\*.cs" />
+    <Compile Remove="Servidor\**\*.cs" />
+    <Page Remove="Compartido\**\*.xaml" />
+    <Page Remove="Servidor\**\*.xaml" />
+    <ApplicationDefinition Remove="Compartido\**\*.xaml" />
+    <ApplicationDefinition Remove="Servidor\**\*.xaml" />
+    <EmbeddedResource Remove="Compartido\**\*" />
+    <EmbeddedResource Remove="Servidor\**\*" />
+    <None Remove="Compartido\**\*" />
+    <None Remove="Servidor\**\*" />
   </ItemGroup>
 
   <Target Name="EliminarDocumentacionWebView2Publicada" AfterTargets="Publish">

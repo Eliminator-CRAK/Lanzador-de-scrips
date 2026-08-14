@@ -1,113 +1,58 @@
 // (Autor: Alex Roman)
-// Descripcion: Gestiona tokens de administrador cifrados por usuario.
+// Descripcion: Gestiona tokens administrativos efimeros durante la sesion local.
 
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.IO;
 
 namespace LanzadorScripts.Servicios;
 
 public sealed class ServicioTokensAdmin
 {
-    private static readonly JsonSerializerOptions OpcionesJson = new()
-    {
-        WriteIndented = true
-    };
+    private readonly ConcurrentDictionary<string, TokenAdmin> _tokens =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public TokenAdmin ObtenerOCrear(string usuarioWindows)
     {
-        ServicioDirectoriosAplicacion.PrepararDatosUsuario();
-        Directory.CreateDirectory(RutasAplicacion.RutaTokensUsuario);
-
-        var ruta = ResolverRutaToken(usuarioWindows);
-        var tokenExistente = LeerToken(ruta);
-        if (tokenExistente is not null)
-        {
-            return tokenExistente;
-        }
-
-        var token = new TokenAdmin(usuarioWindows, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), DateTimeOffset.Now);
-        GuardarToken(ruta, token);
-        return token;
+        var cuenta = NormalizarCuenta(usuarioWindows);
+        return _tokens.GetOrAdd(cuenta, static valor => new TokenAdmin(
+            valor,
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+            DateTimeOffset.UtcNow));
     }
 
     public bool Validar(string usuarioWindows, string? token)
     {
-        if (string.IsNullOrWhiteSpace(token))
+        if (string.IsNullOrWhiteSpace(token)
+            || !_tokens.TryGetValue(NormalizarCuenta(usuarioWindows), out var guardado))
         {
             return false;
         }
 
-        ServicioDirectoriosAplicacion.PrepararDatosUsuario();
-        Directory.CreateDirectory(RutasAplicacion.RutaTokensUsuario);
-        var tokenGuardado = LeerToken(ResolverRutaToken(usuarioWindows));
-        return tokenGuardado is not null
-            && string.Equals(tokenGuardado.UsuarioWindows, usuarioWindows, StringComparison.OrdinalIgnoreCase)
-            && CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(tokenGuardado.Valor),
-                Encoding.UTF8.GetBytes(token));
+        Span<byte> esperado = stackalloc byte[32];
+        Span<byte> recibido = stackalloc byte[32];
+        if (!Convert.TryFromBase64String(guardado.Valor, esperado, out var longitudEsperada)
+            || !Convert.TryFromBase64String(token, recibido, out var longitudRecibida)
+            || longitudEsperada != longitudRecibida)
+        {
+            return false;
+        }
+
+        return CryptographicOperations.FixedTimeEquals(
+            esperado[..longitudEsperada],
+            recibido[..longitudRecibida]);
     }
 
-    private static TokenAdmin? LeerToken(string ruta)
+    private static string NormalizarCuenta(string usuarioWindows)
     {
-        if (!File.Exists(ruta))
+        var cuenta = usuarioWindows?.Trim() ?? string.Empty;
+        if (cuenta.Length is <= 0 or > 256
+            || cuenta.Contains('/', StringComparison.Ordinal)
+            || cuenta.Contains("..", StringComparison.Ordinal))
         {
-            return null;
+            throw new ArgumentException("La cuenta de Windows no es valida.", nameof(usuarioWindows));
         }
 
-        try
-        {
-            var protegido = File.ReadAllBytes(ruta);
-            var json = Encoding.UTF8.GetString(ProtectedData.Unprotect(protegido, null, DataProtectionScope.CurrentUser));
-            return JsonSerializer.Deserialize<TokenAdmin>(json);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void GuardarToken(string ruta, TokenAdmin token)
-    {
-        var json = JsonSerializer.Serialize(token, OpcionesJson);
-        var protegido = ProtectedData.Protect(Encoding.UTF8.GetBytes(json), null, DataProtectionScope.CurrentUser);
-        File.WriteAllBytes(ruta, protegido);
-    }
-
-    private static string ObtenerRutaToken(string usuarioWindows)
-    {
-        var nombreSeguro = string.Concat(usuarioWindows.Select(caracter =>
-            Path.GetInvalidFileNameChars().Contains(caracter) || caracter is '\\' or '/' ? '_' : caracter));
-
-        return Path.Combine(RutasAplicacion.RutaTokensUsuario, $"{nombreSeguro}.token");
-    }
-
-    private static string ResolverRutaToken(string usuarioWindows)
-    {
-        // Copia el token anterior a la carpeta local segura.
-        var rutaNueva = ObtenerRutaToken(usuarioWindows);
-        if (File.Exists(rutaNueva) || RutasAplicacion.Distribucion.EsPortable)
-        {
-            return rutaNueva;
-        }
-
-        var nombre = Path.GetFileName(rutaNueva);
-        var rutaLegada = Path.Combine(RutasAplicacion.RutaTokensUsuarioLegada, nombre);
-        if (!File.Exists(rutaLegada))
-        {
-            return rutaNueva;
-        }
-
-        try
-        {
-            File.Copy(rutaLegada, rutaNueva, overwrite: false);
-            return rutaNueva;
-        }
-        catch
-        {
-            return rutaNueva;
-        }
+        return cuenta;
     }
 }
 

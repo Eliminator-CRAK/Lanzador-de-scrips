@@ -1,70 +1,44 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Explica el uso diario de LanzadorScripts para usuarios finales. -->
+<!-- Descripcion: Uso del cliente LanzadorScripts 1.8.0. -->
 
-# Manual De Usuario
+# Manual de usuarios
 
-## Elegir Distribucion
+## Elegir version
 
-El administrador puede entregar una de estas opciones:
+- Instalada: ejecutar `LanzadorScripts-1.8.0-x64.msi`. Conserva configuracion y runtimes.
+- Portable: ejecutar `LanzadorScripts_Portable-1.8.0-x64.exe`. Elimina sus datos locales al cerrar.
 
-```text
-LanzadorScripts-1.7.2-x64.msi
-LanzadorScripts_Portable-1.7.2-x64.exe
-```
+Ambas variantes necesitan conexion de dominio con el servidor central y acceso de lectura a la carpeta compartida de scripts.
 
-- La instalada aparece en el menu Inicio y conserva su configuracion.
-- La portable se abre directamente y elimina sus datos locales cuando se cierra de forma definitiva.
-- Los archivos exportados por el usuario no se eliminan.
-- Al reparar, actualizar o desinstalar, el MSI cierra la aplicacion automaticamente si no hay scripts activos.
+## Primer inicio
 
-La version `1.7.2` no instala ni solicita claves AES. Si aparece un aviso sobre `artefactos.key`, se esta usando una version anterior.
+Si el administrador entrega `LanzadorScripts-Cliente.lanzadorconfig`, abrirlo o importarlo desde la aplicacion. El paquete configura el servidor, el puerto y la ruta compartida; no instala claves ni certificados privados.
 
-## Ejecutar Un Script
+La aplicacion usa automaticamente la cuenta de Windows iniciada. Si la cuenta no figura en la base central, los scripts aparecen bloqueados.
 
-1. Busque el script por nombre.
-2. Compruebe que no muestra un bloqueo de permisos o firma.
-3. Pulse el script.
-4. Siga la salida en la consola de la aplicacion.
-5. Responda cuando el script solicite datos.
+## Ejecutar scripts
 
-La aplicacion confirma primero el inicio en la auditoria corporativa. Si esa carpeta no esta disponible, el script no se ejecuta.
+1. Buscar el script por nombre.
+2. Pulsar **Ejecutar script**.
+3. Revisar la salida en la consola de la aplicacion.
+4. Cerrar la consola solo cuando la ejecucion haya terminado o se desee cancelarla.
 
-Un candado indica que la cuenta no esta autorizada, que el script no pertenece al catalogo o que sus bytes han cambiado.
+Antes de iniciar, el cliente valida permisos y SHA-256 contra el servidor y confirma el evento de auditoria. Si el servidor o la auditoria no responden, la ejecucion se bloquea.
 
-## Cancelar Y Cerrar
+## Bandeja de Windows
 
-- Cancelar detiene solo la ejecucion seleccionada.
-- El boton de cerrar de la ventana mantiene la aplicacion en segundo plano.
-- El icono de la bandeja permite restaurar, maximizar, minimizar o cerrar definitivamente.
-- La advertencia de cancelacion solo aparece cuando existen scripts en ejecucion.
-- El cierre puede esperar hasta 30 segundos para confirmar resultados de auditoria.
+El boton de cerrar de la ventana principal oculta la aplicacion y la mantiene en la bandeja. El menu de bandeja permite mostrar, minimizar o cerrar. La opcion se llama **Cerrar** y solo avisa de cancelaciones cuando existen scripts activos.
 
-## Estados Habituales
+## Auditoria
 
-| Estado | Accion |
-|---|---|
-| Auditoria no disponible | Compruebe la red corporativa. La ejecucion queda bloqueada por seguridad. |
-| Permisos no encontrados | Compruebe la red o VPN y avise al administrador. |
-| Permisos o catalogo no validos | No edite los JSON. Debe desplegarse de nuevo la pareja firmada. |
-| ConjuntoId distinto | Se han mezclado dos publicaciones. Cierre la aplicacion y avise al administrador. |
-| Script modificado | Solicite una nueva publicacion del catalogo. |
-| Carpeta de scripts no disponible | Compruebe la red o VPN. |
-| WebView2 no puede escribir | Cierre todas las instancias y entregue el log al administrador. |
-| Archivo bloqueado por Windows | Verifique que usa la distribucion corporativa firmada. |
+Los administradores pueden pulsar `Ctrl+Shift+M` para consultar la auditoria central. Los usuarios nominales no pueden abrir esa vista.
 
-## Datos Y Logs
+## Errores habituales
 
-La version instalada conserva datos en:
+- **Servidor central no disponible**: comprobar red corporativa, DNS y VPN.
+- **Acceso denegado**: solicitar al administrador que active la cuenta exacta `DOMINIO\usuario`.
+- **Script modificado**: el archivo ya no coincide con el SHA-256 del catalogo; un administrador debe recrearlo.
+- **No se pudo confirmar la auditoria**: el servicio central no pudo guardar el evento y bloquea la ejecucion por seguridad.
+- **Ruta de scripts no disponible**: comprobar permisos de lectura sobre la carpeta compartida.
 
-```text
-C:\ProgramData\LanzadorScripts\Usuarios\<perfil>\
-```
-
-La portable mantiene sus datos solo durante la sesion bajo `%TEMP%\LanzadorScripts\Portable`. La auditoria de ejecucion se almacena en el servidor y nunca se borra al cerrar o desinstalar.
-
-## Buenas Practicas
-
-- Use solo el MSI o la portable publicados por el administrador.
-- No copie `permisos.json` y `catalogo-scripts.json` por separado.
-- No modifique un script autorizado sin volver a publicar el catalogo.
-- Cierre definitivamente desde la bandeja antes de actualizar o desinstalar.
+La version 1.8.0 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.

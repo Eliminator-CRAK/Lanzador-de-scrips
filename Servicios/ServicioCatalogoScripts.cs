@@ -200,7 +200,7 @@ public sealed class ServicioCatalogoScripts
             var extension = Path.GetExtension(scriptId).ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(scriptId)
                 || Path.IsPathRooted(scriptId)
-                || scriptId.Split('/').Any(segmento => segmento is "." or "..")
+                || scriptId.Split('/').Any(segmento => segmento.Length == 0 || segmento is "." or "..")
                 || extension is not ".ps1" and not ".bat" and not ".cmd"
                 || !string.Equals(extension, entrada.Extension, StringComparison.OrdinalIgnoreCase)
                 || entrada.Longitud < 0
@@ -215,7 +215,7 @@ public sealed class ServicioCatalogoScripts
 
     private static string NormalizarScriptId(string scriptId)
     {
-        return scriptId.Replace('\\', '/').Trim().TrimStart('/');
+        return scriptId.Replace('\\', '/').Trim();
     }
 }
 

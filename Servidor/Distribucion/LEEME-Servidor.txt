@@ -1,0 +1,29 @@
+(Autor: Alex Roman)
+Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.0.
+
+INSTALACION INTERACTIVA
+1. Extraiga el ZIP en el servidor MAD002MICROPRU.
+2. Ejecute LanzadorScripts.Servidor.exe como administrador.
+3. Pulse Instalar. La aplicacion copiara los binarios a C:\Program Files\LanzadorScriptsServidor.
+4. Inicie el servicio y compruebe Resumen, Usuarios, Catalogo y Auditoria.
+
+INSTALACION AUTOMATICA
+Ejecute como administrador:
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Instalar-Servidor.ps1
+
+DATOS
+- Base cifrada: C:\ProgramData\LanzadorScriptsServidor\Datos\LanzadorScripts.db
+- Clave DPAPI de maquina: C:\ProgramData\LanzadorScriptsServidor\Seguridad\base-datos.key.dpapi
+- Copias: C:\ProgramData\LanzadorScriptsServidor\CopiasSeguridad
+- Configuracion: C:\ProgramData\LanzadorScriptsServidor\configuracion-servidor.json
+
+La base y la clave deben copiarse juntas para una restauracion en el mismo servidor. DPAPI liga la clave a esa maquina. Los clientes no reciben claves privadas ni certificados de artefactos.
+
+CLIENTES
+Use Crear-ConfiguracionCliente.ps1 para generar un archivo .lanzadorconfig. El archivo solo contiene servidor, puerto y carpeta de scripts; no contiene secretos.
+
+SEGURIDAD
+El contenido funcional de la base se cifra y autentica por filas. La estructura SQLite y columnas tecnicas siguen visibles. Mantenga las ACL, copias y control administrativo del servidor.
+
+DESINSTALACION
+Ejecute Desinstalar-Servidor.ps1 desde este ZIP. Conserva la base por defecto. Use -EliminarDatos solo si desea borrar tambien la base, su clave, copias y logs.

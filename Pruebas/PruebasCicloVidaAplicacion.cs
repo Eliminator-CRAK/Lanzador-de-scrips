@@ -62,6 +62,18 @@ public sealed class PruebasCicloVidaAplicacion
     }
 
     [Fact]
+    public void AtajoAdministrativoAbreSoloLaAuditoriaCentral()
+    {
+        var ventana = File.ReadAllText(ObtenerRutaProyecto("VentanaPrincipal.xaml.cs"));
+
+        Assert.Contains("MostrarAuditoria();", ventana, StringComparison.Ordinal);
+        Assert.Contains("postMessage('mostrarAuditoria')", ventana, StringComparison.Ordinal);
+        Assert.Contains("new VentanaAuditoria", ventana, StringComparison.Ordinal);
+        Assert.DoesNotContain("ls-diagnostico-panel", ventana, StringComparison.Ordinal);
+        Assert.DoesNotContain("alternarDiagnostico", ventana, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InstanciaSecundariaDistingueMostrarYCerrarMantenimiento()
     {
         var aplicacion = File.ReadAllText(ObtenerRutaProyecto("Aplicacion.xaml.cs"));
@@ -105,13 +117,15 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("--validar-limpieza-ruta-larga", nativo, StringComparison.Ordinal);
         Assert.Contains("rutaArchivo.size() <= MAX_PATH", nativo, StringComparison.Ordinal);
         Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.7.2-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.0-x64.exe", publicacion, StringComparison.Ordinal);
 
         var manifiesto = File.ReadAllText(ObtenerRutaProyecto("manifiesto.manifest"));
         Assert.Contains("<ws2:longPathAware>true</ws2:longPathAware>", manifiesto, StringComparison.Ordinal);
 
         var tokens = File.ReadAllText(ObtenerRutaProyecto("Servicios", "ServicioTokensAdmin.cs"));
-        Assert.Contains("RutasAplicacion.Distribucion.EsPortable", tokens, StringComparison.Ordinal);
+        Assert.Contains("ConcurrentDictionary<string, TokenAdmin>", tokens, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Write", tokens, StringComparison.Ordinal);
+        Assert.DoesNotContain("RutaTokensUsuario", tokens, StringComparison.Ordinal);
     }
 
     [Fact]

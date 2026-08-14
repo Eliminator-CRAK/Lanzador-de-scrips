@@ -1,5 +1,5 @@
 # (Autor: Alex Roman)
-# Descripcion: Firma y valida archivos EXE o MSI de las distribuciones publicadas.
+# Descripcion: Firma y valida ejecutables, instaladores y scripts de distribucion.
 
 [CmdletBinding()]
 param(
@@ -24,8 +24,8 @@ if (-not [System.IO.File]::Exists($rutaCompleta)) {
 }
 
 $extension = [System.IO.Path]::GetExtension($rutaCompleta)
-if ($extension -notin @('.exe', '.msi')) {
-    throw "Solo se admiten archivos EXE o MSI: $rutaCompleta"
+if ($extension -notin @('.exe', '.msi', '.ps1')) {
+    throw "Solo se admiten archivos EXE, MSI o PS1: $rutaCompleta"
 }
 
 $atributos = [System.IO.File]::GetAttributes($rutaCompleta)

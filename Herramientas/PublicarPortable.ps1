@@ -1,15 +1,12 @@
 # (Autor: Alex Roman)
-# Descripcion: Publica el MSI instalado, el EXE portable y los artefactos opcionales.
+# Descripcion: Publica el MSI instalado y el EXE portable del cliente.
 
 param(
     [string]$CertThumbprint = '6C654649369000DDE0AA70F62645058D9A3437F5',
     [string]$CertPath = '',
     [securestring]$CertPassword,
     [string]$TimestampServer = 'http://timestamp.digicert.com',
-    [string]$RutaScriptsIniciales = (Join-Path $env:USERPROFILE 'OneDrive - Aena, SME S.A\Documentos\notas\SCRIPS\ACTUALES'),
-    [string]$RutaCarpetaPermisos = '\\MAD002MICROPRU.mad.ae.aena.es\R$\PERMISOS',
     [string]$RutaRuntimeWebView2Portable = '',
-    [switch]$InicializarArtefactos,
     [switch]$AllowUnsignedForDev
 )
 
@@ -34,7 +31,6 @@ $tamanoMinimoMsi = 209715200
 $scriptCompilarMsi = Join-Path $PSScriptRoot 'CompilarMsi.ps1'
 $cacheWebView2 = Join-Path $raiz 'Recursos\WebView2'
 $runtimeZipIntermedio = Join-Path $raiz 'obj\WebView2Runtime\WebView2Runtime.zip'
-$huellaCertificadoArtefactos = '500266A64E574889370D92E5CE0D65D55CC963B7'
 $versionWebView2Fijada = '150.0.4078.48'
 $nombreCabWebView2Fijado = "Microsoft.WebView2.FixedVersionRuntime.$versionWebView2Fijada.x64.cab"
 $urlCabWebView2Fijado = 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/60926d99-f201-46bb-91a0-d868dc06b275/Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64.cab'
@@ -80,12 +76,12 @@ if ($null -eq $propiedadesVersion -or
 
 $versionProductoEsperada = [string]$propiedadesVersion.Version
 $versionArchivoEsperada = [string]$propiedadesVersion.FileVersion
-if ($versionProductoEsperada -ne '1.7.2' -or $versionArchivoEsperada -ne '1.7.2.0') {
-    throw 'La publicacion MSI y portable requiere la version 1.7.2.'
+if ($versionProductoEsperada -ne '1.8.0' -or $versionArchivoEsperada -ne '1.8.0.0') {
+    throw 'La publicacion MSI y portable requiere la version 1.8.0.'
 }
 
-$nombreMsiFinal = 'LanzadorScripts-1.7.2-x64.msi'
-$nombrePortableFinal = 'LanzadorScripts_Portable-1.7.2-x64.exe'
+$nombreMsiFinal = 'LanzadorScripts-1.8.0-x64.msi'
+$nombrePortableFinal = 'LanzadorScripts_Portable-1.8.0-x64.exe'
 $msiCompilado = Join-Path $raiz "Instalador\Release\$nombreMsiFinal"
 $revisionGitEsperada = (& git -C $raiz rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revisionGitEsperada)) {
@@ -938,7 +934,7 @@ function Assert-PublishedMsi {
             $propiedades.ALLUSERS -ne '1' -or
             $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}' -or
             $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1') {
-            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.7.2.'
+            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.8.0.'
         }
     }
     finally {
@@ -1090,59 +1086,6 @@ if (-not (Test-Path -LiteralPath $msiCompilado -PathType Leaf)) {
 $msiPublicado = Join-Path $stagingCompleta $nombreMsiFinal
 Copy-Item -LiteralPath $msiCompilado -Destination $msiPublicado
 
-if ($InicializarArtefactos) {
-    $certificadoArtefactos = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My |
-        Where-Object {
-            $_.Thumbprint -eq $huellaCertificadoArtefactos -and
-            $_.HasPrivateKey
-        } |
-        Select-Object -First 1
-    if ($null -eq $certificadoArtefactos) {
-        throw "No se encontro el certificado privado de artefactos $huellaCertificadoArtefactos."
-    }
-
-    if (-not (Test-Path -LiteralPath $RutaScriptsIniciales -PathType Container)) {
-        throw "No se encontro la carpeta de scripts iniciales: $RutaScriptsIniciales"
-    }
-
-    if (-not (Test-Path -LiteralPath $RutaCarpetaPermisos -PathType Container)) {
-        throw "No se encontro la carpeta operativa de permisos: $RutaCarpetaPermisos"
-    }
-
-    Write-Host 'Generando permisos y catalogo en la carpeta operativa...'
-    $carpetaPermisosCompleta = (Resolve-Path -LiteralPath $RutaCarpetaPermisos).Path
-    $permisos = Join-Path $carpetaPermisosCompleta 'permisos.json'
-    $catalogo = Join-Path $carpetaPermisosCompleta 'catalogo-scripts.json'
-    $scriptsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Resolve-Path -LiteralPath $RutaScriptsIniciales).Path))
-    $salidaBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($carpetaPermisosCompleta))
-    $ensambladoGenerador = Join-Path $raiz 'bin\Release\net10.0-windows\win-x64\LanzadorScripts.dll'
-    if (-not (Test-Path -LiteralPath $ensambladoGenerador)) {
-        throw "No se encontro el ensamblado generador: $ensambladoGenerador"
-    }
-
-    Invoke-NativeChecked -Descripcion 'generador de artefactos operativos' -Comando {
-        dotnet $ensambladoGenerador `
-            --generar-artefactos-iniciales `
-            --scripts-base64 $scriptsBase64 `
-            --salida-base64 $salidaBase64
-    }
-    if (-not (Test-Path -LiteralPath $permisos) -or -not (Test-Path -LiteralPath $catalogo)) {
-        throw 'No se pudieron generar los artefactos operativos.'
-    }
-
-    $permisosFirmados = Get-Content -LiteralPath $permisos -Raw | ConvertFrom-Json
-    $catalogoFirmado = Get-Content -LiteralPath $catalogo -Raw | ConvertFrom-Json
-    if ($permisosFirmados.Version -ne 3 -or
-        $catalogoFirmado.Version -ne 3 -or
-        [string]::IsNullOrWhiteSpace([string]$permisosFirmados.ConjuntoId) -or
-        -not [string]::Equals(
-            [string]$permisosFirmados.ConjuntoId,
-            [string]$catalogoFirmado.ConjuntoId,
-            [StringComparison]::Ordinal)) {
-        throw 'Los artefactos generados no forman una pareja firmada v3 valida.'
-    }
-}
-
 $archivosPublicados = @(Get-ChildItem -LiteralPath $stagingCompleta -Recurse -File)
 $rutasEsperadas = @($msiPublicado, $exePortable)
 $inesperados = @($archivosPublicados | Where-Object {
@@ -1236,7 +1179,3 @@ foreach ($temporalPublicacion in @($runtimeStagingCompleta, $lanzadorNativoCompl
 
 Write-Host "MSI instalado generado: $(Join-Path $salidaCompleta $nombreMsiFinal)"
 Write-Host "EXE portable generado: $(Join-Path $salidaCompleta $nombrePortableFinal)"
-Write-Host "Carpeta operativa de permisos: $RutaCarpetaPermisos"
-if (-not $InicializarArtefactos) {
-    Write-Host 'Los archivos operativos existentes no se han modificado.'
-}

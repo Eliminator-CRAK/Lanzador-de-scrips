@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace LanzadorScripts.Servicios;
 
-public sealed class ServicioAuditoria : IDisposable
+public sealed class ServicioAuditoria : IServicioAuditoria
 {
     public const string NombreCarpetaAuditoria = "Auditoria";
 
@@ -222,7 +222,7 @@ public sealed class ServicioAuditoria : IDisposable
         Cerrar(TimeSpan.FromSeconds(30));
     }
 
-    internal void Cerrar(TimeSpan tiempoMaximo)
+    public void Cerrar(TimeSpan tiempoMaximo)
     {
         if (Interlocked.Exchange(ref _desechado, 1) != 0)
         {

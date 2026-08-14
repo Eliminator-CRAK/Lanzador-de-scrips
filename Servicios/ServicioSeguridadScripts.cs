@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Valida scripts contra el catalogo firmado antes de ejecutarlos.
+// Descripcion: Valida scripts contra el catalogo autorizado antes de ejecutarlos.
 
 using System.IO;
 using System.Security.Cryptography;
@@ -85,7 +85,7 @@ public sealed class ServicioSeguridadScripts
             return baseDiagnostico with
             {
                 CatalogoEstado = "no-incluido",
-                MotivoBloqueo = "El script no esta incluido en el catalogo firmado."
+                MotivoBloqueo = "El script no esta incluido en el catalogo central autorizado."
             };
         }
 

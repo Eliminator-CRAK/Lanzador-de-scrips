@@ -299,19 +299,22 @@ public sealed class PruebasDistribucionAuditoria
     }
 
     [Fact]
-    public void CodigoConfiguraAuditoriaInmutableYAclAdministrativa()
+    public void CodigoCentralCifraAuditoriaYProtegeDatosConAclAdministrativa()
     {
-        var servicio = File.ReadAllText(ObtenerRutaProyecto("Servicios", "ServicioAuditoria.cs"));
-        var herramienta = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PrepararAuditoriaServidor.ps1"));
+        var repositorio = File.ReadAllText(ObtenerRutaProyecto(
+            "Servidor",
+            "LanzadorScripts.Servidor.Core",
+            "RepositorioServidor.cs"));
+        var rutas = File.ReadAllText(ObtenerRutaProyecto(
+            "Servidor",
+            "LanzadorScripts.Servidor.Core",
+            "RutasServidor.cs"));
 
-        Assert.Contains("FileMode.CreateNew", servicio, StringComparison.Ordinal);
-        Assert.Contains("FileShare.None", servicio, StringComparison.Ordinal);
-        Assert.Contains("InmovilizarArchivo", servicio, StringComparison.Ordinal);
-        Assert.Contains("FileSystemRights.ReadAndExecute", servicio, StringComparison.Ordinal);
-        Assert.Contains("SetAccessRuleProtection($true, $false)", herramienta, StringComparison.Ordinal);
-        Assert.Contains("CreatorOwnerSid", herramienta, StringComparison.Ordinal);
-        Assert.Contains("PropagationFlags]::InheritOnly", herramienta, StringComparison.Ordinal);
-        Assert.DoesNotContain("Directory.Delete", herramienta, StringComparison.Ordinal);
+        Assert.Contains("_cifrador.Cifrar(TablaAuditoria", repositorio, StringComparison.Ordinal);
+        Assert.Contains("PRAGMA secure_delete = ON", repositorio, StringComparison.Ordinal);
+        Assert.Contains("SetAccessRuleProtection(isProtected: true", rutas, StringComparison.Ordinal);
+        Assert.Contains("BuiltinAdministratorsSid", rutas, StringComparison.Ordinal);
+        Assert.Contains("LocalSystemSid", rutas, StringComparison.Ordinal);
     }
 
     private static string ObtenerRutaProyecto(params string[] partes)

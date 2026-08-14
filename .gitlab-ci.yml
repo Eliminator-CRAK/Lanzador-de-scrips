@@ -14,8 +14,13 @@ build-release:
     EnableWindowsTargeting: "true"
     NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget/packages"
   script:
-    - dotnet restore LanzadorScripts.csproj -p:EnableWindowsTargeting=true
+    - dotnet restore Pruebas/LanzadorScripts.Pruebas.csproj -p:EnableWindowsTargeting=true
+    - dotnet restore Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj -p:EnableWindowsTargeting=true
+    - dotnet restore Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj -p:EnableWindowsTargeting=true
     - dotnet build LanzadorScripts.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
+    - dotnet build Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
+    - dotnet build Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
+    - dotnet test Pruebas/LanzadorScripts.Pruebas.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
   cache: []
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
@@ -34,6 +39,10 @@ nuget-audit:
   script:
     - dotnet restore Pruebas/LanzadorScripts.Pruebas.csproj -p:EnableWindowsTargeting=true
     - dotnet list Pruebas/LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+    - dotnet restore Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj -p:EnableWindowsTargeting=true
+    - dotnet list Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj package --vulnerable --include-transitive --no-restore
+    - dotnet restore Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj -p:EnableWindowsTargeting=true
+    - dotnet list Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj package --vulnerable --include-transitive --no-restore
   cache: []
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'

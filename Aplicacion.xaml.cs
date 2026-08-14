@@ -26,18 +26,6 @@ public partial class Aplicacion : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        if (ServicioGeneracionConjuntoArtefactos.EsSolicitud(e.Args))
-        {
-            Shutdown(ServicioGeneracionConjuntoArtefactos.Ejecutar(e.Args));
-            return;
-        }
-
-        if (ServicioGeneracionArtefactosIniciales.EsSolicitud(e.Args))
-        {
-            Shutdown(ServicioGeneracionArtefactosIniciales.Ejecutar(e.Args));
-            return;
-        }
-
         if (ServicioBrokerElevado.EsSolicitudBroker(e.Args))
         {
             Shutdown(ServicioBrokerElevado.EjecutarModoBroker(e.Args));

@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using LanzadorScripts.Modelos;
+using LanzadorScripts.Protocolo;
 
 namespace LanzadorScripts.Servicios;
 
@@ -46,7 +47,9 @@ public sealed class ServidorLocalWeb : IDisposable
     private readonly ServicioArtefactosFirmados _servicioArtefactos;
     private readonly ServicioConjuntoArtefactos _servicioConjuntoArtefactos;
     private readonly ServicioCatalogoScripts _servicioCatalogoScripts;
-    private readonly ServicioAuditoria _servicioAuditoria;
+    private readonly IServicioAuditoria _servicioAuditoria;
+    private readonly ServicioDatosCentralizados _servicioDatosCentralizados;
+    private readonly bool _usarArtefactosLocales;
     private readonly ConfiguracionLanzador? _configuracionFija;
     private readonly GestorEjecucionesWeb _gestorEjecuciones;
     private readonly TimeSpan _tiempoMaximoCierre;
@@ -70,8 +73,9 @@ public sealed class ServidorLocalWeb : IDisposable
         ServicioTokenMaestro servicioTokenMaestro,
         string? rutaStaging = null,
         ServicioArtefactosFirmados? servicioArtefactos = null,
-        ServicioAuditoria? servicioAuditoria = null,
-        TimeSpan? tiempoMaximoCierre = null)
+        IServicioAuditoria? servicioAuditoria = null,
+        TimeSpan? tiempoMaximoCierre = null,
+        bool usarArtefactosLocales = false)
     {
         UrlBase = new Uri($"http://127.0.0.1:{puerto}/");
         _escuchador.Prefixes.Add(UrlBase.ToString());
@@ -82,8 +86,10 @@ public sealed class ServidorLocalWeb : IDisposable
             new ServicioCifradoAplicacion(),
             _servicioArtefactos);
         _servicioCatalogoScripts = new ServicioCatalogoScripts(_servicioArtefactos);
-        _servicioAuditoria = servicioAuditoria ?? new ServicioAuditoria(
-            () => CargarConfiguracion().RutaPermisos);
+        _usarArtefactosLocales = usarArtefactosLocales;
+        _servicioDatosCentralizados = new ServicioDatosCentralizados(CargarConfiguracion);
+        _servicioAuditoria = servicioAuditoria ?? new ServicioAuditoriaCentral(
+            CargarConfiguracion);
         _tiempoMaximoCierre = tiempoMaximoCierre ?? TimeSpan.FromSeconds(30);
         _gestorEjecuciones = new GestorEjecucionesWeb(
             _servicioAuditoria,
@@ -97,7 +103,8 @@ public sealed class ServidorLocalWeb : IDisposable
             new ServicioTokenMaestro(),
             Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
             servicioAuditoria: CrearAuditoriaParaPruebas(configuracion),
-            tiempoMaximoCierre: TimeSpan.Zero)
+            tiempoMaximoCierre: TimeSpan.Zero,
+            usarArtefactosLocales: true)
     {
         _configuracionFija = configuracion;
     }
@@ -108,7 +115,8 @@ public sealed class ServidorLocalWeb : IDisposable
             servicioTokenMaestro,
             Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
             servicioAuditoria: CrearAuditoriaParaPruebas(configuracion),
-            tiempoMaximoCierre: TimeSpan.Zero)
+            tiempoMaximoCierre: TimeSpan.Zero,
+            usarArtefactosLocales: true)
     {
         _configuracionFija = configuracion;
     }
@@ -124,7 +132,8 @@ public sealed class ServidorLocalWeb : IDisposable
             Path.Combine(configuracion.RutaLogs, ".staging-pruebas"),
             servicioArtefactos,
             CrearAuditoriaParaPruebas(configuracion),
-            TimeSpan.Zero)
+            TimeSpan.Zero,
+            usarArtefactosLocales: true)
     {
         _configuracionFija = configuracion;
     }
@@ -133,7 +142,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
     public string TokenApiInterno => _tokenApiInterno;
 
-    private static ServicioAuditoria CrearAuditoriaParaPruebas(ConfiguracionLanzador configuracion)
+    private static IServicioAuditoria CrearAuditoriaParaPruebas(ConfiguracionLanzador configuracion)
     {
         // Conserva el comportamiento fail-closed sin modificar ACL del equipo de pruebas.
         return new ServicioAuditoria(
@@ -320,6 +329,16 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         var metodo = contexto.Request.HttpMethod.ToUpperInvariant();
         var partes = ruta.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        if (!_usarArtefactosLocales
+            && ruta.StartsWith("/api/token-maestro/", StringComparison.OrdinalIgnoreCase))
+        {
+            await EscribirJsonAsync(contexto, 410, new
+            {
+                error = "El acceso de emergencia se retiro. La autorizacion se gestiona en el servidor central."
+            });
+            return;
+        }
 
         if (metodo == "GET" && ruta.Equals("/api/diagnostico", StringComparison.OrdinalIgnoreCase))
         {
@@ -564,18 +583,24 @@ public sealed class ServidorLocalWeb : IDisposable
 
             var cuerpo = await LeerJsonAsync(contexto.Request);
             var resultado = GuardarPermisos(cuerpo ?? new JsonObject());
-            if (resultado.PermisosGuardados)
+            if (!resultado.PermisosGuardados)
             {
-                InvalidarDiagnosticoAjustes();
+                await EscribirJsonAsync(contexto, 503, new
+                {
+                    error = string.IsNullOrWhiteSpace(resultado.AvisoConexion)
+                        ? "El servidor central no pudo guardar los permisos."
+                        : resultado.AvisoConexion
+                });
+                return;
             }
+
+            InvalidarDiagnosticoAjustes();
 
             await EscribirJsonAsync(contexto, 200, new
             {
                 exito = true,
-                mensaje = resultado.PermisosGuardados
-                    ? "Ajustes guardados exitosamente."
-                    : "Los permisos no se pudieron publicar en la carpeta configurada.",
-                avisoConexion = resultado.AvisoConexion
+                mensaje = "Ajustes guardados exitosamente.",
+                avisoConexion = string.Empty
             });
             return;
         }
@@ -591,8 +616,12 @@ public sealed class ServidorLocalWeb : IDisposable
             var configuracion = CargarConfiguracion();
             await EscribirJsonAsync(contexto, 200, new
             {
-                rutaPermisos = configuracion.RutaPermisos,
-                carpetaScripts = configuracion.RutaScripts
+                rutaPermisos = _usarArtefactosLocales
+                    ? configuracion.RutaPermisos
+                    : $"{configuracion.ServidorCentral}:{configuracion.PuertoServidorCentral}",
+                carpetaScripts = configuracion.RutaScripts,
+                servidorCentral = configuracion.ServidorCentral,
+                puertoServidorCentral = configuracion.PuertoServidorCentral
             });
             return;
         }
@@ -617,18 +646,71 @@ public sealed class ServidorLocalWeb : IDisposable
             var configuracion = CargarConfiguracion();
             var nuevaRutaPermisos = LeerTexto(cuerpo, "rutaPermisos", configuracion.RutaPermisos).Trim();
             var nuevaRutaScripts = LeerTexto(cuerpo, "carpetaScripts", configuracion.RutaScripts).Trim();
-            var validacion = _servicioValidacionScripts.ValidarConfiguracionBasica(nuevaRutaScripts, nuevaRutaPermisos);
-            if (!validacion.EsValida)
+            string nuevoServidorCentral;
+            int nuevoPuertoServidorCentral;
+            if (_usarArtefactosLocales)
             {
-                await EscribirJsonAsync(contexto, 400, new { error = validacion.Mensaje });
-                return;
+                var validacion = _servicioValidacionScripts.ValidarConfiguracionBasica(
+                    nuevaRutaScripts,
+                    nuevaRutaPermisos);
+                if (!validacion.EsValida)
+                {
+                    await EscribirJsonAsync(contexto, 400, new { error = validacion.Mensaje });
+                    return;
+                }
+
+                nuevoServidorCentral = configuracion.ServidorCentral;
+                nuevoPuertoServidorCentral = configuracion.PuertoServidorCentral;
+            }
+            else
+            {
+                try
+                {
+                    nuevaRutaScripts = ServicioRutasSeguras.ResolverCarpetaAbsoluta(
+                        nuevaRutaScripts,
+                        "scripts");
+                    var endpoint = SeleccionarEndpointCentral(
+                        cuerpo,
+                        nuevaRutaPermisos,
+                        configuracion.ServidorCentral,
+                        configuracion.PuertoServidorCentral);
+                    SepararEndpointCentral(
+                        endpoint,
+                        configuracion.PuertoServidorCentral,
+                        out nuevoServidorCentral,
+                        out nuevoPuertoServidorCentral);
+                    _ = new ClienteServidorCentral(
+                        nuevoServidorCentral,
+                        nuevoPuertoServidorCentral,
+                        TimeSpan.FromSeconds(3));
+                }
+                catch (Exception ex) when (ex is ArgumentException
+                    or InvalidOperationException
+                    or IOException)
+                {
+                    await EscribirJsonAsync(contexto, 400, new
+                    {
+                        error = ServicioRedaccionSecretos.Sanitizar(ex.Message)
+                    });
+                    return;
+                }
             }
 
-            configuracion.RutaPermisos = nuevaRutaPermisos;
+            if (_usarArtefactosLocales)
+            {
+                configuracion.RutaPermisos = nuevaRutaPermisos;
+            }
+
             configuracion.RutaScripts = nuevaRutaScripts;
+            configuracion.ServidorCentral = nuevoServidorCentral;
+            configuracion.PuertoServidorCentral = nuevoPuertoServidorCentral;
             _servicioConfiguracion.Guardar(configuracion);
             InvalidarDiagnosticoAjustes();
-            var avisoConfiguracion = _servicioValidacionScripts.CrearAvisoConfiguracionNoDisponible(nuevaRutaScripts, nuevaRutaPermisos);
+            var avisoConfiguracion = _usarArtefactosLocales
+                ? _servicioValidacionScripts.CrearAvisoConfiguracionNoDisponible(
+                    nuevaRutaScripts,
+                    nuevaRutaPermisos)
+                : await CrearAvisoConfiguracionCentralAsync(nuevaRutaScripts);
             await EscribirJsonAsync(contexto, 200, new
             {
                 exito = true,
@@ -658,7 +740,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
             try
             {
-                var paquete = _servicioPaquetesConfiguracion.Exportar(CargarConfiguracion(), ObtenerPermisos());
+                var paquete = _servicioPaquetesConfiguracion.Exportar(CargarConfiguracion());
                 await EscribirJsonAsync(contexto, 200, paquete);
             }
             catch (Exception ex)
@@ -765,12 +847,30 @@ public sealed class ServidorLocalWeb : IDisposable
             try
             {
                 var configuracion = CargarConfiguracion();
-                var rutaPermisos = ObtenerRutaPermisosCompleta(configuracion);
-                _servicioConjuntoArtefactos.GuardarCatalogoPreservandoConjunto(
-                    rutaPermisos,
-                    _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts),
-                    seleccionados,
-                    out var catalogo);
+                CatalogoScripts catalogo;
+                if (_usarArtefactosLocales)
+                {
+                    var rutaPermisos = ObtenerRutaPermisosCompleta(configuracion);
+                    _servicioConjuntoArtefactos.GuardarCatalogoPreservandoConjunto(
+                        rutaPermisos,
+                        _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts),
+                        seleccionados,
+                        out catalogo);
+                }
+                else
+                {
+                    var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+                    if (!diagnosticoPermisos.EstaDisponible)
+                    {
+                        throw new InvalidOperationException(diagnosticoPermisos.Mensaje);
+                    }
+
+                    catalogo = _servicioCatalogoScripts.Crear(
+                        _servicioValidacionScripts.DescubrirScripts(configuracion.RutaScripts),
+                        seleccionados,
+                        diagnosticoPermisos.ConjuntoId);
+                    _servicioDatosCentralizados.GuardarCatalogo(catalogo);
+                }
                 await _servicioAuditoria.RegistrarEventoSeguridadAsync(
                     "seguridad.catalogo.publicado",
                     WindowsIdentity.GetCurrent().Name,
@@ -780,7 +880,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 await EscribirJsonAsync(contexto, 200, new
                 {
                     exito = true,
-                    mensaje = "Catalogo firmado correctamente.",
+                    mensaje = "Catalogo guardado en la base central.",
                     totalScripts = catalogo.Scripts.Count,
                     catalogo.ConjuntoId,
                     catalogo.GeneradoUtc
@@ -857,7 +957,7 @@ public sealed class ServidorLocalWeb : IDisposable
         {
             if (contenidoBase64.Length > ServicioPaquetesConfiguracion.LongitudMaximaBase64)
             {
-                await EscribirJsonAsync(contexto, 413, new { error = "El paquete de configuracion supera el limite de 16 MiB." });
+                await EscribirJsonAsync(contexto, 413, new { error = "El paquete de configuracion supera el limite permitido." });
                 return;
             }
 
@@ -866,7 +966,7 @@ public sealed class ServidorLocalWeb : IDisposable
             {
                 if (datos.Length > ServicioPaquetesConfiguracion.LongitudMaximaContenido)
                 {
-                    await EscribirJsonAsync(contexto, 413, new { error = "El paquete de configuracion supera el limite de 16 MiB." });
+                    await EscribirJsonAsync(contexto, 413, new { error = "El paquete de configuracion supera el limite permitido." });
                     return;
                 }
 
@@ -875,11 +975,6 @@ public sealed class ServidorLocalWeb : IDisposable
                 var importacion = _servicioPaquetesConfiguracion.ImportarContenido(contenido, configuracion);
                 _servicioConfiguracion.Guardar(importacion.Configuracion);
                 InvalidarDiagnosticoAjustes();
-                if (importacion.Permisos is not null)
-                {
-                    _servicioPaquetesConfiguracion.GuardarPermisosImportados(importacion.Configuracion, importacion.Permisos);
-                }
-
                 await EscribirJsonAsync(contexto, 200, new { exito = true, mensaje = "Configuracion importada correctamente en el servicio." });
             }
             finally
@@ -1264,7 +1359,8 @@ public sealed class ServidorLocalWeb : IDisposable
             MotivoBloqueo = usuario.EstaAutorizado ? string.Empty : usuario.MotivoBloqueo,
             PermisosEncontrados = diagnosticoPermisos.EstaDisponible,
             PermisosAccesibles = diagnosticoPermisos.EstaDisponible,
-            PermiteDesbloqueoEmergencia = diagnosticoPermisos.PermiteDesbloqueoEmergencia,
+            PermiteDesbloqueoEmergencia = _usarArtefactosLocales
+                && diagnosticoPermisos.PermiteDesbloqueoEmergencia,
             TokenMaestroActivo = false,
             EmergenciaVenceUtc = (DateTimeOffset?)null,
             EmergenciaMotivo = string.Empty,
@@ -1414,12 +1510,16 @@ public sealed class ServidorLocalWeb : IDisposable
     private DiagnosticoPermisos CrearDiagnosticoPermisosNoDisponible()
     {
         // Devuelve un estado seguro cuando la ruta remota no responde a tiempo.
-        var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
+        var ruta = _usarArtefactosLocales
+            ? ObtenerRutaPermisosCompleta(CargarConfiguracion())
+            : _servicioDatosCentralizados.ObtenerRutaSanitizada();
         return new DiagnosticoPermisos(
             EstadoPermisos.Inaccesible,
             ruta,
             CrearPermisosPorDefecto(),
-            MensajeCarpetaPermisosNoDisponible);
+            _usarArtefactosLocales
+                ? MensajeCarpetaPermisosNoDisponible
+                : "El servidor central de permisos no esta disponible.");
     }
 
     private void InvalidarDiagnosticoAjustes()
@@ -1435,6 +1535,11 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private DiagnosticoPermisos ObtenerDiagnosticoPermisos()
     {
+        if (!_usarArtefactosLocales)
+        {
+            return ObtenerDiagnosticoPermisosCentral();
+        }
+
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
 
         try
@@ -1488,6 +1593,44 @@ public sealed class ServidorLocalWeb : IDisposable
         }
     }
 
+    private DiagnosticoPermisos ObtenerDiagnosticoPermisosCentral()
+    {
+        var ruta = _servicioDatosCentralizados.ObtenerRutaSanitizada();
+        try
+        {
+            if (!_servicioDatosCentralizados.IntentarObtenerPermisos(
+                    out var permisos,
+                    out var conjuntoId,
+                    out var error))
+            {
+                return new DiagnosticoPermisos(
+                    EstadoPermisos.Inaccesible,
+                    ruta,
+                    CrearPermisosPorDefecto(),
+                    string.IsNullOrWhiteSpace(error)
+                        ? "El servidor central de permisos no esta disponible."
+                        : error);
+            }
+
+            return new DiagnosticoPermisos(
+                EstadoPermisos.Disponible,
+                ruta,
+                NormalizarPermisos(permisos),
+                string.Empty,
+                conjuntoId);
+        }
+        catch (Exception ex) when (ex is IOException
+            or InvalidOperationException
+            or ArgumentException)
+        {
+            return new DiagnosticoPermisos(
+                EstadoPermisos.Inaccesible,
+                ruta,
+                CrearPermisosPorDefecto(),
+                $"No se pudo consultar el servidor central ({ex.GetType().Name}).");
+        }
+    }
+
     private static bool ArchivoProtegidoExiste(string ruta)
     {
         // Comprueba el archivo principal y su respaldo sin lanzar errores de red.
@@ -1504,6 +1647,11 @@ public sealed class ServidorLocalWeb : IDisposable
     private DiagnosticoCatalogo ObtenerDiagnosticoCatalogo(
         DiagnosticoPermisos? diagnosticoPermisos = null)
     {
+        if (!_usarArtefactosLocales)
+        {
+            return ObtenerDiagnosticoCatalogoCentral(diagnosticoPermisos);
+        }
+
         var configuracion = CargarConfiguracion();
         var rutaPermisos = ObtenerRutaPermisosCompleta(configuracion);
         var rutaCatalogo = ServicioCatalogoScripts.ObtenerRuta(rutaPermisos);
@@ -1551,6 +1699,43 @@ public sealed class ServidorLocalWeb : IDisposable
             string.Empty);
     }
 
+    private DiagnosticoCatalogo ObtenerDiagnosticoCatalogoCentral(
+        DiagnosticoPermisos? diagnosticoPermisos)
+    {
+        var ruta = _servicioDatosCentralizados.ObtenerRutaSanitizada();
+        if (!_servicioDatosCentralizados.IntentarObtenerCatalogo(out var catalogo, out var error)
+            || catalogo is null)
+        {
+            return new DiagnosticoCatalogo(
+                EstadoCatalogo.Inaccesible,
+                ruta,
+                null,
+                string.IsNullOrWhiteSpace(error)
+                    ? "El catalogo central no esta disponible."
+                    : error);
+        }
+
+        diagnosticoPermisos ??= ObtenerDiagnosticoPermisos();
+        if (!diagnosticoPermisos.EstaDisponible
+            || !string.Equals(
+                diagnosticoPermisos.ConjuntoId,
+                catalogo.ConjuntoId,
+                StringComparison.Ordinal))
+        {
+            return new DiagnosticoCatalogo(
+                EstadoCatalogo.Corrupto,
+                ruta,
+                null,
+                "Permisos y catalogo no pertenecen al mismo conjunto central.");
+        }
+
+        return new DiagnosticoCatalogo(
+            EstadoCatalogo.Disponible,
+            ruta,
+            catalogo,
+            string.Empty);
+    }
+
     internal static bool RutaPermisosInaccesible(string ruta)
     {
         // Marca offline rutas cuya carpeta de permisos no responde.
@@ -1583,6 +1768,61 @@ public sealed class ServidorLocalWeb : IDisposable
         var comprobacion = Task.Run(() => RutaScriptsInaccesible(ruta));
         var completada = await Task.WhenAny(comprobacion, Task.Delay(TimeSpan.FromSeconds(2)));
         return completada != comprobacion || await comprobacion;
+    }
+
+    private async Task<string> CrearAvisoConfiguracionCentralAsync(string rutaScripts)
+    {
+        // Comprueba por separado la carpeta de scripts y el servicio central.
+        var avisos = new List<string>();
+        if (await RutaScriptsInaccesibleAsync(rutaScripts))
+        {
+            avisos.Add(MensajeCarpetaScriptsNoDisponible);
+        }
+
+        var estado = await Task.Run(_servicioDatosCentralizados.ObtenerEstado);
+        if (!estado.Exito)
+        {
+            avisos.Add(string.IsNullOrWhiteSpace(estado.Mensaje)
+                ? "El servidor central no esta disponible."
+                : estado.Mensaje);
+        }
+
+        return string.Join(" ", avisos);
+    }
+
+    private static void SepararEndpointCentral(
+        string endpoint,
+        int puertoPredeterminado,
+        out string servidor,
+        out int puerto)
+    {
+        var valor = endpoint?.Trim() ?? string.Empty;
+        var separador = valor.LastIndexOf(':');
+        servidor = separador >= 0 ? valor[..separador].Trim() : valor;
+        puerto = puertoPredeterminado;
+        if (separador >= 0
+            && (!int.TryParse(valor[(separador + 1)..], out puerto)
+                || puerto is < 1024 or > 65535))
+        {
+            throw new ArgumentException("El puerto del servidor central no es valido.");
+        }
+
+        if (servidor.Contains(':', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("El nombre del servidor central no es valido.");
+        }
+    }
+
+    internal static string SeleccionarEndpointCentral(
+        JsonNode? cuerpo,
+        string rutaPermisos,
+        string servidorActual,
+        int puertoActual)
+    {
+        // Prioriza el unico campo visible del formulario de ajustes.
+        return cuerpo?["rutaPermisos"] is JsonValue
+            ? rutaPermisos
+            : $"{LeerTexto(cuerpo, "servidorCentral", servidorActual)}:{LeerEntero(cuerpo, "puertoServidorCentral", puertoActual)}";
     }
 
     internal static string CrearAvisoConexion(bool permisosInaccesibles, bool scriptsInaccesibles)
@@ -1619,6 +1859,23 @@ public sealed class ServidorLocalWeb : IDisposable
     private ResultadoGuardarPermisos GuardarPermisos(JsonNode permisos)
     {
         var permisosNormalizados = NormalizarPermisos(permisos);
+        if (!_usarArtefactosLocales)
+        {
+            try
+            {
+                _servicioDatosCentralizados.GuardarPermisos(permisosNormalizados);
+                return new ResultadoGuardarPermisos(true, string.Empty);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException
+                or IOException
+                or ArgumentException)
+            {
+                return new ResultadoGuardarPermisos(
+                    false,
+                    ServicioRedaccionSecretos.Sanitizar(ex.Message));
+            }
+        }
+
         var ruta = ObtenerRutaPermisosCompleta(CargarConfiguracion());
         if (RutaPermisosInaccesible(ruta))
         {

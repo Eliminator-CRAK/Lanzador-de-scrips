@@ -1,0 +1,33 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Aplicacion WPF para administrar el servidor central. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>servidor.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\Recursos\IconoLanzador.ico</ApplicationIcon>
+    <AssemblyName>LanzadorScripts.Servidor</AssemblyName>
+    <RootNamespace>LanzadorScripts.Servidor.Administracion</RootNamespace>
+    <Version>1.8.0</Version>
+    <AssemblyVersion>1.8.0.0</AssemblyVersion>
+    <FileVersion>1.8.0.0</FileVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compartido\LanzadorScripts.Protocolo\LanzadorScripts.Protocolo.csproj" />
+    <ProjectReference Include="..\LanzadorScripts.Servidor.Core\LanzadorScripts.Servidor.Core.csproj" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.10" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="..\..\Recursos\IconoLanzador.ico" Link="Recursos\IconoLanzador.ico" />
+  </ItemGroup>
+</Project>
