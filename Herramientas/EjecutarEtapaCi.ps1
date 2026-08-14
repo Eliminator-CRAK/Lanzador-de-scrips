@@ -202,6 +202,8 @@ function Publicar-Aplicacion {
             Write-Host 'Certificado de firma preparado correctamente.'
             & "$PSScriptRoot\PublicarPortable.ps1" `
                 -CertThumbprint $certificado.Thumbprint
+            & "$PSScriptRoot\PublicarServidor.ps1" `
+                -CertThumbprint $certificado.Thumbprint
         }
         finally {
             if ($certificadoImportado) {
@@ -231,6 +233,9 @@ function Publicar-Aplicacion {
         & "$PSScriptRoot\PublicarPortable.ps1" `
             -CertThumbprint '' `
             -AllowUnsignedForDev
+        & "$PSScriptRoot\PublicarServidor.ps1" `
+            -CertThumbprint $huellaFirmaEsperada `
+            -AllowUnsignedForDev
     }
 }
 
@@ -259,11 +264,11 @@ function Remove-ConfianzaCertificadoFirmaCi {
 }
 
 function Verificar-Artefacto {
-    # Comprueba el MSI, el portable y sus firmas.
+    # Comprueba los paquetes cliente y servidor y sus firmas.
     $carpeta = Join-Path $raizRepositorio 'publicacion'
     $archivosEsperados = @(
-        (Join-Path $carpeta 'LanzadorScripts-1.7.2-x64.msi'),
-        (Join-Path $carpeta 'LanzadorScripts_Portable-1.7.2-x64.exe')
+        (Join-Path $carpeta 'LanzadorScripts-1.8.0-x64.msi'),
+        (Join-Path $carpeta 'LanzadorScripts_Portable-1.8.0-x64.exe')
     )
     foreach ($archivo in $archivosEsperados) {
         if (-not (Test-Path -LiteralPath $archivo)) {
@@ -286,6 +291,84 @@ function Verificar-Artefacto {
 
         Get-FileHash -LiteralPath $archivo -Algorithm SHA256 | Format-List
     }
+
+    $zipServidor = Join-Path $raizRepositorio `
+        'publicacion-servidor\LanzadorScripts_Servidor-1.8.0-x64.zip'
+    if (-not (Test-Path -LiteralPath $zipServidor -PathType Leaf)) {
+        throw 'No se genero el paquete ZIP del servidor.'
+    }
+
+    Add-Type -AssemblyName System.IO.Compression
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($zipServidor)
+    $temporal = Join-Path $env:RUNNER_TEMP "LanzadorScriptsServidor-$PID"
+    try {
+        $esperadas = [System.Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+        foreach ($nombre in @(
+                'Servicio/LanzadorScripts.Servidor.Servicio.exe',
+                'LanzadorScripts.Servidor.exe',
+                'Instalar-Servidor.ps1',
+                'Desinstalar-Servidor.ps1',
+                'Crear-ConfiguracionCliente.ps1',
+                'LEEME-Servidor.txt',
+                'SHA256SUMS.txt')) {
+            [void]$esperadas.Add($nombre)
+        }
+        if ($env:RELEASE_BUILD -eq 'true') {
+            [void]$esperadas.Add('LanzadorScripts-CodeSigning-Public.cer')
+        }
+
+        foreach ($entrada in $zip.Entries) {
+            $nombre = $entrada.FullName.Replace('\', '/')
+            if ([string]::IsNullOrWhiteSpace($nombre) -or
+                [System.IO.Path]::IsPathRooted($nombre) -or
+                $nombre.Split('/') -contains '..' -or
+                -not $esperadas.Remove($nombre)) {
+                throw "El ZIP servidor contiene una entrada inesperada: $nombre"
+            }
+        }
+        if ($esperadas.Count -ne 0) {
+            throw "Faltan archivos en el ZIP servidor: $([string]::Join(', ', $esperadas))"
+        }
+
+        [System.IO.Directory]::CreateDirectory($temporal) | Out-Null
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipServidor, $temporal, $false)
+        $lineas = Get-Content -LiteralPath (Join-Path $temporal 'SHA256SUMS.txt')
+        $archivosPaquete = @(Get-ChildItem -LiteralPath $temporal -Recurse -File |
+            Where-Object { $_.Name -ne 'SHA256SUMS.txt' })
+        if ($lineas.Count -ne $archivosPaquete.Count) {
+            throw 'SHA256SUMS.txt no cubre todos los archivos del paquete servidor.'
+        }
+        foreach ($archivo in $archivosPaquete) {
+            $relativa = [System.IO.Path]::GetRelativePath($temporal, $archivo.FullName).Replace('\', '/')
+            $hash = (Get-FileHash -LiteralPath $archivo.FullName -Algorithm SHA256).Hash
+            if ($lineas -notcontains "$hash  $relativa") {
+                throw "El hash interno no coincide para $relativa."
+            }
+        }
+
+        if ($env:RELEASE_BUILD -eq 'true') {
+            foreach ($relativa in @(
+                    'Servicio\LanzadorScripts.Servidor.Servicio.exe',
+                    'LanzadorScripts.Servidor.exe',
+                    'Instalar-Servidor.ps1',
+                    'Desinstalar-Servidor.ps1',
+                    'Crear-ConfiguracionCliente.ps1')) {
+                $firma = Get-AuthenticodeSignature -LiteralPath (Join-Path $temporal $relativa)
+                if ($firma.Status -ne 'Valid' -or $null -eq $firma.TimeStamperCertificate) {
+                    throw "La firma interna de $relativa no es valida: $($firma.Status)."
+                }
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+        if ([System.IO.Directory]::Exists($temporal)) {
+            Remove-Item -LiteralPath $temporal -Recurse -Force
+        }
+    }
+
+    Get-FileHash -LiteralPath $zipServidor -Algorithm SHA256 | Format-List
 }
 
 Push-Location $raizRepositorio

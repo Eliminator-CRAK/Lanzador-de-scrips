@@ -456,6 +456,60 @@ namespace
         return encontrado;
     }
 
+    // Finaliza auxiliares que siguen ejecutandose dentro de la sesion cerrada.
+    void TerminarProcesosEnRuta(const std::wstring& ruta)
+    {
+        const std::wstring completa = ObtenerRutaCompleta(ruta);
+        HANDLE captura = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (captura == INVALID_HANDLE_VALUE)
+        {
+            RegistrarLog(L"runtime.limpieza.captura_error");
+            return;
+        }
+
+        PROCESSENTRY32W entrada{};
+        entrada.dwSize = sizeof(entrada);
+        if (Process32FirstW(captura, &entrada))
+        {
+            do
+            {
+                if (entrada.th32ProcessID == GetCurrentProcessId())
+                {
+                    continue;
+                }
+
+                HANDLE proceso = OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                    FALSE,
+                    entrada.th32ProcessID);
+                if (proceso == nullptr)
+                {
+                    continue;
+                }
+
+                std::vector<wchar_t> buffer(32768);
+                DWORD longitud = static_cast<DWORD>(buffer.size());
+                if (QueryFullProcessImageNameW(proceso, 0, buffer.data(), &longitud))
+                {
+                    const std::wstring ejecutable = ObtenerRutaCompleta(
+                        std::wstring(buffer.data(), longitud));
+                    if (EmpiezaPorRuta(ejecutable, completa))
+                    {
+                        RegistrarLog(
+                            L"runtime.limpieza.proceso_finalizado",
+                            L"pid=" + std::to_wstring(entrada.th32ProcessID));
+                        TerminateProcess(proceso, ERROR_PROCESS_ABORTED);
+                        WaitForSingleObject(proceso, 3000);
+                    }
+                }
+
+                CloseHandle(proceso);
+            } while (Process32NextW(captura, &entrada));
+        }
+
+        CloseHandle(captura);
+    }
+
     // Elimina un arbol sin atravesar enlaces ni salir de la raiz autorizada.
     bool EliminarArbolSeguroUnaVez(
         const std::wstring& ruta,
@@ -1366,9 +1420,9 @@ namespace
     }
 
     // Espera un tiempo limitado a que terminen procesos auxiliares.
-    bool EsperarRutaSinProcesos(const std::wstring& ruta)
+    bool EsperarRutaSinProcesos(const std::wstring& ruta, ULONGLONG tiempoMaximoMs)
     {
-        const ULONGLONG limite = GetTickCount64() + TiempoMaximoLimpiezaMs;
+        const ULONGLONG limite = GetTickCount64() + tiempoMaximoMs;
         do
         {
             if (!HayProcesoEnRuta(ruta))
@@ -1413,7 +1467,12 @@ namespace
             return;
         }
 
-        if (EsperarRutaSinProcesos(entorno.raizPrograma))
+        if (!EsperarRutaSinProcesos(entorno.raizPrograma, 3000))
+        {
+            TerminarProcesosEnRuta(entorno.raizPrograma);
+        }
+
+        if (EsperarRutaSinProcesos(entorno.raizPrograma, 5000))
         {
             EliminarArbolSeguroConReintentos(
                 entorno.raizPrograma,

@@ -10,9 +10,11 @@ __pycache__/
 Recursos/WebView2/
 publicacion/
 publicacion_*/
+publicacion-servidor/
 ArtefactosGenerados/
 /*.obj
 semgrep-results.json
+.semgrep-results.json
 gitleaks-report*
 ReleaseAssets/
 Instalador/Debug/
@@ -29,6 +31,10 @@ mcp_servers.*.txt
 *.pfx
 *.p12
 *.snk
+*.db
+*.db-wal
+*.db-shm
+*.key.dpapi
 *.lanzadorconfig
 **/permisos.json
 **/catalogo-scripts.json

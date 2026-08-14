@@ -39,7 +39,7 @@ EXCEPCIONES = (
         ),
         ruta="ClienteWeb/assets/index-DgdNDMM1.js",
         linea=127,
-        sha256="995434598F4B913C7E86E92DA9BDEE1A6235E9A487EABEE1D7F209BDFBC5173E",
+        sha256="8B7A8AE7C0A41CD392DD439844F47FFC9472C7C52876C19BACDF7CE863D85794",
         motivo=(
             "Falso positivo de baja confianza en AnimatePresence de Framer Motion; "
             "el codigo detectado usa Map y Set."
@@ -53,7 +53,7 @@ EXCEPCIONES_ERRORES = (
         ruta="VentanaPrincipal.xaml.cs",
         tipo="Syntax error",
         lineas=(1,),
-        sha256="3288F339DB6616D0EE96C8F533F6565AA2B63357939F8893B6F649273459E875",
+        sha256="E1FEE4DEB2A8C0E9B9502A084770E8EB6EA52486061557085F1008C31776DAC6",
         motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
     ),
     ExcepcionErrorSemgrep(
@@ -67,7 +67,7 @@ EXCEPCIONES_ERRORES = (
         ruta="ClienteWeb/assets/index-DgdNDMM1.js",
         tipo="PartialParsing",
         lineas=(119, 119),
-        sha256="995434598F4B913C7E86E92DA9BDEE1A6235E9A487EABEE1D7F209BDFBC5173E",
+        sha256="8B7A8AE7C0A41CD392DD439844F47FFC9472C7C52876C19BACDF7CE863D85794",
         motivo="El parser JavaScript omite dos expresiones del bundle minificado.",
     ),
 )

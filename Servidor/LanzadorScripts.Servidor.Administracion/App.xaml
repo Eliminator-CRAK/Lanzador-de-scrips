@@ -1,0 +1,99 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Recursos visuales de la consola del servidor. -->
+<Application x:Class="LanzadorScripts.Servidor.Administracion.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <SolidColorBrush x:Key="Fondo" Color="#0D0F12" />
+        <SolidColorBrush x:Key="Navegacion" Color="#15181D" />
+        <SolidColorBrush x:Key="Superficie" Color="#1B1F25" />
+        <SolidColorBrush x:Key="SuperficieAlt" Color="#22272E" />
+        <SolidColorBrush x:Key="Borde" Color="#343B44" />
+        <SolidColorBrush x:Key="Texto" Color="#F3F4F6" />
+        <SolidColorBrush x:Key="TextoSecundario" Color="#9CA3AF" />
+        <SolidColorBrush x:Key="Azul" Color="#2563EB" />
+        <SolidColorBrush x:Key="Verde" Color="#059669" />
+        <SolidColorBrush x:Key="Rojo" Color="#DC2626" />
+        <SolidColorBrush x:Key="Ambar" Color="#D97706" />
+
+        <Style TargetType="Window">
+            <Setter Property="Background" Value="{StaticResource Fondo}" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource SuperficieAlt}" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Raiz"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Raiz" Property="Background" Value="#2B323B" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Raiz" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#101318" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
+            <Setter Property="CaretBrush" Value="{StaticResource Texto}" />
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#101318" />
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style TargetType="DatePicker">
+            <Setter Property="Background" Value="#101318" />
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource Superficie}" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
+            <Setter Property="RowBackground" Value="{StaticResource Superficie}" />
+            <Setter Property="AlternatingRowBackground" Value="#20252C" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#303640" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#252B33" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
+            <Setter Property="Padding" Value="9,7" />
+        </Style>
+    </Application.Resources>
+</Application>

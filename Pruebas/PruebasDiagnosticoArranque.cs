@@ -2,6 +2,7 @@
 // Descripcion: Comprueba el arranque en segundo plano y los avisos de rutas remotas.
 
 using LanzadorScripts.Servicios;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace LanzadorScripts.Pruebas;
@@ -59,6 +60,25 @@ public sealed class PruebasDiagnosticoArranque
         Assert.Contains("No se pudo leer permisos.json", mensaje, StringComparison.Ordinal);
         Assert.Contains("token=[oculto]", mensaje, StringComparison.Ordinal);
         Assert.DoesNotContain("abc123", mensaje, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AjustesPriorizanElEndpointVisibleDelServidorCentral()
+    {
+        var cuerpo = new JsonObject
+        {
+            ["rutaPermisos"] = "servidor-nuevo:49000",
+            ["servidorCentral"] = "servidor-antiguo",
+            ["puertoServidorCentral"] = 47831
+        };
+
+        var endpoint = ServidorLocalWeb.SeleccionarEndpointCentral(
+            cuerpo,
+            "servidor-nuevo:49000",
+            "servidor-antiguo",
+            47831);
+
+        Assert.Equal("servidor-nuevo:49000", endpoint);
     }
 
     [Fact]

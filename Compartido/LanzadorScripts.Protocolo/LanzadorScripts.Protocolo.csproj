@@ -1,0 +1,12 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Contratos y transporte seguro compartidos por clientes y servidor. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>LanzadorScripts.Protocolo</AssemblyName>
+    <RootNamespace>LanzadorScripts.Protocolo</RootNamespace>
+    <Version>1.8.0</Version>
+  </PropertyGroup>
+</Project>

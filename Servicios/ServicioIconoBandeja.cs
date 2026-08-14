@@ -62,7 +62,7 @@ public sealed class ServicioIconoBandeja : IDisposable
         menu.Items.Add(CrearOpcion("Maximizar", maximizar));
         menu.Items.Add(CrearOpcion("Minimizar", minimizar));
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(CrearOpcion("Cerrar LanzadorScripts", cerrar));
+        menu.Items.Add(CrearOpcion("Cerrar", cerrar));
         return menu;
     }
 

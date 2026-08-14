@@ -382,8 +382,8 @@ try {
     $appFiles = @($files | Where-Object {
         ($_.FileName -split '\|')[-1].Equals('LanzadorScripts.exe', [System.StringComparison]::OrdinalIgnoreCase)
     })
-    if ($appFiles.Count -ne 1 -or $appFiles[0].Version -ne '1.7.2.0') {
-        throw 'El MSI no contiene exactamente un LanzadorScripts.exe con version 1.7.2.0.'
+    if ($appFiles.Count -ne 1 -or $appFiles[0].Version -ne '1.8.0.0') {
+        throw 'El MSI no contiene exactamente un LanzadorScripts.exe con version 1.8.0.0.'
     }
 
     $features = @(Get-MsiRows `

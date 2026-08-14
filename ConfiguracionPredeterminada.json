@@ -1,8 +1,10 @@
 {
   "_autor": "Alex Roman",
   "_descripcion": "Configuracion predeterminada embebida en el ejecutable publicado.",
-  "VersionConfiguracion": 2,
+  "VersionConfiguracion": 3,
   "RutaScripts": "\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\SCRIPS",
   "RutaPermisos": "\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS",
+  "ServidorCentral": "MAD002MICROPRU.mad.ae.aena.es",
+  "PuertoServidorCentral": 47831,
   "MaximoEjecucionesParalelas": 5
 }

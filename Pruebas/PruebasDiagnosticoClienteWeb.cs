@@ -62,7 +62,7 @@ public sealed class PruebasDiagnosticoClienteWeb
 
         Assert.Contains("ObtenerEstadoCargaAjustes()", codigo, StringComparison.Ordinal);
         Assert.Contains("Abriendo Configuración Avanzada...", codigo, StringComparison.Ordinal);
-        Assert.Contains("Comprobando permisos y rutas remotas", codigo, StringComparison.Ordinal);
+        Assert.Contains("Comprobando el servidor central y la carpeta de scripts", codigo, StringComparison.Ordinal);
         Assert.Contains("No se pudo abrir Ajustes a tiempo", codigo, StringComparison.Ordinal);
         Assert.Contains("rutasPendientes = new Set(rutasEsperadas)", codigo, StringComparison.Ordinal);
         Assert.Contains("respuesta.clone().json()", codigo, StringComparison.Ordinal);

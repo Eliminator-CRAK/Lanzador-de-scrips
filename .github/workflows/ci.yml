@@ -38,16 +38,28 @@ jobs:
         run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa PrepararPowerShell
 
       - name: Restore
-        run: dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
+        shell: powershell
+        run: |
+          dotnet restore .\Pruebas\LanzadorScripts.Pruebas.csproj
+          dotnet restore .\Servidor\LanzadorScripts.Servidor.Servicio\LanzadorScripts.Servidor.Servicio.csproj
+          dotnet restore .\Servidor\LanzadorScripts.Servidor.Administracion\LanzadorScripts.Servidor.Administracion.csproj
 
       - name: Build Release
-        run: dotnet build .\LanzadorScripts.csproj -c Release --no-restore
+        shell: powershell
+        run: |
+          dotnet build .\LanzadorScripts.csproj -c Release --no-restore
+          dotnet build .\Servidor\LanzadorScripts.Servidor.Servicio\LanzadorScripts.Servidor.Servicio.csproj -c Release --no-restore
+          dotnet build .\Servidor\LanzadorScripts.Servidor.Administracion\LanzadorScripts.Servidor.Administracion.csproj -c Release --no-restore
 
       - name: Test
         run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
 
       - name: Audit NuGet packages
-        run: dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+        shell: powershell
+        run: |
+          dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+          dotnet list .\Servidor\LanzadorScripts.Servidor.Servicio\LanzadorScripts.Servidor.Servicio.csproj package --vulnerable --include-transitive --no-restore
+          dotnet list .\Servidor\LanzadorScripts.Servidor.Administracion\LanzadorScripts.Servidor.Administracion.csproj package --vulnerable --include-transitive --no-restore
 
       - name: Verify Visual C++ x64
         shell: powershell
@@ -68,3 +80,15 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_BUILD: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
         run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarArtefacto
+
+      - name: Upload signed deliverables
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: LanzadorScripts-${{ github.sha }}
+          path: |
+            publicacion/LanzadorScripts-1.8.0-x64.msi
+            publicacion/LanzadorScripts_Portable-1.8.0-x64.exe
+            publicacion-servidor/LanzadorScripts_Servidor-1.8.0-x64.zip
+          if-no-files-found: error
+          retention-days: 30

@@ -26,6 +26,7 @@ reviews:
     - "!**/bin/**"
     - "!**/obj/**"
     - "!publicacion*/**"
+    - "!publicacion-servidor/**"
     - "!ArtefactosGenerados/**"
     - "!Recursos/WebView2/**"
     - "!ClienteWeb/assets/**"
@@ -52,11 +53,31 @@ reviews:
       instructions: >-
         Revisa condiciones de carrera, bloqueo entre procesos, escritura
         atomica, restauracion .bak y conservacion del ConjuntoId en la pareja.
-    - path: "Servicios/ServicioAuditoria.cs"
+    - path: "Servicios/ServicioAuditoriaCentral.cs"
       instructions: >-
-        Revisa fallo cerrado antes de crear procesos, eventos CreateNew, limites,
-        ACL remotas, inmutabilidad, cola solo en memoria, reintentos y cierre
-        compartido de 30 segundos. La auditoria remota nunca debe eliminarse.
+        Revisa fallo cerrado antes de crear procesos, confirmacion en la base central,
+        limites, cola solo en memoria, reintentos, idempotencia y cierre limitado a
+        30 segundos. Los eventos pendientes no deben persistir en el cliente.
+    - path: "Servidor/LanzadorScripts.Servidor.Core/RepositorioServidor.cs"
+      instructions: >-
+        Revisa transacciones, consultas parametrizadas, paginacion exacta, cifrado
+        autenticado de filas, indices HMAC, concurrencia SQLite, copias consistentes
+        y comprobacion completa de integridad fuera de las rutas de salud frecuentes.
+    - path: "Servidor/**/*.cs"
+      instructions: >-
+        Revisa autenticacion SSPI, autorizacion administrativa, cifrado autenticado,
+        concurrencia SQLite, DPAPI de maquina, limites, retencion, copias y que los
+        errores remotos no revelen rutas ni datos internos.
+    - path: "Compartido/LanzadorScripts.Protocolo/**/*.cs"
+      instructions: >-
+        Trata el transporte como un protocolo de seguridad. Comprueba limites,
+        duplicados JSON, compatibilidad de version, cancelacion, autenticacion mutua
+        y correlacion estricta entre solicitud y respuesta.
+    - path: "Servidor/Distribucion/**/*.ps1"
+      instructions: >-
+        Revisa elevacion, servicio LocalSystem, firewall de dominio, rutas confinadas,
+        puntos de reanalisis, actualizaciones atomicas y ausencia de secretos o claves
+        privadas dentro del paquete distribuido.
     - path: "Servicios/**/*Rutas*.cs"
       instructions: >-
         Comprueba traversal, rutas UNC, normalizacion Windows, reparse points,

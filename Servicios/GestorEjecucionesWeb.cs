@@ -30,14 +30,14 @@ public sealed class GestorEjecucionesWeb : IDisposable
     };
 
     private readonly ConcurrentDictionary<Guid, EjecucionWeb> _ejecuciones = new();
-    private readonly ServicioAuditoria _servicioAuditoria;
+    private readonly IServicioAuditoria _servicioAuditoria;
     private readonly ServicioSeguridadScripts _servicioSeguridadScripts;
     private readonly ServicioBrokerElevado _servicioBrokerElevado = new();
     private readonly string _rutaStaging;
     private int _desechado;
 
     public GestorEjecucionesWeb(
-        ServicioAuditoria servicioAuditoria,
+        IServicioAuditoria servicioAuditoria,
         ServicioSeguridadScripts servicioSeguridadScripts,
         string? rutaStaging = null)
     {

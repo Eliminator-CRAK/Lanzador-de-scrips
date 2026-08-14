@@ -445,6 +445,8 @@ public sealed class ServicioConfiguracion
         {
             configuracion.RutaScripts = configuracionPredeterminada.RutaScripts;
             configuracion.RutaPermisos = configuracionPredeterminada.RutaPermisos;
+            configuracion.ServidorCentral = configuracionPredeterminada.ServidorCentral;
+            configuracion.PuertoServidorCentral = configuracionPredeterminada.PuertoServidorCentral;
             configuracion.VersionConfiguracion = ConfiguracionLanzador.VersionActual;
             return;
         }

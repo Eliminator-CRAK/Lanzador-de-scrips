@@ -4,6 +4,14 @@
   <Folder Name="/Pruebas/">
     <Project Path="Pruebas/LanzadorScripts.Pruebas.csproj" />
   </Folder>
+  <Folder Name="/Compartido/">
+    <Project Path="Compartido/LanzadorScripts.Protocolo/LanzadorScripts.Protocolo.csproj" />
+  </Folder>
+  <Folder Name="/Servidor/">
+    <Project Path="Servidor/LanzadorScripts.Servidor.Core/LanzadorScripts.Servidor.Core.csproj" />
+    <Project Path="Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj" />
+    <Project Path="Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj" />
+  </Folder>
   <Project Path="Instalador/LanzadorScripts.Instalador.vdproj" Type="Installer">
     <Build />
   </Project>

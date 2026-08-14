@@ -18,7 +18,6 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
 using LanzadorScripts.Servicios;
-using Clipboard = System.Windows.Clipboard;
 using MessageBox = System.Windows.MessageBox;
 using Panel = System.Windows.Controls.Panel;
 using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
@@ -54,6 +53,7 @@ public partial class VentanaPrincipal : Window
     private ulong _idNavegacionActual;
     private string _origenNavegacionActual = string.Empty;
     private string? _rutaPerfilWebView2;
+    private VentanaAuditoria? _ventanaAuditoria;
     private WindowState _estadoAntesOcultar = WindowState.Normal;
     private bool _inicioProgramado;
     private bool _cargaClienteEnCurso;
@@ -74,6 +74,7 @@ public partial class VentanaPrincipal : Window
         _ = _servicioLogInicio.RegistrarAsync(
             "aplicacion.bandeja_lista",
             "El icono de la bandeja quedo disponible.");
+        PreviewKeyDown += VentanaPrincipal_PreviewKeyDown;
     }
 
     protected override void OnContentRendered(EventArgs e)
@@ -162,12 +163,11 @@ public partial class VentanaPrincipal : Window
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerDiagnosticoErroresCliente());
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(endpoint.TokenApiInterno));
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelDiagnosticoEjecucion());
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerMejorasInterfazScripts());
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelPermisosSubcarpetas());
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAvisosConfiguracionApp());
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerExportacionConfiguracionGestionada());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoTokenMaestro());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoAuditoria());
                 await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerEstadoCargaAjustes());
                 _webViewConfigurada = coreWebView2;
             }
@@ -562,10 +562,11 @@ public partial class VentanaPrincipal : Window
         Exception? errorLiberacion = null;
         try
         {
-            if (servidor is not null)
-            {
-                await Task.Run(servidor.Dispose);
-            }
+            _ventanaAuditoria?.Close();
+            _ventanaAuditoria = null;
+            VistaCliente.Dispose();
+            await _servicioArranqueWebView2.LimpiarPerfilSesionAsync(_rutaPerfilWebView2);
+            _rutaPerfilWebView2 = null;
         }
         catch (Exception ex)
         {
@@ -574,9 +575,10 @@ public partial class VentanaPrincipal : Window
 
         try
         {
-            VistaCliente.Dispose();
-            await _servicioArranqueWebView2.LimpiarPerfilSesionAsync(_rutaPerfilWebView2);
-            _rutaPerfilWebView2 = null;
+            if (servidor is not null)
+            {
+                await Task.Run(servidor.Dispose).WaitAsync(TimeSpan.FromSeconds(12));
+            }
         }
         catch (Exception ex)
         {
@@ -612,7 +614,8 @@ public partial class VentanaPrincipal : Window
         _servidorLocalIntegrado = null;
         try
         {
-            servidor?.Dispose();
+            _ventanaAuditoria?.Close();
+            _ventanaAuditoria = null;
         }
         catch
         {
@@ -623,6 +626,14 @@ public partial class VentanaPrincipal : Window
             VistaCliente.Dispose();
             _servicioArranqueWebView2.LimpiarPerfilSesionSinEspera(_rutaPerfilWebView2);
             _rutaPerfilWebView2 = null;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            servidor?.Dispose();
         }
         catch
         {
@@ -749,9 +760,9 @@ public partial class VentanaPrincipal : Window
         }
 
         var mensaje = LeerMensajeWeb(e);
-        if (mensaje == "generarTokenMaestro")
+        if (mensaje == "mostrarAuditoria")
         {
-            MostrarTokenMaestro();
+            MostrarAuditoria();
             return;
         }
 
@@ -819,44 +830,34 @@ public partial class VentanaPrincipal : Window
         }
     }
 
-    private async void MostrarTokenMaestro()
+    private void VentanaPrincipal_PreviewKeyDown(
+        object sender,
+        System.Windows.Input.KeyEventArgs e)
     {
-        try
+        if (e.Key == Key.M
+            && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
+            && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)
+            && !Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
         {
-            var endpoint = _endpointServicio ?? await ObtenerEndpointBackendAsync();
-            _endpointServicio = endpoint;
-            using var cliente = await CrearClienteServicioAsync(endpoint);
-            var tokenAdmin = await ObtenerTokenAdminAsync(cliente);
-            using var peticion = new HttpRequestMessage(HttpMethod.Post, "/api/token-maestro/generar")
-            {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json")
-            };
-            peticion.Headers.TryAddWithoutValidation("Authorization", "Bearer " + tokenAdmin);
-            using var respuesta = await cliente.SendAsync(peticion);
-            var json = await respuesta.Content.ReadAsStringAsync();
-            if (!respuesta.IsSuccessStatusCode)
-            {
-                throw new InvalidOperationException(ExtraerErrorApi(json));
-            }
+            e.Handled = true;
+            MostrarAuditoria();
+        }
+    }
 
-            using var documento = JsonDocument.Parse(json);
-            var token = documento.RootElement.GetProperty("token").GetString() ?? string.Empty;
-            Clipboard.SetText(token);
-            var tokenParcial = token.Length > 18 ? token[..18] + "..." : "[copiado]";
-            MessageBox.Show(
-                $"Token maestro generado y copiado al portapapeles.\n\nReferencia: {tokenParcial}\nPuede reutilizarse mientras siga firmado y protegido.",
-                "Token maestro",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-        catch (Exception ex)
+    private void MostrarAuditoria()
+    {
+        if (_ventanaAuditoria is { IsLoaded: true })
         {
-            MessageBox.Show(
-                ex.Message,
-                "Token maestro",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            _ventanaAuditoria.Activate();
+            return;
         }
+
+        _ventanaAuditoria = new VentanaAuditoria
+        {
+            Owner = this
+        };
+        _ventanaAuditoria.Closed += (_, _) => _ventanaAuditoria = null;
+        _ventanaAuditoria.Show();
     }
 
     public async void ImportarPaqueteConfiguracion(string rutaArchivo)
@@ -867,7 +868,7 @@ public partial class VentanaPrincipal : Window
             var informacion = new FileInfo(rutaSegura);
             if (informacion.Length > ServicioPaquetesConfiguracion.LongitudMaximaContenido)
             {
-                throw new InvalidOperationException("El paquete de configuracion supera el limite de 16 MiB.");
+                throw new InvalidOperationException("El paquete de configuracion supera el limite permitido.");
             }
 
             var endpoint = _endpointServicio ?? await ObtenerEndpointBackendAsync();
@@ -1293,86 +1294,9 @@ public partial class VentanaPrincipal : Window
             """;
     }
 
-    private static string ObtenerPanelDiagnosticoEjecucion()
-    {
-        // Registra un panel oculto para consultar diagnostico de ejecucion.
-        return """
-            (() => {
-                window.addEventListener('DOMContentLoaded', () => {
-                    if (document.getElementById('ls-diagnostico-panel')) {
-                        return;
-                    }
-
-                    const panel = document.createElement('div');
-                    panel.id = 'ls-diagnostico-panel';
-                    panel.style.cssText = 'display:none;position:fixed;right:18px;bottom:18px;width:min(560px,calc(100vw - 36px));max-height:70vh;overflow:auto;z-index:2147483647;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:14px;font:12px Segoe UI,Arial,sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.45);';
-                    document.body.appendChild(panel);
-
-                    async function cargar() {
-                        panel.innerHTML = '<div style="margin-bottom:10px;font-weight:600">Diagnóstico de ejecución</div><div>Cargando scripts...</div>';
-                        const scripts = await fetch('/api/scripts').then(r => r.json());
-                        const escapeHtml = valor => String(valor ?? '')
-                            .replaceAll('&', '&amp;')
-                            .replaceAll('<', '&lt;')
-                            .replaceAll('>', '&gt;')
-                            .replaceAll('"', '&quot;')
-                            .replaceAll("'", '&#39;');
-                        const opciones = (Array.isArray(scripts) ? scripts : [])
-                            .map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.nombre)}</option>`)
-                            .join('');
-                        panel.innerHTML = `
-                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-                                <strong style="flex:1">Diagnóstico de ejecución</strong>
-                                <button id="ls-diagnostico-cerrar" style="background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:4px 8px">Cerrar</button>
-                            </div>
-                            <select id="ls-diagnostico-script" style="width:100%;background:#030712;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:7px;margin-bottom:10px">${opciones}</select>
-                            <pre id="ls-diagnostico-salida" style="white-space:pre-wrap;background:#030712;border:1px solid #374151;border-radius:6px;padding:10px;min-height:120px"></pre>`;
-
-                        const selector = panel.querySelector('#ls-diagnostico-script');
-                        const salida = panel.querySelector('#ls-diagnostico-salida');
-                        const cerrar = panel.querySelector('#ls-diagnostico-cerrar');
-                        cerrar.addEventListener('click', () => panel.style.display = 'none');
-
-                        async function consultar() {
-                            if (!selector.value) {
-                                salida.textContent = 'No hay scripts disponibles.';
-                                return;
-                            }
-
-                            salida.textContent = 'Consultando...';
-                            const datos = await fetch('/api/diagnostico-ejecucion?scriptId=' + encodeURIComponent(selector.value)).then(r => r.json());
-                            salida.textContent = JSON.stringify(datos, null, 2);
-                        }
-
-                        selector.addEventListener('change', consultar);
-                        await consultar();
-                    }
-
-                    async function alternarDiagnostico() {
-                        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-                        if (panel.style.display === 'block') {
-                            try {
-                                await cargar();
-                            } catch (error) {
-                                panel.innerHTML = '<strong>Diagnóstico de ejecución</strong><pre style="white-space:pre-wrap">No se pudo cargar el diagnóstico.</pre>';
-                            }
-                        }
-                    }
-
-                    window.addEventListener('keydown', async (evento) => {
-                        if (evento.ctrlKey && evento.shiftKey && !evento.altKey && evento.key.toLowerCase() === 'm') {
-                            evento.preventDefault();
-                            await alternarDiagnostico();
-                        }
-                    });
-                });
-            })();
-            """;
-    }
-
     private static string ObtenerMejorasInterfazScripts()
     {
-        // Anade refresco rapido y ajustes de firmas sin guardar estado de desarrollo.
+        // Anade refresco rapido y ajustes del catalogo central.
         return """
             (() => {
                 const idPanelFirmas = 'ls-ajustes-firmas';
@@ -1733,7 +1657,7 @@ public partial class VentanaPrincipal : Window
 
                 async function cargarPanelFirmas(panel) {
                     const estado = panel.querySelector('#ls-firmas-estado');
-                    estado.textContent = 'Cargando catalogo firmado...';
+                    estado.textContent = 'Cargando catalogo central...';
 
                     try {
                         const [ajustes, modo, catalogo] = await Promise.all([
@@ -1757,7 +1681,7 @@ public partial class VentanaPrincipal : Window
 
                 async function guardarPanelFirmas(panel) {
                     const estado = panel.querySelector('#ls-firmas-estado');
-                    estado.textContent = 'Guardando politica firmada...';
+                    estado.textContent = 'Guardando politica central...';
 
                     try {
                         const ajustes = await apiJson('/api/ajustes');
@@ -1769,7 +1693,7 @@ public partial class VentanaPrincipal : Window
                             body: JSON.stringify(permisos)
                         });
 
-                        estado.textContent = 'Politica firmada correctamente.';
+                        estado.textContent = 'Politica guardada correctamente.';
                     } catch (error) {
                         estado.textContent = error.message || 'No se pudo guardar la politica.';
                     }
@@ -1782,7 +1706,7 @@ public partial class VentanaPrincipal : Window
                         return;
                     }
 
-                    estado.textContent = 'Cifrando y firmando catalogo...';
+                    estado.textContent = 'Calculando hashes y publicando catalogo...';
                     try {
                         await apiJson('/api/catalogo-scripts', {
                             method: 'POST',
@@ -1791,7 +1715,7 @@ public partial class VentanaPrincipal : Window
                         });
                         const catalogo = await apiJson('/api/catalogo-scripts');
                         renderizarCatalogo(panel, catalogo);
-                        estado.textContent = `Catalogo firmado con ${scriptIds.length} script(s).`;
+                        estado.textContent = `Catalogo central actualizado con ${scriptIds.length} script(s).`;
                     } catch (error) {
                         estado.textContent = error.message || 'No se pudo publicar el catalogo.';
                     }
@@ -1854,7 +1778,7 @@ public partial class VentanaPrincipal : Window
                     const panel = document.createElement('section');
                     panel.id = idPanelFirmas;
                     panel.innerHTML = `
-                        <h3 class="text-sm font-medium text-gray-200 uppercase tracking-wider mb-4">Catálogo firmado y desarrollo</h3>
+                        <h3 class="text-sm font-medium text-gray-200 uppercase tracking-wider mb-4">Catálogo central y desarrollo</h3>
                         <div class="bg-black/20 border border-white/5 rounded-lg p-5 space-y-5">
                             <div class="flex items-center justify-between gap-4">
                                 <div>
@@ -1870,7 +1794,7 @@ public partial class VentanaPrincipal : Window
                                 <div class="flex items-center justify-between gap-3 mb-2">
                                     <div>
                                         <label class="text-sm font-medium text-gray-200 block">Scripts autorizados</label>
-                                        <span class="text-xs text-gray-500">Selecciona PS1, BAT y CMD para cifrar y firmar el catálogo externo.</span>
+                                        <span class="text-xs text-gray-500">Selecciona PS1, BAT y CMD para autorizar sus hashes en la base central.</span>
                                     </div>
                                     <div class="flex items-center gap-2 shrink-0">
                                         <button id="ls-seleccionar-todos-catalogo" type="button" class="px-2 py-1 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors text-[11px] font-medium">Seleccionar todos</button>
@@ -1894,7 +1818,7 @@ public partial class VentanaPrincipal : Window
                                 <span id="ls-firmas-estado" class="text-xs text-gray-500"></span>
                                 <div class="flex items-center gap-2">
                                     <button id="ls-guardar-firmas" type="button" class="px-3 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors text-xs font-medium">Guardar política</button>
-                                    <button id="ls-publicar-catalogo" type="button" class="px-3 py-2 rounded-lg bg-emerald-700 text-white hover:bg-emerald-600 transition-colors text-xs font-medium">Firmar scripts y publicar catálogo</button>
+                                    <button id="ls-publicar-catalogo" type="button" class="px-3 py-2 rounded-lg bg-emerald-700 text-white hover:bg-emerald-600 transition-colors text-xs font-medium">Publicar catálogo central</button>
                                 </div>
                             </div>
                         </div>`;
@@ -2536,7 +2460,7 @@ public partial class VentanaPrincipal : Window
                         etiqueta.dataset.lsRutaPermisos = '1';
                     }
 
-                    const textoEtiqueta = 'Ruta de la carpeta de permisos';
+                    const textoEtiqueta = 'Servidor central';
                     if (etiqueta.textContent !== textoEtiqueta) {
                         etiqueta.textContent = textoEtiqueta;
                     }
@@ -2544,12 +2468,12 @@ public partial class VentanaPrincipal : Window
                     const contenedor = etiqueta.parentElement;
                     const entrada = contenedor?.querySelector('input');
                     const ayuda = contenedor?.querySelector('p');
-                    const placeholder = '\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS';
+                    const placeholder = 'MAD002MICROPRU.mad.ae.aena.es:47831';
                     if (entrada && entrada.placeholder !== placeholder) {
                         entrada.placeholder = placeholder;
                     }
 
-                    const textoAyuda = 'La aplicación busca permisos.json y catalogo-scripts.json únicamente dentro de esta carpeta.';
+                    const textoAyuda = 'Nombre DNS o equipo del servidor y puerto del servicio LanzadorScripts.';
                     if (ayuda && ayuda.textContent !== textoAyuda) {
                         ayuda.textContent = textoAyuda;
                     }
@@ -2726,12 +2650,12 @@ public partial class VentanaPrincipal : Window
                     const cicloActual = cicloCarga;
                     temporizadorLento = window.setTimeout(() => {
                         if (cicloCarga === cicloActual && rutasPendientes.size > 0) {
-                            mostrarEstado('Comprobando permisos y rutas remotas. La interfaz sigue disponible.');
+                            mostrarEstado('Comprobando el servidor central y la carpeta de scripts.');
                         }
                     }, 900);
                     temporizadorLimite = window.setTimeout(() => {
                         if (cicloCarga === cicloActual && rutasPendientes.size > 0) {
-                            mostrarEstado('No se pudo abrir Ajustes a tiempo. Revisa la carpeta remota de permisos o usa el token de emergencia.', true);
+                            mostrarEstado('No se pudo abrir Ajustes a tiempo. Revisa el servicio central y la conexión de dominio.', true);
                         }
                     }, 5000);
                 }
@@ -2805,15 +2729,15 @@ public partial class VentanaPrincipal : Window
             """;
     }
 
-    private static string ObtenerAtajoTokenMaestro()
+    private static string ObtenerAtajoAuditoria()
     {
-        // Registra el atajo oculto que pide a WPF generar el token maestro.
+        // Registra el atajo que abre la consulta central de auditoria.
         return """
             (() => {
                 window.addEventListener('keydown', (evento) => {
-                    if (evento.ctrlKey && evento.altKey && evento.shiftKey && evento.key.toLowerCase() === 'm') {
+                    if (evento.ctrlKey && evento.shiftKey && !evento.altKey && evento.key.toLowerCase() === 'm') {
                         evento.preventDefault();
-                        window.chrome.webview.postMessage('generarTokenMaestro');
+                        window.chrome.webview.postMessage('mostrarAuditoria');
                     }
                 });
             })();

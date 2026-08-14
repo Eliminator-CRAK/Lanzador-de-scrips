@@ -175,10 +175,11 @@ public sealed class PruebasLanzadorScripts
         Assert.DoesNotContain("RuntimeInstaller", proyecto, StringComparison.Ordinal);
         Assert.DoesNotContain("WebView2RuntimeInstaller", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("dotnet-runtime-", publicacion, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("InicializarArtefactos", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("InicializarArtefactos", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("artefactos.key", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.7.2-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.8.0-x64.msi", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));
@@ -233,14 +234,16 @@ public sealed class PruebasLanzadorScripts
         var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
         var codigo = File.ReadAllText(rutaVentana);
 
-        Assert.Contains("Firmar scripts y publicar catálogo", codigo, StringComparison.Ordinal);
+        Assert.Contains("Publicar catálogo central", codigo, StringComparison.Ordinal);
+        Assert.Contains("autorizar sus hashes en la base central", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("Cifrando y firmando catalogo", codigo, StringComparison.Ordinal);
         Assert.Contains("/api/catalogo-scripts", codigo, StringComparison.Ordinal);
         Assert.Contains("data-ls-catalogo-checkbox", codigo, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/hashes-batch", codigo, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/firmas-powershell", codigo, StringComparison.Ordinal);
-        Assert.Contains("Ruta de la carpeta de permisos", codigo, StringComparison.Ordinal);
+        Assert.Contains("Servidor central", codigo, StringComparison.Ordinal);
         Assert.Contains(
-            "busca permisos.json y catalogo-scripts.json únicamente dentro de esta carpeta",
+            "Nombre DNS o equipo del servidor y puerto del servicio LanzadorScripts",
             codigo,
             StringComparison.Ordinal);
     }
@@ -600,7 +603,9 @@ public sealed class PruebasLanzadorScripts
 
         Assert.Contains(@"\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\SCRIPS", configuracion, StringComparison.Ordinal);
         Assert.Contains(@"\\\\MAD002MICROPRU.mad.ae.aena.es\\R$\\PERMISOS", configuracion, StringComparison.Ordinal);
-        Assert.Contains("\"VersionConfiguracion\": 2", configuracion, StringComparison.Ordinal);
+        Assert.Contains("\"VersionConfiguracion\": 3", configuracion, StringComparison.Ordinal);
+        Assert.Contains("\"ServidorCentral\": \"MAD002MICROPRU.mad.ae.aena.es\"", configuracion, StringComparison.Ordinal);
+        Assert.Contains("\"PuertoServidorCentral\": 47831", configuracion, StringComparison.Ordinal);
         Assert.Equal(@"\\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS", modelo.RutaScripts);
         Assert.Equal(RutasArtefactosProtegidos.CarpetaPredeterminada, modelo.RutaPermisos);
         var rutas = new ServicioValidacionScripts().ResolverRutasArtefactos(modelo.RutaPermisos);
@@ -1031,7 +1036,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void ImportacionContenidoLimitaTamanoYRechazaManipulacion()
+    public void ImportacionContenidoLimitaTamanoYRechazaCamposDesconocidos()
     {
         using var entorno = EntornoPruebas.Crear();
         using var rsa = RSA.Create(3072);
@@ -1041,7 +1046,7 @@ public sealed class PruebasLanzadorScripts
         var paquete = servicio.Exportar(configuracion, CrearPermisosAdmin());
         var contenido = Encoding.UTF8.GetString(Convert.FromBase64String(paquete.ContenidoBase64));
         var manipulado = JsonNode.Parse(contenido)!.AsObject();
-        manipulado["Firma"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(384));
+        manipulado["secreto"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
         Assert.Throws<InvalidOperationException>(() =>
             servicio.ImportarContenido(manipulado.ToJsonString(), new ConfiguracionLanzador()));
@@ -1052,7 +1057,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PaqueteConfiguracionFirmadoImportaAdminShareOperativo()
+    public void PaqueteConfiguracionImportaConexionSinPermisosNiSecretos()
     {
         using var entorno = EntornoPruebas.Crear();
         using var rsa = RSA.Create(3072);
@@ -1068,7 +1073,10 @@ public sealed class PruebasLanzadorScripts
         var contenido = Encoding.UTF8.GetString(Convert.FromBase64String(paquete.ContenidoBase64));
         var importacion = servicio.ImportarContenido(contenido, new ConfiguracionLanzador());
         Assert.Equal(configuracion.RutaScripts, importacion.Configuracion.RutaScripts);
-        Assert.NotNull(importacion.Permisos);
+        Assert.Null(importacion.Permisos);
+        Assert.DoesNotContain("permisos", contenido, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("firma", contenido, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("clave", contenido, StringComparison.OrdinalIgnoreCase);
 
         var configuracionAdminShare = new ConfiguracionLanzador
         {
