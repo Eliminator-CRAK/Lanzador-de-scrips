@@ -9,8 +9,11 @@
         Height="780"
         MinWidth="980"
         MinHeight="650"
+        Background="{StaticResource Fondo}"
+        Foreground="{StaticResource Texto}"
+        FontFamily="Segoe UI"
         WindowStartupLocation="CenterScreen">
-    <Grid>
+    <Grid Background="{StaticResource Fondo}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="224" />
             <ColumnDefinition Width="*" />
@@ -31,7 +34,7 @@
                     </Border>
                     <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="LanzadorScripts" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock Text="Servidor 1.8.0" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
+                        <TextBlock Text="Servidor 1.8.1" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
                     </StackPanel>
                 </StackPanel>
 
@@ -66,7 +69,7 @@
                 <RowDefinition Height="*" />
                 <RowDefinition Height="34" />
             </Grid.RowDefinitions>
-            <Border Grid.Row="0" BorderBrush="#292E36" BorderThickness="0,0,0,1" Padding="24,0">
+            <Border Grid.Row="0" Background="{StaticResource Fondo}" BorderBrush="#292E36" BorderThickness="0,0,0,1" Padding="24,0">
                 <Grid>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock x:Name="TituloVista" Text="Resumen del servidor" FontSize="21" FontWeight="SemiBold" />

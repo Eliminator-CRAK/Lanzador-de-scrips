@@ -248,7 +248,6 @@ if (-not [System.IO.File]::Exists($rutaConfiguracion)) {
         maximoConexiones = 64
         diasRetencionAuditoria = 3650
         rutaScripts = [System.IO.Path]::GetFullPath($RutaScripts)
-        administradoresIniciales = @('MAD00\aroperez_micro', 'PCERA\alero')
     } | ConvertTo-Json -Depth 4
     [System.IO.File]::WriteAllText(
         $rutaConfiguracion,
@@ -309,6 +308,11 @@ Invoke-Nativo -Ejecutable $sc -Argumentos @('description', $nombreServicio, 'Ser
 Invoke-Nativo -Ejecutable $sc -Argumentos @('failure', $nombreServicio, 'reset=', '86400', 'actions=', 'restart/5000/restart/15000/restart/60000')
 Invoke-Nativo -Ejecutable $sc -Argumentos @('failureflag', $nombreServicio, '1')
 Invoke-Nativo -Ejecutable $sc -Argumentos @('sidtype', $nombreServicio, 'unrestricted')
+
+$cuentaAdministradora = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+Invoke-Nativo -Ejecutable $servicioDestino -Argumentos @(
+    '--preparar-administrador-inicial',
+    $cuentaAdministradora)
 
 $netsh = Join-Path $env:SystemRoot 'System32\netsh.exe'
 Invoke-Nativo -Ejecutable $netsh -Argumentos @(

@@ -24,7 +24,7 @@ public sealed class PruebasPaqueteServidor
         var publicacion = Leer("Herramientas", "PublicarServidor.ps1");
 
         Assert.Contains("LanzadorScripts_Servidor-$version-x64.zip", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$version = '1.8.0'", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$version = '1.8.1'", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt", publicacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-CodeSigning-Public.cer", publicacion, StringComparison.Ordinal);
         Assert.Contains("Instalar-Servidor.ps1", publicacion, StringComparison.Ordinal);
@@ -60,10 +60,42 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("$huellaFirmaEsperada", instalador, StringComparison.Ordinal);
         Assert.Contains("$puertoEfectivo", instalador, StringComparison.Ordinal);
         Assert.Contains("TryGetInt32", instalador, StringComparison.Ordinal);
-        Assert.Contains(@"MAD00\aroperez_micro", instalador, StringComparison.Ordinal);
-        Assert.Contains(@"PCERA\alero", instalador, StringComparison.Ordinal);
+        Assert.DoesNotContain("administradoresIniciales", instalador, StringComparison.Ordinal);
+        Assert.Contains("--preparar-administrador-inicial", instalador, StringComparison.Ordinal);
+        Assert.Contains("WindowsIdentity]::GetCurrent().Name", instalador, StringComparison.Ordinal);
+        Assert.Contains("PrepararAdministradorInicial", control, StringComparison.Ordinal);
         Assert.Contains("failureflag", control, StringComparison.Ordinal);
         Assert.Contains("ignorarError: true", control, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsolaServidorUsaCanalLocalYTemaOscuroCompleto()
+    {
+        var codigo = Leer(
+            "Servidor",
+            "LanzadorScripts.Servidor.Administracion",
+            "MainWindow.xaml.cs");
+        var ventana = Leer(
+            "Servidor",
+            "LanzadorScripts.Servidor.Administracion",
+            "MainWindow.xaml");
+        var estilos = Leer(
+            "Servidor",
+            "LanzadorScripts.Servidor.Administracion",
+            "App.xaml");
+        var canalLocal = Leer(
+            "Servidor",
+            "LanzadorScripts.Servidor.Core",
+            "ServidorAdministracionLocal.cs");
+
+        Assert.Contains("new ClienteAdministracionLocal", codigo, StringComparison.Ordinal);
+        Assert.Contains("NamedPipeServerStreamAcl.Create", canalLocal, StringComparison.Ordinal);
+        Assert.Contains("WellKnownSidType.LocalSystemSid", canalLocal, StringComparison.Ordinal);
+        Assert.Contains("WellKnownSidType.BuiltinAdministratorsSid", canalLocal, StringComparison.Ordinal);
+        Assert.Contains("GetImpersonationUserName", canalLocal, StringComparison.Ordinal);
+        Assert.Contains("Background=\"{StaticResource Fondo}\"", ventana, StringComparison.Ordinal);
+        Assert.Contains("<Style TargetType=\"TextBlock\">", estilos, StringComparison.Ordinal);
+        Assert.Contains("<Style TargetType=\"DataGridCell\">", estilos, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -108,12 +140,12 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("LanzadorScripts.Servidor.Servicio.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Servidor.Administracion.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("PublicarServidor.ps1", etapas, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Servidor-1.8.0-x64.zip", etapas, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Servidor-1.8.1-x64.zip", etapas, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt no cubre", etapas, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ProyectosServidorPublicanVersion180()
+    public void ProyectosServidorPublicanVersion181()
     {
         foreach (var ruta in new[]
                  {
@@ -122,7 +154,7 @@ public sealed class PruebasPaqueteServidor
                      new[] { "Servidor", "LanzadorScripts.Servidor.Administracion", "LanzadorScripts.Servidor.Administracion.csproj" }
                  })
         {
-            Assert.Contains("<Version>1.8.0</Version>", Leer(ruta), StringComparison.Ordinal);
+            Assert.Contains("<Version>1.8.1</Version>", Leer(ruta), StringComparison.Ordinal);
         }
     }
 

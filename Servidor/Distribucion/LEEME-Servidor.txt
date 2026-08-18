@@ -1,11 +1,13 @@
 (Autor: Alex Roman)
-Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.0.
+Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.1.
 
 INSTALACION INTERACTIVA
 1. Extraiga el ZIP en el servidor MAD002MICROPRU.
 2. Ejecute LanzadorScripts.Servidor.exe como administrador.
 3. Pulse Instalar. La aplicacion copiara los binarios a C:\Program Files\LanzadorScriptsServidor.
 4. Inicie el servicio y compruebe Resumen, Usuarios, Catalogo y Auditoria.
+
+La cuenta elevada que instala o inicia el servicio sera el primer administrador. La base, la clave y la configuracion se crean automaticamente. El archivo de configuracion no contiene una lista de administradores.
 
 INSTALACION AUTOMATICA
 Ejecute como administrador:

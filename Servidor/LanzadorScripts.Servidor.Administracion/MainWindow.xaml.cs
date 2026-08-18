@@ -3,10 +3,12 @@
 
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using LanzadorScripts.Protocolo;
 using LanzadorScripts.Servidor.Core;
@@ -19,7 +21,7 @@ public partial class MainWindow : Window
     private readonly ServicioControlWindows _controlServicio = new();
     private readonly RutasServidor _rutas = new();
     private readonly ConfiguracionServidor _configuracion;
-    private readonly ClienteServidorCentral _cliente;
+    private readonly ClienteAdministracionLocal _cliente;
     private readonly GeneradorCatalogoServidor _generadorCatalogo = new();
     private readonly ObservableCollection<UsuarioServidorCentral> _usuarios = [];
     private readonly ObservableCollection<AuditoriaVista> _auditoria = [];
@@ -31,10 +33,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _configuracion = new AlmacenConfiguracionServidor(_rutas).CargarOCrear();
-        _cliente = new ClienteServidorCentral(
-            Environment.MachineName,
-            _configuracion.Puerto,
-            TimeSpan.FromSeconds(8));
+        _cliente = new ClienteAdministracionLocal(TimeSpan.FromSeconds(8));
         TextoCuentaActual.Text = WindowsIdentity.GetCurrent().Name;
         TextoRutasServidor.Text = $"Base: {_rutas.RutaBaseDatos}\nCopias: {_rutas.RutaCopias}\nLogs: {_rutas.RutaLogs}";
         TablaUsuarios.ItemsSource = _usuarios;
@@ -45,6 +44,15 @@ public partial class MainWindow : Window
         FiltroResultadoAuditoria.SelectedIndex = 0;
         Vistas.SelectedIndex = 0;
         Loaded += MainWindow_Loaded;
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        // Solicita una barra de titulo oscura coherente con la consola.
+        base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        var modoOscuro = 1;
+        _ = DwmSetWindowAttribute(hwnd, 20, ref modoOscuro, sizeof(int));
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -132,7 +140,7 @@ public partial class MainWindow : Window
             }
 
             var estado = respuesta.Datos;
-            TextoEstadoConexion.Text = $"Canal Windows cifrado disponible en {estado.Equipo}.";
+            TextoEstadoConexion.Text = $"Canal administrativo local protegido disponible en {estado.Equipo}.";
             MetricaBase.Text = estado.BaseIntegra ? "Íntegra" : "Revisar";
             MetricaBase.Foreground = estado.BaseIntegra
                 ? (Brush)FindResource("Verde")
@@ -601,7 +609,7 @@ public partial class MainWindow : Window
 
     private void LimpiarMetricas()
     {
-        MetricaBase.Text = "--";
+        AplicarEstadoBaseLocal();
         MetricaUsuarios.Text = "--";
         MetricaAuditoria.Text = "--";
         MetricaPuerto.Text = _configuracion.Puerto.ToString();
@@ -617,6 +625,15 @@ public partial class MainWindow : Window
         CampoMaximoUsuario.Text = "5";
         CampoCarpetasUsuario.Clear();
         CampoUsuarioActivo.IsChecked = true;
+    }
+
+    private void AplicarEstadoBaseLocal()
+    {
+        // Distingue una base creada de un fallo exclusivo del canal administrativo.
+        var creada = File.Exists(_rutas.RutaBaseDatos);
+        MetricaBase.Text = creada ? "Creada" : "Pendiente";
+        MetricaBase.Foreground = (Brush)FindResource(creada ? "Verde" : "Ambar");
+        MetricaBase.ToolTip = _rutas.RutaBaseDatos;
     }
 
     private static string? ObtenerContenidoCombo(ComboBox combo)
@@ -659,4 +676,11 @@ public partial class MainWindow : Window
             MessageBoxButton.OK,
             MessageBoxImage.Error);
     }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int atributo,
+        ref int valor,
+        int tamano);
 }

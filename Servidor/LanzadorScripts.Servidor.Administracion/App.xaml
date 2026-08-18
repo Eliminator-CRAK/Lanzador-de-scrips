@@ -22,6 +22,12 @@
             <Setter Property="Foreground" Value="{StaticResource Texto}" />
             <Setter Property="FontFamily" Value="Segoe UI" />
         </Style>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+        </Style>
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource SuperficieAlt}" />
             <Setter Property="Foreground" Value="{StaticResource Texto}" />
@@ -63,16 +69,31 @@
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="#101318" />
-            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
             <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
             <Setter Property="Padding" Value="7,5" />
             <Setter Property="MinHeight" Value="34" />
         </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{StaticResource SuperficieAlt}" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="Padding" Value="8,5" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#315B8A" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
         <Style TargetType="DatePicker">
             <Setter Property="Background" Value="#101318" />
-            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
             <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
             <Setter Property="MinHeight" Value="34" />
+        </Style>
+        <Style TargetType="DatePickerTextBox">
+            <Setter Property="Background" Value="#101318" />
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="CaretBrush" Value="{StaticResource Texto}" />
         </Style>
         <Style TargetType="DataGrid">
             <Setter Property="Background" Value="{StaticResource Superficie}" />
@@ -94,6 +115,17 @@
             <Setter Property="Foreground" Value="{StaticResource Texto}" />
             <Setter Property="BorderBrush" Value="{StaticResource Borde}" />
             <Setter Property="Padding" Value="9,7" />
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="{StaticResource Texto}" />
+            <Setter Property="BorderBrush" Value="#303640" />
+            <Setter Property="Padding" Value="7,5" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#315B8A" />
+                    <Setter Property="Foreground" Value="White" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Application.Resources>
 </Application>

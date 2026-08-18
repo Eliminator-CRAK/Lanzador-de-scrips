@@ -22,12 +22,6 @@ public sealed class ConfiguracionServidor
 
     public string RutaScripts { get; set; } = @"R:\SCRIPS";
 
-    public List<string> AdministradoresIniciales { get; set; } =
-    [
-        @"MAD00\aroperez_micro",
-        @"PCERA\alero"
-    ];
-
     public void Validar()
     {
         if (Version != VersionActual)
@@ -50,16 +44,6 @@ public sealed class ConfiguracionServidor
         }
 
         RutaScripts = Path.TrimEndingDirectorySeparator(Path.GetFullPath(RutaScripts.Trim()));
-        AdministradoresIniciales = AdministradoresIniciales
-            .Select(NormalizarCuenta)
-            .Where(cuenta => cuenta.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(20)
-            .ToList();
-        if (AdministradoresIniciales.Count == 0)
-        {
-            throw new InvalidDataException("Debe configurarse al menos un administrador inicial.");
-        }
     }
 
     public static string NormalizarCuenta(string? cuenta)
@@ -81,6 +65,7 @@ public sealed class ConfiguracionServidor
 
 public sealed class AlmacenConfiguracionServidor
 {
+    private const string PropiedadAdministradoresLegada = "administradoresIniciales";
     private static readonly UTF8Encoding Utf8Estricto = new(false, true);
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
@@ -116,9 +101,15 @@ public sealed class AlmacenConfiguracionServidor
             throw new InvalidDataException("El archivo de configuracion del servidor tiene un tamano no valido.");
         }
 
-        var configuracion = JsonSerializer.Deserialize<ConfiguracionServidor>(bytes, OpcionesJson)
+        var bytesCompatibles = RetirarAdministradoresLegados(bytes, out var migrada);
+        var configuracion = JsonSerializer.Deserialize<ConfiguracionServidor>(bytesCompatibles, OpcionesJson)
             ?? throw new InvalidDataException("La configuracion del servidor esta vacia.");
         configuracion.Validar();
+        if (migrada)
+        {
+            Guardar(configuracion);
+        }
+
         return configuracion;
     }
 
@@ -152,6 +143,70 @@ public sealed class AlmacenConfiguracionServidor
             if (File.Exists(temporal))
             {
                 File.Delete(temporal);
+            }
+        }
+    }
+
+    private static byte[] RetirarAdministradoresLegados(byte[] contenido, out bool migrada)
+    {
+        // Migra la propiedad antigua sin aceptar campos o claves duplicadas.
+        using var documento = JsonDocument.Parse(
+            contenido,
+            new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 16
+            });
+        if (documento.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("La configuracion del servidor debe ser un objeto JSON.");
+        }
+
+        migrada = false;
+        var propiedades = new HashSet<string>(StringComparer.Ordinal);
+        using var flujo = new MemoryStream(contenido.Length);
+        using (var escritor = new Utf8JsonWriter(flujo))
+        {
+            escritor.WriteStartObject();
+            foreach (var propiedad in documento.RootElement.EnumerateObject())
+            {
+                if (!propiedades.Add(propiedad.Name))
+                {
+                    throw new JsonException($"La propiedad '{propiedad.Name}' esta duplicada.");
+                }
+
+                if (propiedad.NameEquals(PropiedadAdministradoresLegada))
+                {
+                    ValidarAdministradoresLegados(propiedad.Value);
+                    migrada = true;
+                    continue;
+                }
+
+                propiedad.WriteTo(escritor);
+            }
+
+            escritor.WriteEndObject();
+        }
+
+        return flujo.ToArray();
+    }
+
+    private static void ValidarAdministradoresLegados(JsonElement administradores)
+    {
+        // Valida el formato retirado antes de ignorarlo durante la migracion.
+        if (administradores.ValueKind != JsonValueKind.Array
+            || administradores.GetArrayLength() is <= 0 or > 20)
+        {
+            throw new JsonException("La lista antigua de administradores no tiene un formato valido.");
+        }
+
+        foreach (var elemento in administradores.EnumerateArray())
+        {
+            if (elemento.ValueKind != JsonValueKind.String
+                || ConfiguracionServidor.NormalizarCuenta(elemento.GetString()).Length == 0)
+            {
+                throw new JsonException("La lista antigua de administradores contiene una cuenta no valida.");
             }
         }
     }

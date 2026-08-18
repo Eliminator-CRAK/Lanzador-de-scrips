@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.0. -->
+<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.1. -->
 
 # Manual de administradores y desarrolladores
 
@@ -11,16 +11,16 @@
 4. Distribuir el MSI o la portable del cliente.
 5. Importar la configuracion cliente y probar con una cuenta nominal.
 
-No se deben mezclar clientes 1.8.0 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central.
+No se deben mezclar clientes 1.8.1 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central.
 
 ## Cliente instalado
 
 ```powershell
-msiexec /i LanzadorScripts-1.8.0-x64.msi
-msiexec /i LanzadorScripts-1.8.0-x64.msi /qn /norestart
-msiexec /i LanzadorScripts-1.8.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-1.8.0-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.8.0-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.8.1-x64.msi
+msiexec /i LanzadorScripts-1.8.1-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.8.1-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-1.8.1-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.8.1-x64.msi /qn /norestart
 ```
 
 La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. Las actualizaciones conservan configuracion. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
@@ -95,4 +95,4 @@ El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certifi
 
 GitLab es el repositorio principal para ramas y merge requests. GitHub es una replica del mismo commit. Cada cambio debe superar pruebas, auditoria NuGet, Semgrep estricto, Gitleaks y revision CodeRabbit antes de fusionarse. No se utiliza Aikido.
 
-La release `v1.8.0` debe publicar bytes identicos en ambos proveedores y contener los tres entregables, hashes, certificado publico y notas de despliegue.
+La release `v1.8.1` debe publicar bytes identicos en ambos proveedores y contener los tres entregables, hashes, certificado publico y notas de despliegue.

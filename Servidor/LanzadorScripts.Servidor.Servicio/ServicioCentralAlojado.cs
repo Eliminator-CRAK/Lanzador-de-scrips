@@ -17,6 +17,7 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
     private readonly RegistroServidor _registro;
     private RepositorioServidor? _repositorio;
     private ServidorTcpSeguro? _servidor;
+    private ServidorAdministracionLocal? _administracionLocal;
 
     public ServicioCentralAlojado(
         RutasServidor rutas,
@@ -43,7 +44,9 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
                 CryptographicOperations.ZeroMemory(clave);
             }
 
-            _repositorio.Inicializar();
+            var administradorInicial = new AlmacenAdministradorInicialServidor(_rutas);
+            _repositorio.Inicializar(administradorInicial.Leer());
+            administradorInicial.Eliminar();
             PrepararDatosIniciales(configuracion);
             var integridad = _repositorio.ComprobarIntegridad();
             if (!integridad.Integra)
@@ -54,6 +57,10 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
             var procesador = new ProcesadorSolicitudesServidor(_repositorio);
             _servidor = new ServidorTcpSeguro(configuracion, procesador, _registro.Escribir);
             _servidor.Iniciar();
+            _administracionLocal = new ServidorAdministracionLocal(
+                procesador,
+                _registro.Escribir);
+            _administracionLocal.Iniciar();
             _registro.Escribir("servicio.iniciado", "Base central preparada.");
             return Task.CompletedTask;
         }
@@ -66,6 +73,12 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        if (_administracionLocal is not null)
+        {
+            await _administracionLocal.DisposeAsync();
+            _administracionLocal = null;
+        }
+
         if (_servidor is not null)
         {
             await _servidor.DisposeAsync();

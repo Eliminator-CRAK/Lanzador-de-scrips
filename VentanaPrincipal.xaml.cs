@@ -46,7 +46,8 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioLogInicio _servicioLogInicio = new();
     private readonly ServicioExecutionPolicy _servicioExecutionPolicy = new();
     private readonly Stopwatch _cronometroNavegacion = new();
-    private readonly ServicioIconoBandeja _servicioIconoBandeja;
+    private readonly bool _esPortable = RutasAplicacion.Distribucion.EsPortable;
+    private readonly ServicioIconoBandeja? _servicioIconoBandeja;
     private ServidorLocalWeb? _servidorLocalIntegrado;
     private EndpointServicioLanzador? _endpointServicio;
     private CoreWebView2? _webViewConfigurada;
@@ -65,15 +66,19 @@ public partial class VentanaPrincipal : Window
     public VentanaPrincipal()
     {
         InitializeComponent();
-        _servicioIconoBandeja = new ServicioIconoBandeja(
-            Dispatcher,
-            RestaurarDesdeBandeja,
-            MaximizarDesdeBandeja,
-            MinimizarDesdeBandeja,
-            SolicitarCierreDesdeBandeja);
-        _ = _servicioLogInicio.RegistrarAsync(
-            "aplicacion.bandeja_lista",
-            "El icono de la bandeja quedo disponible.");
+        if (!_esPortable)
+        {
+            _servicioIconoBandeja = new ServicioIconoBandeja(
+                Dispatcher,
+                RestaurarDesdeBandeja,
+                MaximizarDesdeBandeja,
+                MinimizarDesdeBandeja,
+                SolicitarCierreDesdeBandeja);
+            _ = _servicioLogInicio.RegistrarAsync(
+                "aplicacion.bandeja_lista",
+                "El icono de la bandeja quedo disponible.");
+        }
+
         PreviewKeyDown += VentanaPrincipal_PreviewKeyDown;
     }
 
@@ -94,11 +99,19 @@ public partial class VentanaPrincipal : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        // El cierre normal mantiene la aplicacion en segundo plano.
+        // La portable finaliza; la instalada permanece disponible en la bandeja.
         if (!_cierreDefinitivo)
         {
             e.Cancel = true;
-            OcultarEnSegundoPlano();
+            if (_esPortable)
+            {
+                SolicitarCierreDesdeVentana();
+            }
+            else
+            {
+                OcultarEnSegundoPlano();
+            }
+
             return;
         }
 
@@ -353,6 +366,12 @@ public partial class VentanaPrincipal : Window
 
     private void BotonCerrar_Click(object sender, RoutedEventArgs e)
     {
+        if (_esPortable)
+        {
+            SolicitarCierreDesdeVentana();
+            return;
+        }
+
         Close();
     }
 
@@ -432,6 +451,16 @@ public partial class VentanaPrincipal : Window
 
     private async void SolicitarCierreDesdeBandeja()
     {
+        await SolicitarCierreDefinitivoAsync("bandeja");
+    }
+
+    private async void SolicitarCierreDesdeVentana()
+    {
+        await SolicitarCierreDefinitivoAsync("ventana");
+    }
+
+    private async Task SolicitarCierreDefinitivoAsync(string origen)
+    {
         // Confirma el cierre solo cuando hay scripts que se cancelaran.
         if (_cierreEnCurso || _confirmacionCierreAbierta)
         {
@@ -474,7 +503,7 @@ public partial class VentanaPrincipal : Window
             _confirmacionCierreAbierta = false;
         }
 
-        await CerrarDefinitivamenteAsync(ejecuciones.Count, "bandeja");
+        await CerrarDefinitivamenteAsync(ejecuciones.Count, origen);
     }
 
     public async void SolicitarCierrePorMantenimiento()
@@ -587,7 +616,7 @@ public partial class VentanaPrincipal : Window
 
         try
         {
-            _servicioIconoBandeja.Dispose();
+            _servicioIconoBandeja?.Dispose();
         }
         catch (Exception ex)
         {
@@ -641,7 +670,7 @@ public partial class VentanaPrincipal : Window
 
         try
         {
-            _servicioIconoBandeja.Dispose();
+            _servicioIconoBandeja?.Dispose();
         }
         catch
         {

@@ -22,6 +22,9 @@ public sealed class RutasServidor
         RutaLogs = Path.Combine(Raiz, "Logs");
         RutaBaseDatos = Path.Combine(RutaDatos, "LanzadorScripts.db");
         RutaClaveProtegida = Path.Combine(RutaSeguridad, "base-datos.key.dpapi");
+        RutaAdministradorInicialProtegido = Path.Combine(
+            RutaSeguridad,
+            "administrador-inicial.dpapi");
         RutaConfiguracion = Path.Combine(Raiz, "configuracion-servidor.json");
     }
 
@@ -38,6 +41,8 @@ public sealed class RutasServidor
     public string RutaBaseDatos { get; }
 
     public string RutaClaveProtegida { get; }
+
+    public string RutaAdministradorInicialProtegido { get; }
 
     public string RutaConfiguracion { get; }
 

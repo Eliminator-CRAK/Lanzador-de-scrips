@@ -76,12 +76,12 @@ if ($null -eq $propiedadesVersion -or
 
 $versionProductoEsperada = [string]$propiedadesVersion.Version
 $versionArchivoEsperada = [string]$propiedadesVersion.FileVersion
-if ($versionProductoEsperada -ne '1.8.0' -or $versionArchivoEsperada -ne '1.8.0.0') {
-    throw 'La publicacion MSI y portable requiere la version 1.8.0.'
+if ($versionProductoEsperada -ne '1.8.1' -or $versionArchivoEsperada -ne '1.8.1.0') {
+    throw 'La publicacion MSI y portable requiere la version 1.8.1.'
 }
 
-$nombreMsiFinal = 'LanzadorScripts-1.8.0-x64.msi'
-$nombrePortableFinal = 'LanzadorScripts_Portable-1.8.0-x64.exe'
+$nombreMsiFinal = 'LanzadorScripts-1.8.1-x64.msi'
+$nombrePortableFinal = 'LanzadorScripts_Portable-1.8.1-x64.exe'
 $msiCompilado = Join-Path $raiz "Instalador\Release\$nombreMsiFinal"
 $revisionGitEsperada = (& git -C $raiz rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revisionGitEsperada)) {
@@ -934,7 +934,7 @@ function Assert-PublishedMsi {
             $propiedades.ALLUSERS -ne '1' -or
             $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}' -or
             $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1') {
-            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.8.0.'
+            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.8.1.'
         }
     }
     finally {

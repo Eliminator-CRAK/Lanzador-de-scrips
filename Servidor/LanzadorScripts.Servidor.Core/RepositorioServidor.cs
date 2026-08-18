@@ -76,7 +76,7 @@ public sealed class RepositorioServidor : IDisposable
         }.ToString();
     }
 
-    public void Inicializar()
+    public void Inicializar(string? administradorInicial = null)
     {
         ComprobarNoDesechado();
         _rutas.PrepararDirectorios();
@@ -132,7 +132,7 @@ public sealed class RepositorioServidor : IDisposable
             AsegurarMetadato(conexion, transaccion, "conjunto_id", CrearConjuntoId());
             AsegurarMetadato(conexion, transaccion, "revision_permisos", "1");
             AsegurarMetadato(conexion, transaccion, "revision_catalogo", "1");
-            AsegurarPermisosIniciales(conexion, transaccion);
+            AsegurarPermisosIniciales(conexion, transaccion, administradorInicial);
             if (!string.Equals(
                     LeerMetadato(conexion, "version_esquema", transaccion),
                     "2",
@@ -170,7 +170,7 @@ public sealed class RepositorioServidor : IDisposable
             }
 
             return new EstadoServidorCentral(
-                "1.8.0",
+                "1.8.1",
                 Environment.MachineName,
                 true,
                 integridad.Integra,
@@ -185,7 +185,7 @@ public sealed class RepositorioServidor : IDisposable
         catch (Exception ex) when (ex is SqliteException or IOException or CryptographicException)
         {
             return new EstadoServidorCentral(
-                "1.8.0",
+                "1.8.1",
                 Environment.MachineName,
                 false,
                 false,
@@ -790,7 +790,10 @@ public sealed class RepositorioServidor : IDisposable
         return conexion;
     }
 
-    private void AsegurarPermisosIniciales(SqliteConnection conexion, SqliteTransaction transaccion)
+    private void AsegurarPermisosIniciales(
+        SqliteConnection conexion,
+        SqliteTransaction transaccion,
+        string? administradorInicial)
     {
         var total = EjecutarEscalarLong(
             conexion,
@@ -801,25 +804,29 @@ public sealed class RepositorioServidor : IDisposable
             return;
         }
 
+        var cuenta = ConfiguracionServidor.NormalizarCuenta(administradorInicial);
+        if (cuenta.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "No se ha aprovisionado la cuenta administradora necesaria para crear la base.");
+        }
+
         EscribirFila(
             conexion,
             transaccion,
             TablaPermisos,
             "actual",
             new ConfiguracionPermisosDatos([], [], false, "nominal", 5));
-        foreach (var cuenta in _configuracion.AdministradoresIniciales)
-        {
-            InsertarUsuario(
-                conexion,
-                transaccion,
-                new UsuarioServidorCentral(
-                    Guid.NewGuid().ToString("N"),
-                    cuenta,
-                    "admin",
-                    5,
-                    [],
-                    true));
-        }
+        InsertarUsuario(
+            conexion,
+            transaccion,
+            new UsuarioServidorCentral(
+                Guid.NewGuid().ToString("N"),
+                cuenta,
+                "admin",
+                5,
+                [],
+                true));
 
         EscribirFila(
             conexion,

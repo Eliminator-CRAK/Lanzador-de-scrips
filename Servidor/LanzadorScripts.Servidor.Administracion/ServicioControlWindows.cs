@@ -3,7 +3,9 @@
 
 using System.Diagnostics;
 using System.IO;
+using System.Security.Principal;
 using System.ServiceProcess;
+using LanzadorScripts.Servidor.Core;
 
 namespace LanzadorScripts.Servidor.Administracion;
 
@@ -40,6 +42,7 @@ public sealed class ServicioControlWindows
         }
 
         var ejecutable = PrepararBinariosPermanentes();
+        PrepararAdministradorInicial();
         EjecutarSc("create", NombreServicio, "binPath=", $"\"{ejecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "LanzadorScripts Servidor");
         EjecutarSc("description", NombreServicio, "Servicio central cifrado de permisos, catalogo y auditoria.");
         EjecutarSc("failure", NombreServicio, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000");
@@ -71,6 +74,7 @@ public sealed class ServicioControlWindows
 
     public void Iniciar()
     {
+        PrepararAdministradorInicial();
         using var servicio = new ServiceController(NombreServicio);
         servicio.Start();
         servicio.WaitForStatus(ServiceControllerStatus.Running, TiempoEspera);
@@ -110,6 +114,24 @@ public sealed class ServicioControlWindows
         var ruta = candidatos.FirstOrDefault(File.Exists)
             ?? throw new FileNotFoundException("No se encontro LanzadorScripts.Servidor.Servicio.exe junto a la consola.");
         return Path.GetFullPath(ruta);
+    }
+
+    private static void PrepararAdministradorInicial()
+    {
+        // Entrega al servicio la cuenta elevada que creara una base nueva.
+        var ejecutable = Path.Combine(
+            CarpetaInstalacion,
+            "Servicio",
+            "LanzadorScripts.Servidor.Servicio.exe");
+        if (!File.Exists(ejecutable))
+        {
+            throw new FileNotFoundException("No se encontro el servicio instalado.", ejecutable);
+        }
+
+        using var identidad = WindowsIdentity.GetCurrent();
+        EjecutarProceso(
+            ejecutable,
+            ["--preparar-administrador-inicial", identidad.Name]);
     }
 
     private static string PrepararBinariosPermanentes()
