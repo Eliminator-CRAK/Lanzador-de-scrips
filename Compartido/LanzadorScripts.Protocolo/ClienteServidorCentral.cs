@@ -108,8 +108,13 @@ public sealed class ClienteServidorCentral
                 "tiempo_agotado",
                 "El servidor central no respondio dentro del tiempo permitido.");
         }
+        catch (AuthenticationException ex)
+        {
+            return RespuestaTipada<TRespuesta>.Error(
+                "autenticacion_windows",
+                $"Windows no pudo autenticar el canal con el servidor central: {LimitarMensaje(ex.Message)}");
+        }
         catch (Exception ex) when (ex is SocketException
-            or AuthenticationException
             or IOException
             or JsonException)
         {
@@ -117,6 +122,13 @@ public sealed class ClienteServidorCentral
                 "servidor_no_disponible",
                 $"No se pudo establecer una conexion segura con el servidor central: {ex.GetType().Name}.");
         }
+    }
+
+    private static string LimitarMensaje(string mensaje)
+    {
+        // Devuelve un diagnostico breve sin saltos de linea.
+        var valor = mensaje.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return valor.Length <= 300 ? valor : valor[..300];
     }
 
     private void ValidarCanal(NegotiateStream seguro)

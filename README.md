@@ -1,15 +1,15 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 1.8.0
+# LanzadorScripts 1.8.1
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. La version 1.8.0 separa el cliente de un servicio central de Windows que administra permisos, catalogo y auditoria.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. La version 1.8.1 separa el cliente de un servicio central de Windows que administra permisos, catalogo y auditoria.
 
 ## Entregables
 
-- `LanzadorScripts-1.8.0-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-1.8.0-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-1.8.0-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-1.8.1-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-1.8.1-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-1.8.1-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64 y no descargan .NET ni WebView2 durante la ejecucion.
 
@@ -44,18 +44,13 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Extraer `LanzadorScripts_Servidor-1.8.0-x64.zip` en `MAD002MICROPRU`.
+1. Extraer `LanzadorScripts_Servidor-1.8.1-x64.zip` en `MAD002MICROPRU`.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
 3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado y que el firewall de dominio admite TCP 47831.
-4. Abrir la consola servidor, revisar los administradores iniciales y recrear el catalogo desde la carpeta local de scripts.
+4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.
 5. Generar un `.lanzadorconfig` con `Crear-ConfiguracionCliente.ps1` y distribuirlo junto al MSI o la portable.
 
-Administradores iniciales:
-
-```text
-MAD00\aroperez_micro
-PCERA\alero
-```
+La cuenta elevada que realiza la instalacion se registra como primer administrador. La identidad se entrega al servicio mediante un archivo DPAPI de un solo uso, se elimina tras crear o validar la base y no se guarda en `configuracion-servidor.json`.
 
 El archivo `.lanzadorconfig` solo contiene DNS, puerto y ruta de scripts. No contiene permisos, certificados privados ni secretos.
 
@@ -71,9 +66,9 @@ Scripts: \\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS
 
 La cuenta de dominio debe estar activa en la base central y disponer de lectura sobre la carpeta compartida de scripts. La ejecucion queda bloqueada si no se confirman permisos, catalogo o el evento inicial de auditoria.
 
-Los administradores pueden abrir la auditoria con `Ctrl+Shift+M`. La ventana permite filtrar por usuario, fecha, resultado y script. El boton de cerrar de la ventana principal mantiene el cliente en la bandeja; **Cerrar** en el menu de bandeja finaliza la aplicacion.
+Los administradores pueden abrir la auditoria con `Ctrl+Shift+M`. La ventana permite filtrar por usuario, fecha, resultado y script. En la version instalada, el boton de cerrar mantiene el cliente en la bandeja y **Cerrar** en su menu finaliza la aplicacion.
 
-La portable guarda sus datos exclusivamente bajo `%TEMP%\LanzadorScripts\Portable\<sesion>` y elimina la sesion al terminar. En el siguiente arranque limpia sesiones abandonadas cuyo proceso ya no exista.
+La portable no crea icono de bandeja: el boton rojo cierra el proceso. Guarda sus datos exclusivamente bajo `%TEMP%\LanzadorScripts\Portable\<sesion>` y elimina la sesion al terminar. En el siguiente arranque limpia sesiones abandonadas cuyo proceso ya no exista.
 
 ## Compilacion
 

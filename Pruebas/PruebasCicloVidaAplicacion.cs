@@ -43,15 +43,19 @@ public sealed class PruebasCicloVidaAplicacion
     }
 
     [Fact]
-    public void VentanaArrancaDespuesDeMostrarseYSeOcultaAlCerrar()
+    public void CierreDistinguePortableDeInstalada()
     {
         var ventana = File.ReadAllText(ObtenerRutaProyecto("VentanaPrincipal.xaml.cs"));
 
         Assert.Contains("protected override void OnContentRendered", ventana, StringComparison.Ordinal);
         Assert.Contains("DispatcherPriority.ContextIdle", ventana, StringComparison.Ordinal);
         Assert.Contains("e.Cancel = true;", ventana, StringComparison.Ordinal);
+        Assert.Contains("if (_esPortable)", ventana, StringComparison.Ordinal);
+        Assert.Contains("SolicitarCierreDesdeVentana();", ventana, StringComparison.Ordinal);
         Assert.Contains("OcultarEnSegundoPlano();", ventana, StringComparison.Ordinal);
         Assert.Contains("ShowInTaskbar = false;", ventana, StringComparison.Ordinal);
+        Assert.Contains("if (!_esPortable)", ventana, StringComparison.Ordinal);
+        Assert.Contains("ServicioIconoBandeja?", ventana, StringComparison.Ordinal);
         Assert.Contains("SolicitarCierreDesdeBandeja", ventana, StringComparison.Ordinal);
         Assert.Contains("ObtenerEjecucionesActivas()", ventana, StringComparison.Ordinal);
         Assert.Contains("while (ejecuciones.Count > 0)", ventana, StringComparison.Ordinal);
@@ -117,7 +121,7 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("--validar-limpieza-ruta-larga", nativo, StringComparison.Ordinal);
         Assert.Contains("rutaArchivo.size() <= MAX_PATH", nativo, StringComparison.Ordinal);
         Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.0-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.1-x64.exe", publicacion, StringComparison.Ordinal);
 
         var manifiesto = File.ReadAllText(ObtenerRutaProyecto("manifiesto.manifest"));
         Assert.Contains("<ws2:longPathAware>true</ws2:longPathAware>", manifiesto, StringComparison.Ordinal);

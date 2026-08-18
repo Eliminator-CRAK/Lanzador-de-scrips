@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanzadorScripts.Protocolo;
 using LanzadorScripts.Servidor.Core;
@@ -13,6 +14,70 @@ namespace LanzadorScripts.Pruebas;
 
 public sealed class PruebasServidorCentral
 {
+    [Fact]
+    public void ConfiguracionRetiraAdministradoresInicialesLegados()
+    {
+        var raiz = Path.Combine(
+            Path.GetTempPath(),
+            "LanzadorScriptsServidorPruebas",
+            Guid.NewGuid().ToString("N"));
+        var rutas = new RutasServidor(raiz);
+        try
+        {
+            rutas.PrepararDirectorios();
+            var rutaScripts = Path.Combine(raiz, "Scripts");
+            var legado = JsonSerializer.Serialize(new
+            {
+                version = 1,
+                puerto = 47831,
+                maximoConexiones = 64,
+                diasRetencionAuditoria = 3650,
+                rutaScripts,
+                administradoresIniciales = new[] { @"MAD00\aroperez_micro" }
+            });
+            File.WriteAllText(rutas.RutaConfiguracion, legado, new UTF8Encoding(false));
+
+            var configuracion = new AlmacenConfiguracionServidor(rutas).CargarOCrear();
+            var persistida = File.ReadAllText(rutas.RutaConfiguracion, Encoding.UTF8);
+
+            Assert.Equal(rutaScripts, configuracion.RutaScripts, ignoreCase: true);
+            Assert.DoesNotContain("administradoresIniciales", persistida, StringComparison.Ordinal);
+            Assert.DoesNotContain(@"MAD00\aroperez_micro", persistida, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            EliminarDirectorioPruebas(raiz);
+        }
+    }
+
+    [Fact]
+    public void AdministradorInicialSeProtegeYSeConsumeUnaSolaVez()
+    {
+        var raiz = Path.Combine(
+            Path.GetTempPath(),
+            "LanzadorScriptsServidorPruebas",
+            Guid.NewGuid().ToString("N"));
+        var rutas = new RutasServidor(raiz);
+        try
+        {
+            var almacen = new AlmacenAdministradorInicialServidor(
+                rutas,
+                new ProtectorTransformacionPruebas());
+            almacen.Preparar(@"MAD00\aroperez_micro");
+            var contenido = Encoding.UTF8.GetString(
+                File.ReadAllBytes(rutas.RutaAdministradorInicialProtegido));
+
+            Assert.DoesNotContain(@"MAD00\aroperez_micro", contenido, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(@"MAD00\aroperez_micro", almacen.Leer());
+            almacen.Eliminar();
+            Assert.False(File.Exists(rutas.RutaAdministradorInicialProtegido));
+        }
+        finally
+        {
+            EliminarDirectorioPruebas(raiz);
+        }
+    }
+
     [Fact]
     public void BaseCentralCifraUsuariosYPermisos()
     {
@@ -176,7 +241,7 @@ public sealed class PruebasServidorCentral
         try
         {
             using var repositorio = new RepositorioServidor(rutas, configuracion, clave);
-            repositorio.Inicializar();
+            repositorio.Inicializar(@"PCERA\alero");
             Assert.True(repositorio.ComprobarIntegridad().Integra);
             using var conexion = new SqliteConnection($"Data Source={rutas.RutaBaseDatos}");
             conexion.Open();
@@ -440,10 +505,10 @@ public sealed class PruebasServidorCentral
         var administradores = entorno.Repositorio.ListarUsuarios()
             .Where(usuario => usuario.Rol == "admin")
             .ToArray();
-        entorno.Repositorio.EliminarUsuario(administradores[0].Id);
 
+        Assert.Single(administradores);
         Assert.Throws<InvalidOperationException>(() =>
-            entorno.Repositorio.EliminarUsuario(administradores[1].Id));
+            entorno.Repositorio.EliminarUsuario(administradores[0].Id));
     }
 
     [Fact]
@@ -524,6 +589,42 @@ public sealed class PruebasServidorCentral
         }
     }
 
+    private sealed class ProtectorTransformacionPruebas : IProtectorClaveServidor
+    {
+        public byte[] Proteger(ReadOnlySpan<byte> datos)
+        {
+            return Transformar(datos);
+        }
+
+        public byte[] Desproteger(ReadOnlySpan<byte> datos)
+        {
+            return Transformar(datos);
+        }
+
+        private static byte[] Transformar(ReadOnlySpan<byte> datos)
+        {
+            var resultado = datos.ToArray();
+            for (var indice = 0; indice < resultado.Length; indice++)
+            {
+                resultado[indice] ^= 0xA5;
+            }
+
+            return resultado;
+        }
+    }
+
+    private static void EliminarDirectorioPruebas(string ruta)
+    {
+        // Retira los datos temporales creados por cada prueba.
+        try
+        {
+            Directory.Delete(ruta, recursive: true);
+        }
+        catch
+        {
+        }
+    }
+
     private sealed class EntornoServidor : IDisposable
     {
         private EntornoServidor(RutasServidor rutas, RepositorioServidor repositorio)
@@ -553,7 +654,7 @@ public sealed class PruebasServidorCentral
                 rutas,
                 configuracion,
                 RandomNumberGenerator.GetBytes(32));
-            repositorio.Inicializar();
+            repositorio.Inicializar(@"PCERA\alero");
             return new EntornoServidor(rutas, repositorio);
         }
 

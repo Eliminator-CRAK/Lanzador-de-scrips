@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Instalacion y operacion de LanzadorScripts Servidor 1.8.0. -->
+<!-- Descripcion: Instalacion y operacion de LanzadorScripts Servidor 1.8.1. -->
 
 # Manual del servidor
 
@@ -15,7 +15,7 @@ No se necesita SQL Server, Internet, certificado privado de artefactos ni contra
 
 ## Instalacion grafica
 
-1. Extraer `LanzadorScripts_Servidor-1.8.0-x64.zip` en una carpeta local.
+1. Extraer `LanzadorScripts_Servidor-1.8.1-x64.zip` en una carpeta local.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador.
 3. Pulsar **Instalar** y despues **Iniciar** si no se inicia automaticamente.
 4. Comprobar que el resumen indica base integra y canal disponible.
@@ -31,7 +31,7 @@ pwsh -NoProfile -File .\Instalar-Servidor.ps1 `
 
 El script copia los binarios a `C:\Program Files\LanzadorScriptsServidor`, crea el servicio automatico bajo `LocalSystem`, configura recuperacion, agrega una regla de firewall solo para el perfil de dominio y crea el acceso del menu Inicio.
 
-La primera ejecucion crea automaticamente la configuracion, la base y la clave DPAPI. Si la carpeta de scripts existe, genera el catalogo inicial.
+La primera ejecucion crea automaticamente la configuracion, la base y la clave DPAPI. La cuenta elevada que instala o inicia el servicio queda como primer administrador. Su identidad se protege con DPAPI en un archivo de un solo uso que se elimina tras inicializar la base; `configuracion-servidor.json` no contiene administradores. Si la carpeta de scripts existe, genera el catalogo inicial.
 
 ## Configurar clientes
 
