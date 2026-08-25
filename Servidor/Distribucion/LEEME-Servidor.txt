@@ -1,5 +1,5 @@
 (Autor: Alex Roman)
-Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.1.
+Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.2.
 
 INSTALACION INTERACTIVA
 1. Extraiga el ZIP en el servidor MAD002MICROPRU.

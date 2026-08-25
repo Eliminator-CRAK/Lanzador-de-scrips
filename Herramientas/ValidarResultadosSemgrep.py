@@ -39,7 +39,7 @@ EXCEPCIONES = (
         ),
         ruta="ClienteWeb/assets/index-DgdNDMM1.js",
         linea=127,
-        sha256="543D2CA55398CF8D2CE93391DEE297DCCEFA602EB68BEA8B4CD90253F8FDC398",
+        sha256="3997C2C52228F40537FE579431E6369785EE1BD4E48786F8CFE4D04EA95BCF0F",
         motivo=(
             "Falso positivo de baja confianza en AnimatePresence de Framer Motion; "
             "el codigo detectado usa Map y Set."
@@ -67,7 +67,7 @@ EXCEPCIONES_ERRORES = (
         ruta="ClienteWeb/assets/index-DgdNDMM1.js",
         tipo="PartialParsing",
         lineas=(119, 119),
-        sha256="543D2CA55398CF8D2CE93391DEE297DCCEFA602EB68BEA8B4CD90253F8FDC398",
+        sha256="3997C2C52228F40537FE579431E6369785EE1BD4E48786F8CFE4D04EA95BCF0F",
         motivo="El parser JavaScript omite dos expresiones del bundle minificado.",
     ),
 )

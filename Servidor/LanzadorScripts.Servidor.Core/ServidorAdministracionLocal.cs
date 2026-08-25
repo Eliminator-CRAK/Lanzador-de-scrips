@@ -109,10 +109,11 @@ public sealed class ServidorAdministracionLocal : IAsyncDisposable
             limite.CancelAfter(TimeSpan.FromSeconds(30));
             try
             {
-                var cuenta = canal.GetImpersonationUserName();
                 var solicitud = await TransporteProtocolo.LeerAsync<SolicitudServidor>(
                     canal,
                     limite.Token);
+                // Windows expone la identidad del cliente despues de recibir su primera escritura.
+                var cuenta = IdentidadClienteCanalLocal.ObtenerCuenta(canal);
                 var respuesta = _procesador.Procesar(cuenta, solicitud);
                 await TransporteProtocolo.EscribirAsync(canal, respuesta, limite.Token);
             }
