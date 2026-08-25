@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Instalacion y operacion de LanzadorScripts Servidor 1.8.1. -->
+<!-- Descripcion: Instalacion y operacion de LanzadorScripts Servidor 1.8.2. -->
 
 # Manual del servidor
 
@@ -15,7 +15,7 @@ No se necesita SQL Server, Internet, certificado privado de artefactos ni contra
 
 ## Instalacion grafica
 
-1. Extraer `LanzadorScripts_Servidor-1.8.1-x64.zip` en una carpeta local.
+1. Extraer `LanzadorScripts_Servidor-1.8.2-x64.zip` en una carpeta local.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador.
 3. Pulsar **Instalar** y despues **Iniciar** si no se inicia automaticamente.
 4. Comprobar que el resumen indica base integra y canal disponible.

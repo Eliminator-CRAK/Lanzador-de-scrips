@@ -1,12 +1,12 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Uso del cliente LanzadorScripts 1.8.1. -->
+<!-- Descripcion: Uso del cliente LanzadorScripts 1.8.2. -->
 
 # Manual de usuarios
 
 ## Elegir version
 
-- Instalada: ejecutar `LanzadorScripts-1.8.1-x64.msi`. Conserva configuracion y runtimes.
-- Portable: ejecutar `LanzadorScripts_Portable-1.8.1-x64.exe`. Elimina sus datos locales al cerrar.
+- Instalada: ejecutar `LanzadorScripts-1.8.2-x64.msi`. Conserva configuracion y runtimes.
+- Portable: ejecutar `LanzadorScripts_Portable-1.8.2-x64.exe`. Elimina sus datos locales al cerrar.
 
 Ambas variantes necesitan conexion de dominio con el servidor central y acceso de lectura a la carpeta compartida de scripts.
 
@@ -43,4 +43,4 @@ Los administradores pueden pulsar `Ctrl+Shift+M` para consultar la auditoria cen
 - **No se pudo confirmar la auditoria**: el servicio central no pudo guardar el evento y bloquea la ejecucion por seguridad.
 - **Ruta de scripts no disponible**: comprobar permisos de lectura sobre la carpeta compartida.
 
-La version 1.8.1 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.
+La version 1.8.2 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.

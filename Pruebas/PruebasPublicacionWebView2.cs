@@ -50,8 +50,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("status --porcelain --untracked-files=all", publicacion, StringComparison.Ordinal);
         Assert.Contains("Assert-PublishedExecutable", publicacion, StringComparison.Ordinal);
         Assert.Contains("-SufijoProducto '.portable'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.8.1-x64.msi", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.1-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.8.2-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.2-x64.exe", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
         Assert.Contains("obj\\PublicacionStaging", publicacion, StringComparison.Ordinal);
         Assert.Contains("Sustituye la publicacion solo despues de validar todo el staging", publicacion, StringComparison.Ordinal);
@@ -79,13 +79,13 @@ public sealed class PruebasPublicacionWebView2
             "assets",
             "index-DgdNDMM1.js"));
 
-        Assert.Contains("<Version>1.8.1</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.8.1.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.8.1.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<Version>1.8.2</Version>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyVersion>1.8.2.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<FileVersion>1.8.2.0</FileVersion>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("v1.8.1", cliente, StringComparison.Ordinal);
+        Assert.Contains("v1.8.2", cliente, StringComparison.Ordinal);
         Assert.DoesNotContain("v1.2.0", cliente, StringComparison.Ordinal);
     }
 
@@ -147,7 +147,7 @@ public sealed class PruebasPublicacionWebView2
         Assert.DoesNotContain("L\"WebView2\\\\Perfil\"", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Runtime.exe", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_DISTRIBUTION_EXE", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.1-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.2-x64.exe", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("-Variante normal", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("LANZADOR_LIMPIEZA_COMPLETA", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("FOLDERID_ProgramFiles", codigoNativo, StringComparison.Ordinal);

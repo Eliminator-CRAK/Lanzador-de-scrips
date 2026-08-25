@@ -170,7 +170,7 @@ public sealed class RepositorioServidor : IDisposable
             }
 
             return new EstadoServidorCentral(
-                "1.8.1",
+                "1.8.2",
                 Environment.MachineName,
                 true,
                 integridad.Integra,
@@ -185,7 +185,7 @@ public sealed class RepositorioServidor : IDisposable
         catch (Exception ex) when (ex is SqliteException or IOException or CryptographicException)
         {
             return new EstadoServidorCentral(
-                "1.8.1",
+                "1.8.2",
                 Environment.MachineName,
                 false,
                 false,

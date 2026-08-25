@@ -267,8 +267,8 @@ function Verificar-Artefacto {
     # Comprueba los paquetes cliente y servidor y sus firmas.
     $carpeta = Join-Path $raizRepositorio 'publicacion'
     $archivosEsperados = @(
-        (Join-Path $carpeta 'LanzadorScripts-1.8.1-x64.msi'),
-        (Join-Path $carpeta 'LanzadorScripts_Portable-1.8.1-x64.exe')
+        (Join-Path $carpeta 'LanzadorScripts-1.8.2-x64.msi'),
+        (Join-Path $carpeta 'LanzadorScripts_Portable-1.8.2-x64.exe')
     )
     foreach ($archivo in $archivosEsperados) {
         if (-not (Test-Path -LiteralPath $archivo)) {
@@ -293,7 +293,7 @@ function Verificar-Artefacto {
     }
 
     $zipServidor = Join-Path $raizRepositorio `
-        'publicacion-servidor\LanzadorScripts_Servidor-1.8.1-x64.zip'
+        'publicacion-servidor\LanzadorScripts_Servidor-1.8.2-x64.zip'
     if (-not (Test-Path -LiteralPath $zipServidor -PathType Leaf)) {
         throw 'No se genero el paquete ZIP del servidor.'
     }

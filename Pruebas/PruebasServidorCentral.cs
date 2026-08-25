@@ -1,7 +1,9 @@
 // (Autor: Alex Roman)
 // Descripcion: Comprueba el cifrado, permisos, catalogo y auditoria del servidor central.
 
+using System.IO.Pipes;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,6 +16,45 @@ namespace LanzadorScripts.Pruebas;
 
 public sealed class PruebasServidorCentral
 {
+    [Fact]
+    public async Task CanalAdministrativoIdentificaClienteDespuesDeLeerLaSolicitud()
+    {
+        var nombreCanal = $"LanzadorScripts.Pruebas.{Guid.NewGuid():N}";
+        using var limite = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var servidor = new NamedPipeServerStream(
+            nombreCanal,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        await using var cliente = new NamedPipeClientStream(
+            ".",
+            nombreCanal,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous,
+            TokenImpersonationLevel.Impersonation);
+
+        var conexion = servidor.WaitForConnectionAsync(limite.Token);
+        await cliente.ConnectAsync(5000, limite.Token);
+        await conexion;
+
+        var solicitud = new SolicitudServidor(
+            TransporteProtocolo.VersionActual,
+            Guid.NewGuid(),
+            OperacionesServidor.Salud,
+            TransporteProtocolo.CrearDatos(new { }));
+        var escritura = TransporteProtocolo.EscribirAsync(cliente, solicitud, limite.Token);
+        _ = await TransporteProtocolo.LeerAsync<SolicitudServidor>(servidor, limite.Token);
+        await escritura;
+
+        var actual = IdentidadClienteCanalLocal.ObtenerCuenta(servidor);
+        var esperada = ConfiguracionServidor.NormalizarCuenta(
+            WindowsIdentity.GetCurrent().Name);
+
+        Assert.NotEmpty(esperada);
+        Assert.Equal(esperada, actual, ignoreCase: true);
+    }
+
     [Fact]
     public void ConfiguracionRetiraAdministradoresInicialesLegados()
     {

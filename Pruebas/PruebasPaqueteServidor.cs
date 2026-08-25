@@ -24,7 +24,7 @@ public sealed class PruebasPaqueteServidor
         var publicacion = Leer("Herramientas", "PublicarServidor.ps1");
 
         Assert.Contains("LanzadorScripts_Servidor-$version-x64.zip", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$version = '1.8.1'", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$version = '1.8.2'", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt", publicacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-CodeSigning-Public.cer", publicacion, StringComparison.Ordinal);
         Assert.Contains("Instalar-Servidor.ps1", publicacion, StringComparison.Ordinal);
@@ -92,10 +92,21 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("NamedPipeServerStreamAcl.Create", canalLocal, StringComparison.Ordinal);
         Assert.Contains("WellKnownSidType.LocalSystemSid", canalLocal, StringComparison.Ordinal);
         Assert.Contains("WellKnownSidType.BuiltinAdministratorsSid", canalLocal, StringComparison.Ordinal);
-        Assert.Contains("GetImpersonationUserName", canalLocal, StringComparison.Ordinal);
+        Assert.Contains("TransporteProtocolo.LeerAsync<SolicitudServidor>", canalLocal, StringComparison.Ordinal);
+        Assert.Contains("IdentidadClienteCanalLocal.ObtenerCuenta", canalLocal, StringComparison.Ordinal);
+        Assert.True(
+            canalLocal.IndexOf("TransporteProtocolo.LeerAsync<SolicitudServidor>", StringComparison.Ordinal) <
+            canalLocal.IndexOf("IdentidadClienteCanalLocal.ObtenerCuenta", StringComparison.Ordinal));
         Assert.Contains("Background=\"{StaticResource Fondo}\"", ventana, StringComparison.Ordinal);
         Assert.Contains("<Style TargetType=\"TextBlock\">", estilos, StringComparison.Ordinal);
         Assert.Contains("<Style TargetType=\"DataGridCell\">", estilos, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BordeDesplegable\"", estilos, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PART_TextBox\"", estilos, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PART_Calendar\"", estilos, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"EstiloDiaCalendario\"", estilos, StringComparison.Ordinal);
+        Assert.Contains("CalendarItemStyle", estilos, StringComparison.Ordinal);
+        Assert.Contains("CalendarStyle\" Value=\"{DynamicResource EstiloCalendario}\"", estilos, StringComparison.Ordinal);
+        Assert.Contains("SystemColors.WindowBrushKey", estilos, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -140,7 +151,7 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("LanzadorScripts.Servidor.Servicio.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Servidor.Administracion.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("PublicarServidor.ps1", etapas, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Servidor-1.8.1-x64.zip", etapas, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Servidor-1.8.2-x64.zip", etapas, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt no cubre", etapas, StringComparison.Ordinal);
     }
 
@@ -154,7 +165,7 @@ public sealed class PruebasPaqueteServidor
                      new[] { "Servidor", "LanzadorScripts.Servidor.Administracion", "LanzadorScripts.Servidor.Administracion.csproj" }
                  })
         {
-            Assert.Contains("<Version>1.8.1</Version>", Leer(ruta), StringComparison.Ordinal);
+            Assert.Contains("<Version>1.8.2</Version>", Leer(ruta), StringComparison.Ordinal);
         }
     }
 
