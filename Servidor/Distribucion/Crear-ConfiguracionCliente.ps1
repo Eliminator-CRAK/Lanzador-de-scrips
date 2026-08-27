@@ -60,3 +60,4 @@ $paquete = [ordered]@{
     $paquete,
     [System.Text.UTF8Encoding]::new($false))
 Write-Host "Paquete cliente generado: $rutaSalida"
+Write-Host "SPN Kerberos esperado: LanzadorScripts/$servidor"

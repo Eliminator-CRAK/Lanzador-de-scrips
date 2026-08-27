@@ -16,7 +16,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$version = '1.8.2'
+$version = '1.8.3'
 $raiz = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $obj = [System.IO.Path]::GetFullPath((Join-Path $raiz 'obj\PublicacionServidor'))
 $staging = [System.IO.Path]::GetFullPath((Join-Path $obj 'Paquete'))

@@ -50,6 +50,7 @@ var host = Host.CreateDefaultBuilder(args)
         servicios.AddSingleton<RutasServidor>();
         servicios.AddSingleton<AlmacenConfiguracionServidor>();
         servicios.AddSingleton<RegistroServidor>();
+        servicios.AddSingleton<IRegistroSpnServidor, RegistroSpnServidor>();
         servicios.AddHostedService<ServicioCentralAlojado>();
     })
     .Build();

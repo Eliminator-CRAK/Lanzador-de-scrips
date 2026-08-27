@@ -17,6 +17,94 @@ namespace LanzadorScripts.Pruebas;
 public sealed class PruebasServidorCentral
 {
     [Fact]
+    public void ClientePriorizaElSpnPropioYConservaHostComoCompatibilidad()
+    {
+        var candidatos = AutenticacionServidorCentral.CrearSpnCandidatos(
+            "servidor.dominio.local");
+
+        Assert.Equal(
+            ["LanzadorScripts/servidor.dominio.local", "HOST/servidor.dominio.local"],
+            candidatos);
+        Assert.Equal(
+            "servidor.dominio.local",
+            AutenticacionServidorCentral.NormalizarServidor(" servidor.dominio.local. "));
+        Assert.Throws<ArgumentException>(() =>
+            AutenticacionServidorCentral.CrearSpnCandidatos("servidor/ruta"));
+        Assert.Throws<ArgumentException>(() =>
+            AutenticacionServidorCentral.CrearSpnCandidatos("127.0.0.1"));
+    }
+
+    [Fact]
+    public void RegistroSpnUsaAgregarYEliminarDesdeLocalSystem()
+    {
+        var operaciones = new List<OperacionRegistroSpn>();
+        var registro = new RegistroSpnServidor(
+            () => true,
+            operacion =>
+            {
+                operaciones.Add(operacion);
+                return 0;
+            });
+
+        var alta = registro.Registrar();
+        var baja = registro.Eliminar();
+
+        Assert.True(alta.Exito, alta.Mensaje);
+        Assert.True(baja.Exito, baja.Mensaje);
+        Assert.Equal(0U, (uint)OperacionRegistroSpn.Agregar);
+        Assert.Equal(2U, (uint)OperacionRegistroSpn.Eliminar);
+        Assert.Equal([OperacionRegistroSpn.Agregar, OperacionRegistroSpn.Eliminar], operaciones);
+        Assert.StartsWith("LanzadorScripts/", alta.SpnPrincipal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RegistroSpnRechazaProcesosQueNoSonLocalSystem()
+    {
+        var invocado = false;
+        var registro = new RegistroSpnServidor(
+            () => false,
+            _ =>
+            {
+                invocado = true;
+                return 0;
+            });
+
+        var resultado = registro.Registrar();
+
+        Assert.False(resultado.Exito);
+        Assert.Equal(5U, resultado.CodigoWin32);
+        Assert.False(invocado);
+    }
+
+    [Fact]
+    public void SaludInformaElEstadoRealDeKerberos()
+    {
+        using var entorno = EntornoServidor.Crear();
+        var autenticacion = new EstadoAutenticacionServidor(
+            true,
+            "LanzadorScripts/servidor.dominio.local",
+            "SPN Kerberos registrado en la cuenta de equipo.");
+        var procesador = new ProcesadorSolicitudesServidor(
+            entorno.Repositorio,
+            () => autenticacion);
+        var solicitud = new SolicitudServidor(
+            TransporteProtocolo.VersionActual,
+            Guid.NewGuid(),
+            OperacionesServidor.Salud,
+            TransporteProtocolo.CrearDatos(new { }));
+
+        var respuesta = procesador.Procesar(@"PCERA\alero", solicitud);
+        var estado = respuesta.Datos.Deserialize<EstadoServidorCentral>(
+            TransporteProtocolo.OpcionesJson);
+
+        Assert.True(respuesta.Exito, respuesta.Mensaje);
+        Assert.NotNull(estado);
+        Assert.True(estado.AutenticacionRemotaPreparada);
+        Assert.Equal(autenticacion.SpnPrincipal, estado.SpnServidor);
+        Assert.Equal(autenticacion.Mensaje, estado.MensajeAutenticacion);
+    }
+
+    [Fact]
     public async Task CanalAdministrativoIdentificaClienteDespuesDeLeerLaSolicitud()
     {
         var nombreCanal = $"LanzadorScripts.Pruebas.{Guid.NewGuid():N}";
@@ -155,7 +243,7 @@ public sealed class PruebasServidorCentral
             comando.ExecuteNonQuery();
         }
 
-        Assert.Throws<CryptographicException>(() => entorno.Repositorio.ListarUsuarios());
+        Assert.ThrowsAny<CryptographicException>(() => entorno.Repositorio.ListarUsuarios());
     }
 
     [Fact]

@@ -1,11 +1,11 @@
 (Autor: Alex Roman)
-Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.2.
+Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.3.
 
 INSTALACION INTERACTIVA
 1. Extraiga el ZIP en el servidor MAD002MICROPRU.
 2. Ejecute LanzadorScripts.Servidor.exe como administrador.
 3. Pulse Instalar. La aplicacion copiara los binarios a C:\Program Files\LanzadorScriptsServidor.
-4. Inicie el servicio y compruebe Resumen, Usuarios, Catalogo y Auditoria.
+4. Inicie el servicio y compruebe que Resumen indica Kerberos remoto preparado.
 
 La cuenta elevada que instala o inicia el servicio sera el primer administrador. La base, la clave y la configuracion se crean automaticamente. El archivo de configuracion no contiene una lista de administradores.
 
@@ -23,6 +23,7 @@ La base y la clave deben copiarse juntas para una restauracion en el mismo servi
 
 CLIENTES
 Use Crear-ConfiguracionCliente.ps1 para generar un archivo .lanzadorconfig. El archivo solo contiene servidor, puerto y carpeta de scripts; no contiene secretos.
+Actualice primero el servidor y despues los clientes. El servicio registra automaticamente LanzadorScripts/<servidor> en Active Directory y no permite sustituir Kerberos por NTLM.
 
 SEGURIDAD
 El contenido funcional de la base se cifra y autentica por filas. La estructura SQLite y columnas tecnicas siguen visibles. Mantenga las ACL, copias y control administrativo del servidor.

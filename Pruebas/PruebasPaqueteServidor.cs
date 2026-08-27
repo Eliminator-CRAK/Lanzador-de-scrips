@@ -24,7 +24,7 @@ public sealed class PruebasPaqueteServidor
         var publicacion = Leer("Herramientas", "PublicarServidor.ps1");
 
         Assert.Contains("LanzadorScripts_Servidor-$version-x64.zip", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$version = '1.8.2'", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$version = '1.8.3'", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt", publicacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-CodeSigning-Public.cer", publicacion, StringComparison.Ordinal);
         Assert.Contains("Instalar-Servidor.ps1", publicacion, StringComparison.Ordinal);
@@ -47,7 +47,7 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("LanzadorScriptsServidor", instalador, StringComparison.Ordinal);
         Assert.Contains("$env:ProgramFiles", instalador, StringComparison.Ordinal);
         Assert.Contains("$env:ProgramData", instalador, StringComparison.Ordinal);
-        Assert.Contains("'start=', 'auto'", instalador, StringComparison.Ordinal);
+        Assert.Contains("'start=', 'delayed-auto'", instalador, StringComparison.Ordinal);
         Assert.Contains("'obj=', 'LocalSystem'", instalador, StringComparison.Ordinal);
         Assert.Contains("'profile=domain'", instalador, StringComparison.Ordinal);
         Assert.Contains("'sidtype'", instalador, StringComparison.Ordinal);
@@ -130,6 +130,7 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("tipo = 'configuracion-cliente'", generador, StringComparison.Ordinal);
         Assert.Contains("servidorCentral", generador, StringComparison.Ordinal);
         Assert.Contains("puertoServidorCentral", generador, StringComparison.Ordinal);
+        Assert.Contains("SPN Kerberos esperado: LanzadorScripts/", generador, StringComparison.Ordinal);
         Assert.DoesNotContain("rutaPermisos", generador, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CertificadoPublicoBase64", generador, StringComparison.Ordinal);
         Assert.DoesNotContain("Thumbprint", generador, StringComparison.OrdinalIgnoreCase);
@@ -151,12 +152,12 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("LanzadorScripts.Servidor.Servicio.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Servidor.Administracion.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("PublicarServidor.ps1", etapas, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Servidor-1.8.2-x64.zip", etapas, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Servidor-1.8.3-x64.zip", etapas, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt no cubre", etapas, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ProyectosServidorPublicanVersion181()
+    public void ProyectosServidorPublicanVersionActual()
     {
         foreach (var ruta in new[]
                  {
@@ -165,7 +166,7 @@ public sealed class PruebasPaqueteServidor
                      new[] { "Servidor", "LanzadorScripts.Servidor.Administracion", "LanzadorScripts.Servidor.Administracion.csproj" }
                  })
         {
-            Assert.Contains("<Version>1.8.2</Version>", Leer(ruta), StringComparison.Ordinal);
+            Assert.Contains("<Version>1.8.3</Version>", Leer(ruta), StringComparison.Ordinal);
         }
     }
 

@@ -45,7 +45,10 @@ public sealed record EstadoServidorCentral(
     int TotalUsuarios,
     long TotalAuditorias,
     DateTimeOffset? UltimaAuditoriaUtc,
-    string Mensaje);
+    string Mensaje,
+    bool AutenticacionRemotaPreparada = false,
+    string SpnServidor = "",
+    string MensajeAutenticacion = "");
 
 public sealed record PermisosServidorCentral(
     string ConjuntoId,

@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Valida el contrato reproducible del instalador MSI 1.8.2.
+// Descripcion: Valida el contrato reproducible del instalador MSI 1.8.3.
 
 using Xunit;
 
@@ -19,9 +19,9 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[ProgramFiles64Folder]LanzadorScripts", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"InstallAllUsers\" = \"11:TRUE\"", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"TargetPlatform\" = \"3:1\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("\"ProductVersion\" = \"8:1.8.2\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{0B209408-F11F-4AE0-8DDC-710FA5E5BB51}", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{35BEED2A-8E74-434B-B03E-AF94B62793C8}", vdproj, StringComparison.Ordinal);
+        Assert.Contains("\"ProductVersion\" = \"8:1.8.3\"", vdproj, StringComparison.Ordinal);
+        Assert.Contains("{185E5B1A-2386-4CD0-A7B8-8D9FB729AF35}", vdproj, StringComparison.Ordinal);
+        Assert.Contains("{98A61296-1ABD-4C37-A79C-79735955A1E7}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{96640479-F6DF-4AE5-BC5B-0799ECCC938E}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{84E73469-1AAD-4C67-BE52-A88A2737CB15}", vdproj, StringComparison.Ordinal);
         Assert.Contains("{24169C78-5164-45C8-AB1A-AFC281D86DE9}", vdproj, StringComparison.Ordinal);
@@ -41,7 +41,7 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("<PublishSingleFile>false</PublishSingleFile>", perfil, StringComparison.Ordinal);
         Assert.Contains("<EmbedWebView2Runtime>false</EmbedWebView2Runtime>", perfil, StringComparison.Ordinal);
         Assert.Contains("<IncludeSourceRevisionInInformationalVersion>false", perfil, StringComparison.Ordinal);
-        Assert.Contains("1.8.2+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
+        Assert.Contains("1.8.3+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
 
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
         Assert.Contains("runtimes\\win-x64\\native\\WebView2Loader.dll", proyecto, StringComparison.Ordinal);
@@ -94,6 +94,9 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[18.0,19.0)", preparacion, StringComparison.Ordinal);
         Assert.Contains("'/a'", compilacion, StringComparison.Ordinal);
         Assert.Contains("MsiAdminImage", compilacion, StringComparison.Ordinal);
+        Assert.Contains("$codigoMsiOtraInstalacionEnCurso = 1618", compilacion, StringComparison.Ordinal);
+        Assert.Contains("$intentosExtraccionMsi = 12", compilacion, StringComparison.Ordinal);
+        Assert.Contains("Start-Sleep -Seconds $esperaExtraccionMsiSegundos", compilacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-Msi-WebView2-", compilacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-Msi-Validacion-", compilacion, StringComparison.Ordinal);
         Assert.Contains("[System.IO.Directory]::Delete($validacionMsi, $true)", compilacion, StringComparison.Ordinal);
@@ -148,8 +151,8 @@ public sealed class PruebasInstaladorMsi
             "Herramientas",
             "PublicarPortable.ps1"));
 
-        Assert.Contains("LanzadorScripts-1.8.2-x64.msi", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.2-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.8.3-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.3-x64.exe", publicacion, StringComparison.Ordinal);
         Assert.Contains("$rutasEsperadas = @($msiPublicado, $exePortable)", publicacion, StringComparison.Ordinal);
         Assert.Contains("$archivosPublicados.Count -ne 2", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("$exeNormal", publicacion, StringComparison.Ordinal);

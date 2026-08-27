@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.2. -->
+<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.3. -->
 
 # Manual de administradores y desarrolladores
 
@@ -11,16 +11,16 @@
 4. Distribuir el MSI o la portable del cliente.
 5. Importar la configuracion cliente y probar con una cuenta nominal.
 
-No se deben mezclar clientes 1.8.2 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central.
+No se deben mezclar clientes 1.8.3 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central.
 
 ## Cliente instalado
 
 ```powershell
-msiexec /i LanzadorScripts-1.8.2-x64.msi
-msiexec /i LanzadorScripts-1.8.2-x64.msi /qn /norestart
-msiexec /i LanzadorScripts-1.8.2-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-1.8.2-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.8.2-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.8.3-x64.msi
+msiexec /i LanzadorScripts-1.8.3-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.8.3-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-1.8.3-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.8.3-x64.msi /qn /norestart
 ```
 
 La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. Las actualizaciones conservan configuracion. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
@@ -58,12 +58,14 @@ La pareja actual se restaura en el mismo servidor porque DPAPI esta ligada a la 
 ## Red y dominio
 
 - Servicio: `LanzadorScriptsServidor` bajo `LocalSystem`.
-- Inicio: automatico con recuperacion ante fallos.
+- Inicio: automatico retrasado con recuperacion ante fallos.
 - Puerto predeterminado: TCP 47831, perfil de firewall `Domain`.
-- Autenticacion: SSPI/Kerberos o Negotiate con SPN `HOST/<servidor>`.
+- Autenticacion: SSPI/Kerberos con SPN `LanzadorScripts/<servidor>`.
 - Endpoint predeterminado: `MAD002MICROPRU.mad.ae.aena.es:47831`.
 
-Los clientes deben resolver el FQDN y no deben usar una IP si se exige autenticacion mutua. La cuenta de equipo del servidor debe conservar sus SPN `HOST` normales de Active Directory.
+El servicio registra y retira automaticamente sus SPN en la cuenta de equipo porque se ejecuta como `LocalSystem`. Reintenta el registro si Active Directory no esta disponible durante el arranque. Los clientes deben pertenecer a un dominio de confianza, resolver el FQDN y no usar una IP. NTLM no se acepta porque no autentica mutuamente al servidor.
+
+Durante la migracion el cliente tambien prueba `HOST/<servidor>`, pero solo acepta el canal cuando Kerberos confirma autenticacion mutua, cifrado y firma. La consola administrativa muestra por separado el estado del canal local y el estado Kerberos remoto.
 
 ## Catalogo y scripts
 
@@ -95,4 +97,4 @@ El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certifi
 
 GitLab es el repositorio principal para ramas y merge requests. GitHub es una replica del mismo commit. Cada cambio debe superar pruebas, auditoria NuGet, Semgrep estricto, Gitleaks y revision CodeRabbit antes de fusionarse. No se utiliza Aikido.
 
-La release `v1.8.2` debe publicar bytes identicos en ambos proveedores y contener los tres entregables, hashes, certificado publico y notas de despliegue.
+La release `v1.8.3` debe publicar bytes identicos en ambos proveedores y contener los tres entregables, hashes, certificado publico y notas de despliegue.

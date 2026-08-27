@@ -291,7 +291,7 @@ if ($null -eq $servicioActual) {
     Invoke-Nativo -Ejecutable $sc -Argumentos @(
         'create', $nombreServicio,
         'binPath=', "`"$servicioDestino`"",
-        'start=', 'auto',
+        'start=', 'delayed-auto',
         'obj=', 'LocalSystem',
         'DisplayName=', 'LanzadorScripts Servidor')
 }
@@ -299,7 +299,7 @@ else {
     Invoke-Nativo -Ejecutable $sc -Argumentos @(
         'config', $nombreServicio,
         'binPath=', "`"$servicioDestino`"",
-        'start=', 'auto',
+        'start=', 'delayed-auto',
         'obj=', 'LocalSystem',
         'DisplayName=', 'LanzadorScripts Servidor')
 }
