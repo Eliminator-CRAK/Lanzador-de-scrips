@@ -33,6 +33,9 @@ $exeInstalado = Join-Path $publicacion 'LanzadorScripts.exe'
 $scriptFirma = Join-Path $PSScriptRoot 'FirmarPublicacionInstalada.ps1'
 $scriptConfigurar = Join-Path $PSScriptRoot 'ConfigurarMsi.ps1'
 $scriptVisualStudio = Join-Path $PSScriptRoot 'PrepararVisualStudioInstalador.ps1'
+$codigoMsiOtraInstalacionEnCurso = 1618
+$intentosExtraccionMsi = 12
+$esperaExtraccionMsiSegundos = 15
 
 foreach ($archivo in @(
         $vdproj,
@@ -306,14 +309,31 @@ try {
         '/l*v',
         "`"$logValidacionMsi`""
     )
-    $procesoMsi = Start-Process `
-        -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') `
-        -ArgumentList $argumentosMsi `
-        -Wait `
-        -PassThru `
-        -WindowStyle Hidden
-    if ($procesoMsi.ExitCode -ne 0) {
-        throw "La extraccion administrativa del MSI fallo con codigo $($procesoMsi.ExitCode). Log: $logValidacionMsi"
+    for ($intento = 1; $intento -le $intentosExtraccionMsi; $intento++) {
+        # Reintenta solo cuando Windows Installer esta ocupado por otro producto.
+        if ([System.IO.File]::Exists($logValidacionMsi)) {
+            [System.IO.File]::Delete($logValidacionMsi)
+        }
+
+        $procesoMsi = Start-Process `
+            -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') `
+            -ArgumentList $argumentosMsi `
+            -Wait `
+            -PassThru `
+            -WindowStyle Hidden
+        if ($procesoMsi.ExitCode -eq 0) {
+            break
+        }
+
+        if ($procesoMsi.ExitCode -ne $codigoMsiOtraInstalacionEnCurso -or
+            $intento -eq $intentosExtraccionMsi) {
+            throw "La extraccion administrativa del MSI fallo con codigo $($procesoMsi.ExitCode). Log: $logValidacionMsi"
+        }
+
+        Write-Warning (
+            "Windows Installer esta ocupado. Reintento $intento de " +
+            "$intentosExtraccionMsi en $esperaExtraccionMsiSegundos segundos.")
+        Start-Sleep -Seconds $esperaExtraccionMsiSegundos
     }
 
     $exeExtraido = Join-Path $validacionMsi 'LanzadorScripts.exe'

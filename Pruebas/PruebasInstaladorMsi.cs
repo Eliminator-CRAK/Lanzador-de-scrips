@@ -94,6 +94,9 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[18.0,19.0)", preparacion, StringComparison.Ordinal);
         Assert.Contains("'/a'", compilacion, StringComparison.Ordinal);
         Assert.Contains("MsiAdminImage", compilacion, StringComparison.Ordinal);
+        Assert.Contains("$codigoMsiOtraInstalacionEnCurso = 1618", compilacion, StringComparison.Ordinal);
+        Assert.Contains("$intentosExtraccionMsi = 12", compilacion, StringComparison.Ordinal);
+        Assert.Contains("Start-Sleep -Seconds $esperaExtraccionMsiSegundos", compilacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-Msi-WebView2-", compilacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-Msi-Validacion-", compilacion, StringComparison.Ordinal);
         Assert.Contains("[System.IO.Directory]::Delete($validacionMsi, $true)", compilacion, StringComparison.Ordinal);
