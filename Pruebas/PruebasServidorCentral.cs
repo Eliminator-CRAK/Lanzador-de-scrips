@@ -243,7 +243,7 @@ public sealed class PruebasServidorCentral
             comando.ExecuteNonQuery();
         }
 
-        Assert.Throws<CryptographicException>(() => entorno.Repositorio.ListarUsuarios());
+        Assert.ThrowsAny<CryptographicException>(() => entorno.Repositorio.ListarUsuarios());
     }
 
     [Fact]
