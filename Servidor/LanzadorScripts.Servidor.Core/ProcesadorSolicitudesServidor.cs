@@ -11,10 +11,15 @@ namespace LanzadorScripts.Servidor.Core;
 public sealed class ProcesadorSolicitudesServidor
 {
     private readonly RepositorioServidor _repositorio;
+    private readonly Func<EstadoAutenticacionServidor> _obtenerEstadoAutenticacion;
 
-    public ProcesadorSolicitudesServidor(RepositorioServidor repositorio)
+    public ProcesadorSolicitudesServidor(
+        RepositorioServidor repositorio,
+        Func<EstadoAutenticacionServidor>? obtenerEstadoAutenticacion = null)
     {
         _repositorio = repositorio;
+        _obtenerEstadoAutenticacion = obtenerEstadoAutenticacion
+            ?? (() => EstadoAutenticacionServidor.Pendiente);
     }
 
     public RespuestaServidor Procesar(string identidadRemota, SolicitudServidor solicitud)
@@ -91,7 +96,14 @@ public sealed class ProcesadorSolicitudesServidor
             return AccesoDenegado(solicitud.SolicitudId);
         }
 
-        return Correcta(solicitud.SolicitudId, _repositorio.ObtenerEstado());
+        var autenticacion = _obtenerEstadoAutenticacion();
+        var estado = _repositorio.ObtenerEstado() with
+        {
+            AutenticacionRemotaPreparada = autenticacion.Preparada,
+            SpnServidor = autenticacion.SpnPrincipal,
+            MensajeAutenticacion = autenticacion.Mensaje
+        };
+        return Correcta(solicitud.SolicitudId, estado);
     }
 
     private RespuestaServidor ProcesarObtenerPermisos(string cuenta, SolicitudServidor solicitud)

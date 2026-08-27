@@ -1,21 +1,21 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 1.8.2
+# LanzadorScripts 1.8.3
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. La version 1.8.2 separa el cliente de un servicio central de Windows que administra permisos, catalogo y auditoria.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. La version 1.8.3 separa el cliente de un servicio central de Windows que administra permisos, catalogo y auditoria.
 
 ## Entregables
 
-- `LanzadorScripts-1.8.2-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-1.8.2-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-1.8.2-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-1.8.3-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-1.8.3-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-1.8.3-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64 y no descargan .NET ni WebView2 durante la ejecucion.
 
 ## Arquitectura
 
-El cliente abre los scripts desde la ruta compartida configurada y consulta al servidor central antes de mostrarlos o ejecutarlos. La comunicacion usa TCP con `NegotiateStream`, autenticacion integrada de Windows, cifrado, firma y autenticacion mutua.
+El cliente abre los scripts desde la ruta compartida configurada y consulta al servidor central antes de mostrarlos o ejecutarlos. La comunicacion usa TCP con `NegotiateStream`, Kerberos, cifrado, firma y autenticacion mutua. El servicio registra automaticamente `LanzadorScripts/<servidor>` en la cuenta de equipo de Active Directory y el cliente rechaza cualquier negociacion que caiga a NTLM.
 
 El servidor mantiene una base SQLite local con tablas para:
 
@@ -44,9 +44,9 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Extraer `LanzadorScripts_Servidor-1.8.2-x64.zip` en `MAD002MICROPRU`.
+1. Extraer `LanzadorScripts_Servidor-1.8.3-x64.zip` en `MAD002MICROPRU`.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
-3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado y que el firewall de dominio admite TCP 47831.
+3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado, que el resumen muestra `Kerberos remoto preparado` y que el firewall de dominio admite TCP 47831.
 4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.
 5. Generar un `.lanzadorconfig` con `Crear-ConfiguracionCliente.ps1` y distribuirlo junto al MSI o la portable.
 

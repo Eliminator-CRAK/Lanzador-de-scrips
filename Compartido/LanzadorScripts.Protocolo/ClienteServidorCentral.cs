@@ -25,7 +25,7 @@ public sealed class ClienteServidorCentral
         TimeSpan? tiempoMaximo = null,
         bool exigirAutenticacionMutua = true)
     {
-        _servidor = ValidarServidor(servidor);
+        _servidor = AutenticacionServidorCentral.NormalizarServidor(servidor);
         _puerto = puerto is >= 1024 and <= 65535
             ? puerto
             : throw new ArgumentOutOfRangeException(nameof(puerto));
@@ -64,55 +64,36 @@ public sealed class ClienteServidorCentral
 
         try
         {
-            using var tcp = new TcpClient
+            AuthenticationException? ultimoErrorAutenticacion = null;
+            foreach (var spn in AutenticacionServidorCentral.CrearSpnCandidatos(_servidor))
             {
-                NoDelay = true
-            };
-            await tcp.ConnectAsync(_servidor, _puerto, limite.Token);
-            await using var seguro = new NegotiateStream(
-                tcp.GetStream(),
-                leaveInnerStreamOpen: false);
-            await seguro.AuthenticateAsClientAsync(
-                CredentialCache.DefaultNetworkCredentials,
-                $"HOST/{_servidor}",
-                ProtectionLevel.EncryptAndSign,
-                TokenImpersonationLevel.Identification)
-                .WaitAsync(limite.Token);
-            ValidarCanal(seguro);
-
-            await TransporteProtocolo.EscribirAsync(seguro, solicitud, limite.Token);
-            var respuesta = await TransporteProtocolo.LeerAsync<RespuestaServidor>(seguro, limite.Token);
-            if (respuesta.Version != TransporteProtocolo.VersionActual
-                || respuesta.SolicitudId != solicitudId)
-            {
-                return RespuestaTipada<TRespuesta>.Error(
-                    "protocolo_invalido",
-                    "El servidor devolvio una respuesta que no corresponde con la solicitud.");
+                try
+                {
+                    return await EnviarConSpnAsync<TRespuesta>(
+                        solicitud,
+                        solicitudId,
+                        spn,
+                        limite.Token);
+                }
+                catch (AuthenticationException ex)
+                {
+                    ultimoErrorAutenticacion = ex;
+                }
             }
 
-            if (!respuesta.Exito)
-            {
-                return RespuestaTipada<TRespuesta>.Error(respuesta.Codigo, respuesta.Mensaje);
-            }
-
-            var resultado = respuesta.Datos.Deserialize<TRespuesta>(TransporteProtocolo.OpcionesJson);
-            return resultado is null
-                ? RespuestaTipada<TRespuesta>.Error(
-                    "respuesta_vacia",
-                    "El servidor no devolvio los datos esperados.")
-                : RespuestaTipada<TRespuesta>.Correcta(resultado, respuesta.Mensaje);
+            var detalle = ultimoErrorAutenticacion is null
+                ? string.Empty
+                : $" Detalle: {LimitarMensaje(ultimoErrorAutenticacion.Message)}";
+            return RespuestaTipada<TRespuesta>.Error(
+                "autenticacion_windows",
+                $"Windows no pudo autenticar mutuamente el servidor con Kerberos. "
+                + $"Compruebe el SPN '{AutenticacionServidorCentral.ClaseSpn}/{_servidor}'.{detalle}");
         }
         catch (OperationCanceledException) when (!cancelacion.IsCancellationRequested)
         {
             return RespuestaTipada<TRespuesta>.Error(
                 "tiempo_agotado",
                 "El servidor central no respondio dentro del tiempo permitido.");
-        }
-        catch (AuthenticationException ex)
-        {
-            return RespuestaTipada<TRespuesta>.Error(
-                "autenticacion_windows",
-                $"Windows no pudo autenticar el canal con el servidor central: {LimitarMensaje(ex.Message)}");
         }
         catch (Exception ex) when (ex is SocketException
             or IOException
@@ -122,6 +103,51 @@ public sealed class ClienteServidorCentral
                 "servidor_no_disponible",
                 $"No se pudo establecer una conexion segura con el servidor central: {ex.GetType().Name}.");
         }
+    }
+
+    private async Task<RespuestaTipada<TRespuesta>> EnviarConSpnAsync<TRespuesta>(
+        SolicitudServidor solicitud,
+        Guid solicitudId,
+        string spn,
+        CancellationToken cancelacion)
+    {
+        using var tcp = new TcpClient
+        {
+            NoDelay = true
+        };
+        await tcp.ConnectAsync(_servidor, _puerto, cancelacion);
+        await using var seguro = new NegotiateStream(
+            tcp.GetStream(),
+            leaveInnerStreamOpen: false);
+        await seguro.AuthenticateAsClientAsync(
+            CredentialCache.DefaultNetworkCredentials,
+            spn,
+            ProtectionLevel.EncryptAndSign,
+            TokenImpersonationLevel.Identification)
+            .WaitAsync(cancelacion);
+        ValidarCanal(seguro);
+
+        await TransporteProtocolo.EscribirAsync(seguro, solicitud, cancelacion);
+        var respuesta = await TransporteProtocolo.LeerAsync<RespuestaServidor>(seguro, cancelacion);
+        if (respuesta.Version != TransporteProtocolo.VersionActual
+            || respuesta.SolicitudId != solicitudId)
+        {
+            return RespuestaTipada<TRespuesta>.Error(
+                "protocolo_invalido",
+                "El servidor devolvio una respuesta que no corresponde con la solicitud.");
+        }
+
+        if (!respuesta.Exito)
+        {
+            return RespuestaTipada<TRespuesta>.Error(respuesta.Codigo, respuesta.Mensaje);
+        }
+
+        var resultado = respuesta.Datos.Deserialize<TRespuesta>(TransporteProtocolo.OpcionesJson);
+        return resultado is null
+            ? RespuestaTipada<TRespuesta>.Error(
+                "respuesta_vacia",
+                "El servidor no devolvio los datos esperados.")
+            : RespuestaTipada<TRespuesta>.Correcta(resultado, respuesta.Mensaje);
     }
 
     private static string LimitarMensaje(string mensaje)
@@ -144,22 +170,4 @@ public sealed class ClienteServidorCentral
         }
     }
 
-    private static string ValidarServidor(string servidor)
-    {
-        var valor = servidor?.Trim().TrimEnd('.')
-            ?? throw new ArgumentNullException(nameof(servidor));
-        if (valor.Length is <= 0 or > 253
-            || valor.Contains('\\', StringComparison.Ordinal)
-            || valor.Contains('/', StringComparison.Ordinal)
-            || valor.Contains(':', StringComparison.Ordinal)
-            || valor.Split('.').Any(segmento => segmento.Length is <= 0 or > 63
-                || segmento[0] == '-'
-                || segmento[^1] == '-'
-                || segmento.Any(caracter => !char.IsLetterOrDigit(caracter) && caracter != '-')))
-        {
-            throw new ArgumentException("El nombre del servidor central no es valido.", nameof(servidor));
-        }
-
-        return valor;
-    }
 }

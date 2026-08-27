@@ -135,12 +135,13 @@ public partial class MainWindow : Window
             if (!respuesta.Exito || respuesta.Datos is null)
             {
                 TextoEstadoConexion.Text = respuesta.Mensaje;
+                TextoEstadoConexion.Foreground = (Brush)FindResource("Rojo");
                 LimpiarMetricas();
                 return;
             }
 
             var estado = respuesta.Datos;
-            TextoEstadoConexion.Text = $"Canal administrativo local protegido disponible en {estado.Equipo}.";
+            AplicarEstadoAutenticacion(estado);
             MetricaBase.Text = estado.BaseIntegra ? "Íntegra" : "Revisar";
             MetricaBase.Foreground = estado.BaseIntegra
                 ? (Brush)FindResource("Verde")
@@ -341,7 +342,7 @@ public partial class MainWindow : Window
             CancellationToken.None);
         if (respuesta.Exito && respuesta.Datos is not null)
         {
-            TextoEstadoConexion.Text = "Servicio central disponible.";
+            AplicarEstadoAutenticacion(respuesta.Datos);
             MetricaBase.Text = respuesta.Datos.BaseIntegra ? "Íntegra" : "Revisar";
             MetricaUsuarios.Text = respuesta.Datos.TotalUsuarios.ToString("N0");
             MetricaAuditoria.Text = respuesta.Datos.TotalAuditorias.ToString("N0");
@@ -350,7 +351,24 @@ public partial class MainWindow : Window
         else
         {
             TextoEstadoConexion.Text = respuesta.Mensaje;
+            TextoEstadoConexion.Foreground = (Brush)FindResource("Rojo");
         }
+    }
+
+    private void AplicarEstadoAutenticacion(EstadoServidorCentral estado)
+    {
+        if (estado.AutenticacionRemotaPreparada)
+        {
+            TextoEstadoConexion.Text =
+                $"Canal local disponible. Kerberos remoto preparado: {estado.SpnServidor}.";
+            TextoEstadoConexion.Foreground = (Brush)FindResource("Verde");
+            return;
+        }
+
+        TextoEstadoConexion.Text =
+            $"Canal local disponible, pero Kerberos remoto no esta preparado: "
+            + estado.MensajeAutenticacion;
+        TextoEstadoConexion.Foreground = (Brush)FindResource("Ambar");
     }
 
     private void TablaUsuarios_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -604,6 +622,7 @@ public partial class MainWindow : Window
             TextoEstadoConexion.Text = estado.Instalado
                 ? "El canal central no está activo."
                 : "Instala el servicio para crear la base y aceptar clientes.";
+            TextoEstadoConexion.Foreground = (Brush)FindResource("TextoSecundario");
         }
     }
 

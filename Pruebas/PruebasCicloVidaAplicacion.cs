@@ -121,7 +121,7 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("--validar-limpieza-ruta-larga", nativo, StringComparison.Ordinal);
         Assert.Contains("rutaArchivo.size() <= MAX_PATH", nativo, StringComparison.Ordinal);
         Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.2-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.3-x64.exe", publicacion, StringComparison.Ordinal);
 
         var manifiesto = File.ReadAllText(ObtenerRutaProyecto("manifiesto.manifest"));
         Assert.Contains("<ws2:longPathAware>true</ws2:longPathAware>", manifiesto, StringComparison.Ordinal);

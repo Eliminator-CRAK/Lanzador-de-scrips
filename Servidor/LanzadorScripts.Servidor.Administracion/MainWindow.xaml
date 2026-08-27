@@ -34,7 +34,7 @@
                     </Border>
                     <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="LanzadorScripts" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock Text="Servidor 1.8.2" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
+                        <TextBlock Text="Servidor 1.8.3" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
                     </StackPanel>
                 </StackPanel>
 

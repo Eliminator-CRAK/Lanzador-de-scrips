@@ -43,7 +43,7 @@ public sealed class ServicioControlWindows
 
         var ejecutable = PrepararBinariosPermanentes();
         PrepararAdministradorInicial();
-        EjecutarSc("create", NombreServicio, "binPath=", $"\"{ejecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "LanzadorScripts Servidor");
+        EjecutarSc("create", NombreServicio, "binPath=", $"\"{ejecutable}\"", "start=", "delayed-auto", "obj=", "LocalSystem", "DisplayName=", "LanzadorScripts Servidor");
         EjecutarSc("description", NombreServicio, "Servicio central cifrado de permisos, catalogo y auditoria.");
         EjecutarSc("failure", NombreServicio, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000");
         EjecutarSc("failureflag", NombreServicio, "1");
