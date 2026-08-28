@@ -145,9 +145,14 @@ public sealed class PruebasLanzadorScripts
             @"LanzadorScripts.exe",
             interno,
             _ => true);
+        var manipulado = ServicioEjecutableAplicacion.SeleccionarRutaEjecutable(
+            @"C:\Distribucion\..\Otro\LanzadorScripts.exe",
+            interno,
+            _ => true);
 
         Assert.Equal(distribuido, seleccionado, ignoreCase: true);
         Assert.Equal(interno, alternativo, ignoreCase: true);
+        Assert.Equal(interno, manipulado, ignoreCase: true);
         Assert.Contains("ServicioEjecutableAplicacion.ResolverRutaRelanzable()", broker, StringComparison.Ordinal);
         Assert.DoesNotContain("Environment.ProcessPath", broker, StringComparison.Ordinal);
     }
@@ -179,7 +184,7 @@ public sealed class PruebasLanzadorScripts
         Assert.DoesNotContain("artefactos.key", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.8.3-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts-1.8.4-x64.msi", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));

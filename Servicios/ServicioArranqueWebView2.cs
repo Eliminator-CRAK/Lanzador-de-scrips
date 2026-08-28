@@ -22,41 +22,66 @@ public sealed class ServicioArranqueWebView2
     public async Task<ResultadoArranqueWebView2> PrepararAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
     {
         var cronometroRuntime = Stopwatch.StartNew();
-        ResultadoRuntimeWebView2Embebido runtimeEmbebido;
-        try
+        var runtimeEmbebido = ResultadoRuntimeWebView2Embebido.NoDisponible(
+            "WebView2 usara el runtime disponible en Windows.");
+        var usarRuntimeSistema = false;
+        var disponibilidad = ResultadoDisponibilidadWebView2.Error(null);
+        string? runtimeFijo = null;
+
+        if (RutasAplicacion.Distribucion.EsPortable)
         {
-            runtimeEmbebido = await PrepararRuntimeEnSegundoPlanoAsync(_servicioRuntimeEmbebido.Preparar);
+            var sistema = _servicioDisponibilidadWebView2.Comprobar();
+            if (sistema.Exito && EsVersionSistemaCompatible(sistema.Version))
+            {
+                usarRuntimeSistema = true;
+                disponibilidad = sistema;
+            }
+            else
+            {
+                disponibilidad = ResultadoDisponibilidadWebView2.Error(null);
+            }
         }
-        catch (Exception ex)
+
+        if (!usarRuntimeSistema)
         {
-            cronometroRuntime.Stop();
-            await _logInicio.RegistrarExcepcionAsync(
-                "webview2.runtime.embebido.error",
-                "preparar-runtime-embebido",
-                RutasAplicacion.RutaRuntimesWebView2,
-                ex,
-                CrearDatosBase(
-                    null,
-                    RutasAplicacion.RutaRaizWebView2Usuario,
-                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-            return ResultadoArranqueWebView2.Error("No se pudo preparar WebView2 Fixed Runtime embebido.");
+            try
+            {
+                runtimeEmbebido = await PrepararRuntimeEnSegundoPlanoAsync(
+                    _servicioRuntimeEmbebido.Preparar);
+            }
+            catch (Exception ex)
+            {
+                cronometroRuntime.Stop();
+                await _logInicio.RegistrarExcepcionAsync(
+                    "webview2.runtime.embebido.error",
+                    "preparar-runtime-embebido",
+                    RutasAplicacion.RutaRuntimesWebView2,
+                    ex,
+                    CrearDatosBase(
+                        null,
+                        RutasAplicacion.RutaRaizWebView2Usuario,
+                        duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
+                return ResultadoArranqueWebView2.Error("No se pudo preparar WebView2 Fixed Runtime embebido.");
+            }
+
+            if (!runtimeEmbebido.Exito && runtimeEmbebido.RecursoEncontrado)
+            {
+                cronometroRuntime.Stop();
+                await _logInicio.RegistrarAsync(
+                    "webview2.runtime.embebido.error",
+                    runtimeEmbebido.Mensaje,
+                    CrearDatosBase(
+                        null,
+                        RutasAplicacion.RutaRaizWebView2Usuario,
+                        duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
+                return ResultadoArranqueWebView2.Error(runtimeEmbebido.Mensaje);
+            }
+
+            runtimeFijo = runtimeEmbebido.RutaRuntime ?? ResolverRuntimeFijoPortable();
+            disponibilidad = _servicioDisponibilidadWebView2.Comprobar(runtimeFijo);
         }
 
         cronometroRuntime.Stop();
-        if (!runtimeEmbebido.Exito && runtimeEmbebido.RecursoEncontrado)
-        {
-            await _logInicio.RegistrarAsync(
-                "webview2.runtime.embebido.error",
-                runtimeEmbebido.Mensaje,
-                CrearDatosBase(
-                    null,
-                    RutasAplicacion.RutaRaizWebView2Usuario,
-                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-            return ResultadoArranqueWebView2.Error(runtimeEmbebido.Mensaje);
-        }
-
-        var runtimeFijo = runtimeEmbebido.RutaRuntime ?? ResolverRuntimeFijoPortable();
-        var disponibilidad = _servicioDisponibilidadWebView2.Comprobar(runtimeFijo);
         if (!disponibilidad.Exito)
         {
             await _logInicio.RegistrarAsync(
@@ -70,7 +95,18 @@ public sealed class ServicioArranqueWebView2
         }
 
         var versionRuntime = disponibilidad.Version;
-        if (runtimeEmbebido.Exito)
+        if (usarRuntimeSistema)
+        {
+            await _logInicio.RegistrarAsync(
+                "webview2.runtime.sistema",
+                "WebView2 usara el runtime actualizado disponible en Windows.",
+                CrearDatosBase(
+                    null,
+                    RutasAplicacion.RutaRaizWebView2Usuario,
+                    versionRuntime,
+                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
+        }
+        else if (runtimeEmbebido.Exito)
         {
             await _logInicio.RegistrarAsync(
                 runtimeEmbebido.ExtraidoAhora ? "webview2.runtime.embebido.extraido" : "webview2.runtime.embebido.reutilizado",
@@ -168,6 +204,19 @@ public sealed class ServicioArranqueWebView2
 
         return ResultadoArranqueWebView2.Error(
             "No se pudo iniciar Microsoft Edge WebView2. Revisa las politicas corporativas de Edge/WebView2 o el log de arranque de LanzadorScripts.");
+    }
+
+    internal static bool EsVersionSistemaCompatible(string? version)
+    {
+        // Usa el runtime del sistema solo si no es anterior al runtime de recuperacion.
+        var versionLimpia = version?
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+        return Version.TryParse(versionLimpia, out var versionActual)
+            && Version.TryParse(
+                ServicioRuntimeWebView2Embebido.VersionRuntimeFijada,
+                out var versionMinima)
+            && versionActual >= versionMinima;
     }
 
     internal static Task<ResultadoRuntimeWebView2Embebido> PrepararRuntimeEnSegundoPlanoAsync(

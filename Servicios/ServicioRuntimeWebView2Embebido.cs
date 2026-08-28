@@ -185,7 +185,11 @@ public sealed class ServicioRuntimeWebView2Embebido
 
                 File.WriteAllText(Path.Combine(carpetaTemporal, NombreArchivoHash), hash, Encoding.ASCII);
                 ReemplazarCarpeta(raiz, carpetaTemporal, carpetaDestino);
-                if (!ValidarRuntimeExtraido(carpetaDestino, hash, out var rutaRuntimeExtraido))
+                if (!ValidarRuntimeExtraido(
+                        carpetaDestino,
+                        hash,
+                        out var rutaRuntimeExtraido,
+                        validarContenidoCompleto: false))
                 {
                     return ResultadoRuntimeWebView2Embebido.Error("El runtime WebView2 extraido no supero la validacion.");
                 }
@@ -229,7 +233,8 @@ public sealed class ServicioRuntimeWebView2Embebido
             return null;
         }
 
-        return Assembly.GetExecutingAssembly().GetManifestResourceStream(NombreRecursoZip);
+        return ServicioRecursoWebView2Portable.Abrir()
+            ?? Assembly.GetExecutingAssembly().GetManifestResourceStream(NombreRecursoZip);
     }
 
     private static string CopiarRecursoYCalcularHash(Stream origen, string destino)
@@ -248,7 +253,11 @@ public sealed class ServicioRuntimeWebView2Embebido
         return Convert.ToHexString(sha256.Hash!);
     }
 
-    private bool ValidarRuntimeExtraido(string carpeta, string? hashEsperado, out string rutaRuntime)
+    private bool ValidarRuntimeExtraido(
+        string carpeta,
+        string? hashEsperado,
+        out string rutaRuntime,
+        bool validarContenidoCompleto = true)
     {
         rutaRuntime = string.Empty;
         try
@@ -294,7 +303,8 @@ public sealed class ServicioRuntimeWebView2Embebido
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(_hashContenidoEsperado)
+            if (validarContenidoCompleto
+                && !string.IsNullOrWhiteSpace(_hashContenidoEsperado)
                 && !string.Equals(
                     CalcularHashContenidoRuntime(carpeta),
                     _hashContenidoEsperado,

@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <aclapi.h>
 #include <bcrypt.h>
+#include <knownfolders.h>
 #include <sddl.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -34,6 +35,8 @@ namespace
     constexpr ULONGLONG TiempoMaximoLimpiezaMs = 20000;
     constexpr wchar_t NombreMutexLimpieza[] = L"Global\\LanzadorScripts_PortableCleanup_v2";
     constexpr wchar_t NombreBloqueoUso[] = L".runtime-use.lock";
+    constexpr wchar_t NombreRaizEjecucion[] = L"LanzadorScriptsPortable";
+    constexpr wchar_t NombreCarpetaSesiones[] = L"Sesiones";
     std::wstring RutaLogNativo;
 
     // Transporta un mensaje seguro hasta la interfaz.
@@ -65,9 +68,12 @@ namespace
     struct EntornoPreparado
     {
         std::wstring raizPrograma;
-        std::wstring raizSesiones;
+        std::wstring raizSesionesPrograma;
+        std::wstring raizDatos;
+        std::wstring raizSesionesDatos;
         std::wstring rutaPayload;
-        HANDLE bloqueoUso = INVALID_HANDLE_VALUE;
+        HANDLE bloqueoUsoPrograma = INVALID_HANDLE_VALUE;
+        HANDLE bloqueoUsoDatos = INVALID_HANDLE_VALUE;
     };
 
     // Convierte un codigo de Windows en texto.
@@ -152,6 +158,30 @@ namespace
         }
 
         return ObtenerRutaCompleta(std::wstring(buffer.data(), escritos));
+    }
+
+    // Resuelve Program Files para ejecutar binarios fuera de carpetas temporales.
+    std::wstring ObtenerCarpetaArchivosPrograma()
+    {
+        PWSTR ruta = nullptr;
+        const HRESULT resultado = SHGetKnownFolderPath(
+            FOLDERID_ProgramFiles,
+            KF_FLAG_DEFAULT,
+            nullptr,
+            &ruta);
+        if (FAILED(resultado) || ruta == nullptr)
+        {
+            if (ruta != nullptr)
+            {
+                CoTaskMemFree(ruta);
+            }
+
+            throw ErrorLanzador(L"No se pudo resolver la carpeta Program Files.");
+        }
+
+        std::wstring completa = ObtenerRutaCompleta(ruta);
+        CoTaskMemFree(ruta);
+        return completa;
     }
 
     // Crea un nombre impredecible y validable para la sesion portable.
@@ -886,73 +916,6 @@ namespace
         }
     }
 
-    // Calcula SHA-256 sobre un bloque de memoria.
-    std::vector<BYTE> CalcularSha256(const BYTE* datos, std::size_t longitud)
-    {
-        BCRYPT_ALG_HANDLE algoritmo = nullptr;
-        BCRYPT_HASH_HANDLE hash = nullptr;
-        DWORD longitudObjeto = 0;
-        DWORD longitudHash = 0;
-        DWORD escritos = 0;
-
-        if (BCryptOpenAlgorithmProvider(&algoritmo, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0
-            || BCryptGetProperty(
-                   algoritmo,
-                   BCRYPT_OBJECT_LENGTH,
-                   reinterpret_cast<PUCHAR>(&longitudObjeto),
-                   sizeof(longitudObjeto),
-                   &escritos,
-                   0) < 0
-            || BCryptGetProperty(
-                   algoritmo,
-                   BCRYPT_HASH_LENGTH,
-                   reinterpret_cast<PUCHAR>(&longitudHash),
-                   sizeof(longitudHash),
-                   &escritos,
-                   0) < 0)
-        {
-            if (algoritmo != nullptr)
-            {
-                BCryptCloseAlgorithmProvider(algoritmo, 0);
-            }
-
-            throw ErrorLanzador(L"No se pudo iniciar la validacion SHA-256.");
-        }
-
-        std::vector<BYTE> objeto(longitudObjeto);
-        std::vector<BYTE> resultado(longitudHash);
-        if (BCryptCreateHash(algoritmo, &hash, objeto.data(), longitudObjeto, nullptr, 0, 0) < 0)
-        {
-            BCryptCloseAlgorithmProvider(algoritmo, 0);
-            throw ErrorLanzador(L"No se pudo iniciar la validacion SHA-256.");
-        }
-
-        std::size_t posicion = 0;
-        while (posicion < longitud)
-        {
-            const ULONG bloque = static_cast<ULONG>(std::min<std::size_t>(TamanoBloque, longitud - posicion));
-            if (BCryptHashData(hash, const_cast<PUCHAR>(datos + posicion), bloque, 0) < 0)
-            {
-                BCryptDestroyHash(hash);
-                BCryptCloseAlgorithmProvider(algoritmo, 0);
-                throw ErrorLanzador(L"No se pudo calcular la validacion SHA-256.");
-            }
-
-            posicion += bloque;
-        }
-
-        if (BCryptFinishHash(hash, resultado.data(), longitudHash, 0) < 0)
-        {
-            BCryptDestroyHash(hash);
-            BCryptCloseAlgorithmProvider(algoritmo, 0);
-            throw ErrorLanzador(L"No se pudo finalizar la validacion SHA-256.");
-        }
-
-        BCryptDestroyHash(hash);
-        BCryptCloseAlgorithmProvider(algoritmo, 0);
-        return resultado;
-    }
-
     // Convierte bytes en texto hexadecimal.
     std::wstring ConvertirHexadecimal(const std::vector<BYTE>& datos)
     {
@@ -1353,70 +1316,152 @@ namespace
         return codigo;
     }
 
-    // Prepara una sesion temporal privada antes de iniciar .NET.
+    // Cierra un bloqueo abierto por la sesion portable.
+    void CerrarBloqueo(HANDLE& bloqueo)
+    {
+        if (bloqueo != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(bloqueo);
+            bloqueo = INVALID_HANDLE_VALUE;
+        }
+    }
+
+    // Retira las carpetas contenedoras cuando ya no conservan sesiones.
+    void EliminarContenedoresVacios(const std::wstring& raizSesiones)
+    {
+        const std::wstring sesionesWin32 = PrepararRutaWin32(raizSesiones);
+        RemoveDirectoryW(sesionesWin32.c_str());
+        const std::size_t separador = raizSesiones.find_last_of(L"\\/");
+        if (separador != std::wstring::npos)
+        {
+            const std::wstring contenedorWin32 = PrepararRutaWin32(
+                raizSesiones.substr(0, separador));
+            RemoveDirectoryW(contenedorWin32.c_str());
+        }
+    }
+
+    // Prepara binarios protegidos y datos temporales en raices separadas.
     EntornoPreparado PrepararEntorno()
     {
         EntornoPreparado entorno;
         const std::wstring raizTemporal = ObtenerCarpetaTemporal();
-        const std::wstring raizLanzador = UnirRuta(raizTemporal, L"LanzadorScripts");
-        const std::wstring raizSesiones = UnirRuta(raizLanzador, L"Portable");
-        CrearDirectorioSeguro(raizLanzador, raizTemporal);
-        CrearDirectorioSeguro(raizSesiones, raizTemporal);
-
-        HANDLE mutexLimpieza = AdquirirMutexLimpieza();
-        if (mutexLimpieza != nullptr)
+        const std::wstring raizLanzadorDatos = UnirRuta(raizTemporal, L"LanzadorScripts");
+        const std::wstring raizSesionesDatos = UnirRuta(raizLanzadorDatos, L"Portable");
+        const std::wstring raizArchivosPrograma = ObtenerCarpetaArchivosPrograma();
+        const std::wstring raizLanzadorPrograma = UnirRuta(
+            raizArchivosPrograma,
+            NombreRaizEjecucion);
+        const std::wstring raizSesionesPrograma = UnirRuta(
+            raizLanzadorPrograma,
+            NombreCarpetaSesiones);
+        HANDLE mutexLimpieza = nullptr;
+        try
         {
-            LimpiarSesionesAbandonadas(raizSesiones);
+            CrearDirectorioSeguro(raizLanzadorDatos, raizTemporal);
+            CrearDirectorioSeguro(raizSesionesDatos, raizTemporal);
+            CrearDirectorioSeguro(raizLanzadorPrograma, raizArchivosPrograma);
+            AplicarSeguridad(
+                raizLanzadorPrograma,
+                L"O:BAG:BAD:P(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICI;GRGX;;;BU)");
+            CrearDirectorioSeguro(raizSesionesPrograma, raizArchivosPrograma);
+
+            mutexLimpieza = AdquirirMutexLimpieza();
+            if (mutexLimpieza == nullptr)
+            {
+                throw ErrorLanzador(
+                    L"No se pudo serializar la preparacion de la sesion portable.");
+            }
+
+            LimpiarSesionesAbandonadas(raizSesionesPrograma);
+            LimpiarSesionesAbandonadas(raizSesionesDatos);
+
+            const std::wstring nombreSesion = CrearNombreSesion();
+            entorno.raizPrograma = UnirRuta(raizSesionesPrograma, nombreSesion);
+            entorno.raizSesionesPrograma = raizSesionesPrograma;
+            entorno.raizDatos = UnirRuta(raizSesionesDatos, nombreSesion);
+            entorno.raizSesionesDatos = raizSesionesDatos;
+            try
+            {
+                CrearDirectorioSeguro(entorno.raizPrograma, raizSesionesPrograma);
+                AplicarSeguridad(
+                    entorno.raizPrograma,
+                    L"O:BAG:BAD:P(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICI;GRGX;;;BU)");
+                CrearDirectorioSeguro(entorno.raizDatos, raizSesionesDatos);
+                const std::wstring sid = ObtenerSidUsuario();
+                AplicarSeguridad(
+                    entorno.raizDatos,
+                    L"O:" + sid + L"D:P(A;OICI;FA;;;" + sid + L")(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)");
+
+                const std::wstring aplicacion = UnirRuta(entorno.raizPrograma, L"Aplicacion");
+                const std::wstring dotnet = UnirRuta(entorno.raizPrograma, L"Runtimes\\DotNet");
+                const std::wstring temporales = UnirRuta(entorno.raizDatos, L"Temporales");
+                const std::wstring logs = UnirRuta(entorno.raizDatos, L"Logs");
+                CrearDirectorioSeguro(aplicacion, entorno.raizPrograma);
+                CrearDirectorioSeguro(dotnet, entorno.raizPrograma);
+                CrearDirectorioSeguro(temporales, entorno.raizDatos);
+                CrearDirectorioSeguro(logs, entorno.raizDatos);
+                RutaLogNativo = UnirRuta(logs, L"lanzador-nativo.log");
+                RegistrarLog(
+                    L"runtime.preparacion.inicio",
+                    L"variante=portable; programa=" + entorno.raizPrograma);
+
+                entorno.bloqueoUsoPrograma = AbrirBloqueoUsoCompartido(entorno.raizPrograma);
+                entorno.bloqueoUsoDatos = AbrirBloqueoUsoCompartido(entorno.raizDatos);
+                if (entorno.bloqueoUsoPrograma == INVALID_HANDLE_VALUE
+                    || entorno.bloqueoUsoDatos == INVALID_HANDLE_VALUE)
+                {
+                    LanzarErrorWindows(L"No se pudo bloquear la sesion portable");
+                }
+
+                entorno.rutaPayload = UnirRuta(
+                    aplicacion,
+                    L"LanzadorScripts.Runtime.exe");
+                if (!SetEnvironmentVariableW(L"DOTNET_BUNDLE_EXTRACT_BASE_DIR", dotnet.c_str())
+                    || !SetEnvironmentVariableW(L"TEMP", temporales.c_str())
+                    || !SetEnvironmentVariableW(L"TMP", temporales.c_str())
+                    || !SetEnvironmentVariableW(
+                        L"LANZADOR_DISTRIBUTION_EXE",
+                        ObtenerRutaEjecutableActual().c_str())
+                    || !SetEnvironmentVariableW(L"LANZADOR_VARIANTE", L"portable")
+                    || !SetEnvironmentVariableW(L"LANZADOR_PORTABLE_ROOT", entorno.raizDatos.c_str())
+                    || !SetEnvironmentVariableW(
+                        L"LANZADOR_PORTABLE_SESSIONS_ROOT",
+                        entorno.raizSesionesDatos.c_str())
+                    || !SetEnvironmentVariableW(
+                        L"LANZADOR_PORTABLE_EXECUTION_ROOT",
+                        entorno.raizPrograma.c_str())
+                    || !SetEnvironmentVariableW(
+                        L"LANZADOR_PORTABLE_EXECUTION_SESSIONS_ROOT",
+                        entorno.raizSesionesPrograma.c_str()))
+                {
+                    LanzarErrorWindows(L"No se pudo preparar el entorno portable seguro");
+                }
+
+                RegistrarLog(L"runtime.preparacion.correcta", entorno.rutaPayload);
+                LiberarMutexLimpieza(mutexLimpieza);
+                mutexLimpieza = nullptr;
+                return entorno;
+            }
+            catch (...)
+            {
+                CerrarBloqueo(entorno.bloqueoUsoPrograma);
+                CerrarBloqueo(entorno.bloqueoUsoDatos);
+                EliminarArbolSeguroConReintentos(
+                    entorno.raizDatos,
+                    entorno.raizSesionesDatos);
+                EliminarArbolSeguroConReintentos(
+                    entorno.raizPrograma,
+                    entorno.raizSesionesPrograma);
+                throw;
+            }
+        }
+        catch (...)
+        {
             LiberarMutexLimpieza(mutexLimpieza);
+            EliminarContenedoresVacios(raizSesionesDatos);
+            EliminarContenedoresVacios(raizSesionesPrograma);
+            throw;
         }
-
-        const std::wstring raizSesion = UnirRuta(raizSesiones, CrearNombreSesion());
-        CrearDirectorioSeguro(raizSesion, raizSesiones);
-        const std::wstring sid = ObtenerSidUsuario();
-        AplicarSeguridad(
-            raizSesion,
-            L"O:" + sid + L"D:P(A;OICI;FA;;;" + sid + L")(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)");
-
-        const std::wstring aplicacion = UnirRuta(raizSesion, L"Aplicacion");
-        const std::wstring dotnet = UnirRuta(raizSesion, L"Runtimes\\DotNet");
-        const std::wstring temporales = UnirRuta(raizSesion, L"Temporales");
-        const std::wstring logs = UnirRuta(raizSesion, L"Logs");
-        CrearDirectorioSeguro(aplicacion, raizSesion);
-        CrearDirectorioSeguro(dotnet, raizSesion);
-        CrearDirectorioSeguro(temporales, raizSesion);
-        CrearDirectorioSeguro(logs, raizSesion);
-        RutaLogNativo = UnirRuta(logs, L"lanzador-nativo.log");
-        RegistrarLog(L"runtime.preparacion.inicio", L"variante=portable");
-
-        entorno.bloqueoUso = AbrirBloqueoUsoCompartido(raizSesion);
-        if (entorno.bloqueoUso == INVALID_HANDLE_VALUE)
-        {
-            LanzarErrorWindows(L"No se pudo bloquear la sesion portable");
-        }
-
-        const std::wstring rutaPayload = UnirRuta(
-            aplicacion,
-            L"LanzadorScripts.Runtime.exe");
-        if (!SetEnvironmentVariableW(L"DOTNET_BUNDLE_EXTRACT_BASE_DIR", dotnet.c_str())
-            || !SetEnvironmentVariableW(L"TEMP", temporales.c_str())
-            || !SetEnvironmentVariableW(L"TMP", temporales.c_str())
-            || !SetEnvironmentVariableW(
-                L"LANZADOR_DISTRIBUTION_EXE",
-                ObtenerRutaEjecutableActual().c_str())
-            || !SetEnvironmentVariableW(L"LANZADOR_VARIANTE", L"portable")
-            || !SetEnvironmentVariableW(L"LANZADOR_PORTABLE_ROOT", raizSesion.c_str())
-            || !SetEnvironmentVariableW(
-                L"LANZADOR_PORTABLE_SESSIONS_ROOT",
-                raizSesiones.c_str()))
-        {
-            LanzarErrorWindows(L"No se pudo preparar el entorno portable seguro");
-        }
-
-        entorno.raizPrograma = raizSesion;
-        entorno.raizSesiones = raizSesiones;
-        entorno.rutaPayload = rutaPayload;
-        RegistrarLog(L"runtime.preparacion.correcta", rutaPayload);
-        return entorno;
     }
 
     // Espera un tiempo limitado a que terminen procesos auxiliares.
@@ -1444,23 +1489,18 @@ namespace
         HANDLE mutexLimpieza = AdquirirMutexLimpieza();
         if (mutexLimpieza == nullptr)
         {
-            if (entorno.bloqueoUso != INVALID_HANDLE_VALUE)
-            {
-                CloseHandle(entorno.bloqueoUso);
-                entorno.bloqueoUso = INVALID_HANDLE_VALUE;
-            }
+            CerrarBloqueo(entorno.bloqueoUsoPrograma);
+            CerrarBloqueo(entorno.bloqueoUsoDatos);
 
             RegistrarLog(L"runtime.limpieza_final.omitida_sin_mutex");
             return;
         }
 
-        if (entorno.bloqueoUso != INVALID_HANDLE_VALUE)
-        {
-            CloseHandle(entorno.bloqueoUso);
-            entorno.bloqueoUso = INVALID_HANDLE_VALUE;
-        }
+        CerrarBloqueo(entorno.bloqueoUsoPrograma);
+        CerrarBloqueo(entorno.bloqueoUsoDatos);
 
-        if (!BloqueoUsoDisponibleEnExclusiva(entorno.raizPrograma))
+        if (!BloqueoUsoDisponibleEnExclusiva(entorno.raizPrograma)
+            || !BloqueoUsoDisponibleEnExclusiva(entorno.raizDatos))
         {
             RegistrarLog(L"runtime.limpieza_final.omitida_otra_sesion");
             LiberarMutexLimpieza(mutexLimpieza);
@@ -1475,8 +1515,11 @@ namespace
         if (EsperarRutaSinProcesos(entorno.raizPrograma, 5000))
         {
             EliminarArbolSeguroConReintentos(
+                entorno.raizDatos,
+                entorno.raizSesionesDatos);
+            EliminarArbolSeguroConReintentos(
                 entorno.raizPrograma,
-                entorno.raizSesiones);
+                entorno.raizSesionesPrograma);
         }
         else
         {
@@ -1484,15 +1527,8 @@ namespace
         }
 
         LiberarMutexLimpieza(mutexLimpieza);
-        const std::wstring sesionesWin32 = PrepararRutaWin32(entorno.raizSesiones);
-        RemoveDirectoryW(sesionesWin32.c_str());
-        const std::size_t separador = entorno.raizSesiones.find_last_of(L"\\/");
-        if (separador != std::wstring::npos)
-        {
-            const std::wstring lanzadorWin32 = PrepararRutaWin32(
-                entorno.raizSesiones.substr(0, separador));
-            RemoveDirectoryW(lanzadorWin32.c_str());
-        }
+        EliminarContenedoresVacios(entorno.raizSesionesDatos);
+        EliminarContenedoresVacios(entorno.raizSesionesPrograma);
     }
 }
 
@@ -1514,16 +1550,13 @@ int WINAPI wWinMain(
     {
         const Recurso payload = ObtenerRecurso(IDR_APLICACION_DOTNET);
         const std::wstring hashEsperado = LeerHashEsperado();
-        const std::wstring hashEmbebido = ConvertirHexadecimal(
-            CalcularSha256(payload.datos, payload.longitud));
-        if (_wcsicmp(hashEsperado.c_str(), hashEmbebido.c_str()) != 0)
-        {
-            throw ErrorLanzador(L"El componente interno embebido esta manipulado.");
-        }
-
         entorno = PrepararEntorno();
         entornoPreparado = true;
+        const ULONGLONG inicioExtraccion = GetTickCount64();
         ExtraerPayload(entorno.rutaPayload, payload, hashEsperado);
+        RegistrarLog(
+            L"payload.extraccion.correcta",
+            L"duracionMs=" + std::to_wstring(GetTickCount64() - inicioExtraccion));
         const DWORD codigo = EjecutarAplicacion(entorno.rutaPayload);
         LimpiarDespuesDelCierre(entorno);
         entornoPreparado = false;

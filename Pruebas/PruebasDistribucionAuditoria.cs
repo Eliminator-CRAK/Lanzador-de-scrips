@@ -14,23 +14,37 @@ public sealed class PruebasDistribucionAuditoria
     public void ContextoDistingueInstaladaYPortable()
     {
         using var temporal = CarpetaTemporal.Crear();
-        var sesiones = Path.Combine(temporal.Ruta, "Portable");
-        var sesion = Path.Combine(sesiones, $"Sesion-{Guid.NewGuid():N}");
+        var sesionesDatos = Path.Combine(temporal.Ruta, "Portable-Datos");
+        var sesionDatos = Path.Combine(sesionesDatos, $"Sesion-{Guid.NewGuid():N}");
+        var sesionesEjecucion = Path.Combine(temporal.Ruta, "Portable-Ejecucion");
+        var sesionEjecucion = Path.Combine(
+            sesionesEjecucion,
+            Path.GetFileName(sesionDatos));
 
-        var instalada = ContextoDistribucion.Resolver(null, null, sesiones);
-        var portable = ContextoDistribucion.Resolver("portable", sesion, sesiones);
+        var instalada = ContextoDistribucion.Resolver(null, null, sesionesDatos);
+        var portable = ContextoDistribucion.Resolver(
+            "portable",
+            sesionDatos,
+            sesionesDatos,
+            sesionEjecucion,
+            sesionesEjecucion);
 
         Assert.Equal(TipoDistribucion.Instalada, instalada.Tipo);
         Assert.Null(instalada.RaizPortable);
+        Assert.Null(instalada.RaizEjecucionPortable);
         Assert.Equal(TipoDistribucion.Portable, portable.Tipo);
-        Assert.Equal(Path.GetFullPath(sesion), portable.RaizPortable, ignoreCase: true);
+        Assert.Equal(Path.GetFullPath(sesionDatos), portable.RaizPortable, ignoreCase: true);
+        Assert.Equal(
+            Path.GetFullPath(sesionEjecucion),
+            portable.RaizEjecucionPortable,
+            ignoreCase: true);
         portable.ValidarEjecutablePortable(Path.Combine(
-            sesion,
+            sesionEjecucion,
             "Aplicacion",
             ContextoDistribucion.NombreEjecutableInternoPortable));
         Assert.Throws<InvalidOperationException>(() =>
             portable.ValidarEjecutablePortable(Path.Combine(
-                temporal.Ruta,
+                sesionDatos,
                 ContextoDistribucion.NombreEjecutableInternoPortable)));
     }
 
@@ -61,12 +75,22 @@ public sealed class PruebasDistribucionAuditoria
     public void RutasPortableQuedanDentroDeLaSesion()
     {
         using var temporal = CarpetaTemporal.Crear();
-        var sesiones = Path.Combine(temporal.Ruta, "Portable");
-        var sesion = Path.Combine(sesiones, $"Sesion-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(sesion);
-        using var entorno = VariablesDistribucion.Aplicar("portable", sesion, sesiones);
+        var sesionesDatos = Path.Combine(temporal.Ruta, "Portable-Datos");
+        var sesionDatos = Path.Combine(sesionesDatos, $"Sesion-{Guid.NewGuid():N}");
+        var sesionesEjecucion = Path.Combine(temporal.Ruta, "Portable-Ejecucion");
+        var sesionEjecucion = Path.Combine(
+            sesionesEjecucion,
+            Path.GetFileName(sesionDatos));
+        Directory.CreateDirectory(sesionDatos);
+        Directory.CreateDirectory(sesionEjecucion);
+        using var entorno = VariablesDistribucion.Aplicar(
+            "portable",
+            sesionDatos,
+            sesionesDatos,
+            sesionEjecucion,
+            sesionesEjecucion);
 
-        string[] rutas =
+        string[] rutasDatos =
         [
             RutasAplicacion.RaizDatosUsuario,
             RutasAplicacion.RutaConfiguracionUsuario,
@@ -74,14 +98,20 @@ public sealed class PruebasDistribucionAuditoria
             RutasAplicacion.RutaTokensUsuario,
             RutasAplicacion.RutaStaging,
             RutasAplicacion.RutaRaizWebView2Usuario,
-            RutasAplicacion.RutaRaizWebView2RecuperacionLocal,
-            RutasAplicacion.RutaRuntimesWebView2
+            RutasAplicacion.RutaRaizWebView2RecuperacionLocal
         ];
+        var rutaRuntime = RutasAplicacion.RutaRuntimesWebView2;
 
-        Assert.All(rutas, ruta =>
-            Assert.True(ServicioRutasSeguras.EstaDentroDeCarpeta(sesion, ruta), ruta));
+        Assert.All(rutasDatos, ruta =>
+            Assert.True(ServicioRutasSeguras.EstaDentroDeCarpeta(sesionDatos, ruta), ruta));
+        Assert.True(
+            ServicioRutasSeguras.EstaDentroDeCarpeta(sesionEjecucion, rutaRuntime),
+            rutaRuntime);
+        Assert.False(
+            ServicioRutasSeguras.EstaDentroDeCarpeta(sesionDatos, rutaRuntime),
+            rutaRuntime);
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        Assert.All(rutas, ruta =>
+        Assert.All(rutasDatos.Append(rutaRuntime), ruta =>
             Assert.False(ServicioRutasSeguras.EstaDentroDeCarpeta(programData, ruta), ruta));
     }
 
@@ -410,20 +440,47 @@ public sealed class PruebasDistribucionAuditoria
         private readonly string? _variante;
         private readonly string? _raiz;
         private readonly string? _sesiones;
+        private readonly string? _raizEjecucion;
+        private readonly string? _sesionesEjecucion;
 
-        private VariablesDistribucion(string variante, string raiz, string sesiones)
+        private VariablesDistribucion(
+            string variante,
+            string raiz,
+            string sesiones,
+            string? raizEjecucion,
+            string? sesionesEjecucion)
         {
             _variante = Environment.GetEnvironmentVariable(ContextoDistribucion.VariableVariante);
             _raiz = Environment.GetEnvironmentVariable(ContextoDistribucion.VariableRaizPortable);
             _sesiones = Environment.GetEnvironmentVariable(ContextoDistribucion.VariableRaizSesionesPortable);
+            _raizEjecucion = Environment.GetEnvironmentVariable(
+                ContextoDistribucion.VariableRaizEjecucionPortable);
+            _sesionesEjecucion = Environment.GetEnvironmentVariable(
+                ContextoDistribucion.VariableRaizSesionesEjecucionPortable);
             Environment.SetEnvironmentVariable(ContextoDistribucion.VariableVariante, variante);
             Environment.SetEnvironmentVariable(ContextoDistribucion.VariableRaizPortable, raiz);
             Environment.SetEnvironmentVariable(ContextoDistribucion.VariableRaizSesionesPortable, sesiones);
+            Environment.SetEnvironmentVariable(
+                ContextoDistribucion.VariableRaizEjecucionPortable,
+                raizEjecucion);
+            Environment.SetEnvironmentVariable(
+                ContextoDistribucion.VariableRaizSesionesEjecucionPortable,
+                sesionesEjecucion);
         }
 
-        public static VariablesDistribucion Aplicar(string variante, string raiz, string sesiones)
+        public static VariablesDistribucion Aplicar(
+            string variante,
+            string raiz,
+            string sesiones,
+            string? raizEjecucion = null,
+            string? sesionesEjecucion = null)
         {
-            return new VariablesDistribucion(variante, raiz, sesiones);
+            return new VariablesDistribucion(
+                variante,
+                raiz,
+                sesiones,
+                raizEjecucion,
+                sesionesEjecucion);
         }
 
         public void Dispose()
@@ -431,6 +488,12 @@ public sealed class PruebasDistribucionAuditoria
             Environment.SetEnvironmentVariable(ContextoDistribucion.VariableVariante, _variante);
             Environment.SetEnvironmentVariable(ContextoDistribucion.VariableRaizPortable, _raiz);
             Environment.SetEnvironmentVariable(ContextoDistribucion.VariableRaizSesionesPortable, _sesiones);
+            Environment.SetEnvironmentVariable(
+                ContextoDistribucion.VariableRaizEjecucionPortable,
+                _raizEjecucion);
+            Environment.SetEnvironmentVariable(
+                ContextoDistribucion.VariableRaizSesionesEjecucionPortable,
+                _sesionesEjecucion);
         }
     }
 

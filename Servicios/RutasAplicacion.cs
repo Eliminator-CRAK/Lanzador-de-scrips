@@ -68,7 +68,7 @@ public static class RutasAplicacion
             "Sesiones");
 
     public static string RutaRuntimesWebView2 => Distribucion.EsPortable
-        ? Path.Combine(Distribucion.RaizPortable!, "Runtimes", "WebView2")
+        ? Path.Combine(Distribucion.RaizEjecucionPortable!, "Runtimes", "WebView2")
         : Path.Combine(
             RaizProgramFiles,
             "Runtimes",

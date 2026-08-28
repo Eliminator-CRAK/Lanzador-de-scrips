@@ -24,7 +24,9 @@ public static class ServicioEjecutableAplicacion
     {
         // Prioriza el EXE unico que recibio el usuario.
         if (!string.IsNullOrWhiteSpace(rutaDistribuida) &&
+            !rutaDistribuida.Contains('/') &&
             Path.IsPathFullyQualified(rutaDistribuida) &&
+            !ServicioRutasSeguras.ContieneSegmentosNavegacion(rutaDistribuida) &&
             existeArchivo(rutaDistribuida!))
         {
             return Path.GetFullPath(rutaDistribuida!);

@@ -13,9 +13,9 @@
     <ApplicationIcon>Recursos\IconoLanzador.ico</ApplicationIcon>
     <AssemblyName>LanzadorScripts</AssemblyName>
     <RootNamespace>LanzadorScripts</RootNamespace>
-    <Version>1.8.3</Version>
-    <AssemblyVersion>1.8.3.0</AssemblyVersion>
-    <FileVersion>1.8.3.0</FileVersion>
+    <Version>1.8.4</Version>
+    <AssemblyVersion>1.8.4.0</AssemblyVersion>
+    <FileVersion>1.8.4.0</FileVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
@@ -30,6 +30,7 @@
     <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
     <WebView2RuntimeZip>$(BaseIntermediateOutputPath)WebView2Runtime\WebView2Runtime.zip</WebView2RuntimeZip>
     <EmbedWebView2Runtime Condition="'$(EmbedWebView2Runtime)' == ''">true</EmbedWebView2Runtime>
+    <IncludeInstalledWebView2Runtime Condition="'$(IncludeInstalledWebView2Runtime)' == ''">false</IncludeInstalledWebView2Runtime>
     <InstalledWebView2RuntimeSource Condition="'$(InstalledWebView2RuntimeSource)' == ''">$(MSBuildProjectDirectory)\Recursos\WebView2\FixedRuntime-150.0.4078.48-x64\Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64</InstalledWebView2RuntimeSource>
     <LANZADOR_GIT_REVISION Condition="'$(LANZADOR_GIT_REVISION)' == ''">dev</LANZADOR_GIT_REVISION>
   </PropertyGroup>
@@ -81,7 +82,7 @@
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
                              Condition="'%(ResolvedFileToPublish.Extension)' == '.xml' and ('%(ResolvedFileToPublish.Filename)' == 'Microsoft.Web.WebView2.Core' or '%(ResolvedFileToPublish.Filename)' == 'Microsoft.Web.WebView2.Wpf' or '%(ResolvedFileToPublish.Filename)' == 'Microsoft.Web.WebView2.WinForms')" />
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-                             Condition="'$(EmbedWebView2Runtime)' != 'true' and '%(ResolvedFileToPublish.RelativePath)' == 'runtimes\win-x64\native\WebView2Loader.dll'" />
+                             Condition="'$(IncludeInstalledWebView2Runtime)' == 'true' and '%(ResolvedFileToPublish.RelativePath)' == 'runtimes\win-x64\native\WebView2Loader.dll'" />
       <EjecutablePublishItems Include="@(ResolvedFileToPublish)"
                               Condition="'%(ResolvedFileToPublish.RelativePath)' == 'LanzadorScripts.exe'" />
     </ItemGroup>
@@ -93,7 +94,7 @@
 
   <Target Name="IncluirRuntimeWebView2Instalado"
           BeforeTargets="ComputeFilesToPublish"
-          Condition="'$(EmbedWebView2Runtime)' != 'true' and Exists('$(InstalledWebView2RuntimeSource)')">
+          Condition="'$(IncludeInstalledWebView2Runtime)' == 'true' and Exists('$(InstalledWebView2RuntimeSource)')">
     <ItemGroup>
       <ResolvedFileToPublish Remove="$(InstalledWebView2RuntimeSource)\**\*" />
       <RuntimeWebView2Instalado Remove="@(RuntimeWebView2Instalado)" />
@@ -108,7 +109,7 @@
 
   <Target Name="ValidarRuntimeWebView2Instalado"
           BeforeTargets="ComputeFilesToPublish"
-          Condition="'$(EmbedWebView2Runtime)' != 'true' and !Exists('$(InstalledWebView2RuntimeSource)\msedgewebview2.exe')">
+          Condition="'$(IncludeInstalledWebView2Runtime)' == 'true' and !Exists('$(InstalledWebView2RuntimeSource)\msedgewebview2.exe')">
     <Error Text="No se encontro WebView2 Fixed Runtime en $(InstalledWebView2RuntimeSource)." />
   </Target>
 

@@ -15,6 +15,7 @@ public partial class Aplicacion : System.Windows.Application
 {
     private const string PrefijoMutex = "Local\\LanzadorScripts_AlexRoman";
     private const string PrefijoPipe = "LanzadorScripts_AlexRoman_ConfigPipe";
+    internal const string ArgumentoValidarPortable = "--validar-distribucion-portable";
     private const int IntentosConexionInstancia = 20;
 
     private Mutex? _mutex;
@@ -48,6 +49,19 @@ public partial class Aplicacion : System.Windows.Application
             Shutdown();
             return;
         }
+
+        if (e.Args.Length == 1
+            && string.Equals(
+                e.Args[0],
+                ArgumentoValidarPortable,
+                StringComparison.Ordinal))
+        {
+            // Confirma que el proceso interno se inicio desde la raiz protegida.
+            Shutdown(distribucion.EsPortable ? 0 : 1);
+            return;
+        }
+
+        _ = ServicioIdentidadBarraTareas.ConfigurarProceso(distribucion);
 
         var sufijoDistribucion = distribucion.EsPortable ? "Portable" : "Instalada";
         _nombrePipe = $"{PrefijoPipe}_{sufijoDistribucion}";

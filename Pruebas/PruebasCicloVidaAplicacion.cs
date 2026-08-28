@@ -116,12 +116,32 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("HayProcesoEnRuta", nativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_PORTABLE_ROOT", nativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_PORTABLE_SESSIONS_ROOT", nativo, StringComparison.Ordinal);
+        Assert.Contains("LANZADOR_PORTABLE_EXECUTION_ROOT", nativo, StringComparison.Ordinal);
+        Assert.Contains("LANZADOR_PORTABLE_EXECUTION_SESSIONS_ROOT", nativo, StringComparison.Ordinal);
+        Assert.Contains("FOLDERID_ProgramFiles", nativo, StringComparison.Ordinal);
+        Assert.Contains("bloqueoUsoPrograma", nativo, StringComparison.Ordinal);
+        Assert.Contains("bloqueoUsoDatos", nativo, StringComparison.Ordinal);
+        var adquisicionMutex = nativo.IndexOf(
+            "mutexLimpieza = AdquirirMutexLimpieza()",
+            StringComparison.Ordinal);
+        var creacionSesion = nativo.IndexOf(
+            "const std::wstring nombreSesion = CrearNombreSesion()",
+            StringComparison.Ordinal);
+        var bloqueoSesion = nativo.IndexOf(
+            "entorno.bloqueoUsoDatos = AbrirBloqueoUsoCompartido",
+            StringComparison.Ordinal);
+        var liberacionMutex = nativo.IndexOf(
+            "LiberarMutexLimpieza(mutexLimpieza)",
+            bloqueoSesion,
+            StringComparison.Ordinal);
+        Assert.True(adquisicionMutex >= 0 && creacionSesion > adquisicionMutex);
+        Assert.True(bloqueoSesion > creacionSesion && liberacionMutex > bloqueoSesion);
         Assert.Contains("Sesion-", nativo, StringComparison.Ordinal);
         Assert.Contains("PrepararRutaWin32", nativo, StringComparison.Ordinal);
         Assert.Contains("--validar-limpieza-ruta-larga", nativo, StringComparison.Ordinal);
         Assert.Contains("rutaArchivo.size() <= MAX_PATH", nativo, StringComparison.Ordinal);
         Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.3-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts_Portable-1.8.4-x64.exe", publicacion, StringComparison.Ordinal);
 
         var manifiesto = File.ReadAllText(ObtenerRutaProyecto("manifiesto.manifest"));
         Assert.Contains("<ws2:longPathAware>true</ws2:longPathAware>", manifiesto, StringComparison.Ordinal);
