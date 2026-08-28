@@ -27,7 +27,7 @@ $helperExe = Join-Path $objInstalador 'LanzadorScripts.Instalador.exe'
 $helperObj = Join-Path $objInstalador 'LanzadorScripts.Instalador.obj'
 $helperRes = Join-Path $objInstalador 'LanzadorScripts.Instalador.res'
 $logValidacionMsi = Join-Path $objInstalador 'MsiAdminImage.log'
-$msi = Join-Path $raiz 'Instalador\Release\LanzadorScripts-1.8.3-x64.msi'
+$msi = Join-Path $raiz 'Instalador\Release\LanzadorScripts-1.8.4-x64.msi'
 $publicacion = Join-Path $raiz 'bin\Release\net10.0-windows\win-x64\publish'
 $exeInstalado = Join-Path $publicacion 'LanzadorScripts.exe'
 $scriptFirma = Join-Path $PSScriptRoot 'FirmarPublicacionInstalada.ps1'
@@ -230,12 +230,12 @@ if (-not $DesarrolloSinFirma) {
 }
 
 $versionExe = (Get-Item -LiteralPath $exeInstalado).VersionInfo.FileVersion
-if ($versionExe -ne '1.8.3.0') {
-    throw "La version del ejecutable instalado no es 1.8.3.0: $versionExe"
+if ($versionExe -ne '1.8.4.0') {
+    throw "La version del ejecutable instalado no es 1.8.4.0: $versionExe"
 }
 
 $productoExe = (Get-Item -LiteralPath $exeInstalado).VersionInfo.ProductVersion
-$productoEsperado = "1.8.3+$revisionGit.installed"
+$productoEsperado = "1.8.4+$revisionGit.installed"
 if ($productoExe -ne $productoEsperado) {
     throw "La version de producto instalada no identifica el commit: $productoExe"
 }
@@ -272,11 +272,11 @@ try {
         }
     }
 
-    if ($propiedades.ProductVersion -ne '1.8.3' -or
+    if ($propiedades.ProductVersion -ne '1.8.4' -or
         $propiedades.ALLUSERS -ne '1' -or
         $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1' -or
         $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}') {
-        throw 'Los metadatos finales del MSI no coinciden con el contrato 1.8.3.'
+        throw 'Los metadatos finales del MSI no coinciden con el contrato 1.8.4.'
     }
 }
 finally {
@@ -342,7 +342,7 @@ try {
     }
 
     $versionExtraida = (Get-Item -LiteralPath $exeExtraido).VersionInfo
-    if ($versionExtraida.FileVersion -ne '1.8.3.0' -or
+    if ($versionExtraida.FileVersion -ne '1.8.4.0' -or
         $versionExtraida.ProductVersion -ne $productoEsperado) {
         throw 'El ejecutable incluido en el MSI no conserva la version esperada.'
     }

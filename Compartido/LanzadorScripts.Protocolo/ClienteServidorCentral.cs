@@ -18,6 +18,7 @@ public sealed class ClienteServidorCentral
     private readonly int _puerto;
     private readonly TimeSpan _tiempoMaximo;
     private readonly bool _exigirAutenticacionMutua;
+    private readonly ClienteAdministracionLocal? _clienteLocal;
 
     public ClienteServidorCentral(
         string servidor,
@@ -31,7 +32,13 @@ public sealed class ClienteServidorCentral
             : throw new ArgumentOutOfRangeException(nameof(puerto));
         _tiempoMaximo = tiempoMaximo ?? TiempoPredeterminado;
         _exigirAutenticacionMutua = exigirAutenticacionMutua;
+        if (DetectorServidorLocal.EsEquipoActual(_servidor))
+        {
+            _clienteLocal = new ClienteAdministracionLocal(_tiempoMaximo);
+        }
     }
+
+    internal bool UsaCanalLocal => _clienteLocal is not null;
 
     public RespuestaTipada<TRespuesta> Enviar<TSolicitud, TRespuesta>(
         string operacion,
@@ -51,6 +58,15 @@ public sealed class ClienteServidorCentral
         if (string.IsNullOrWhiteSpace(operacion) || operacion.Length > 100)
         {
             throw new ArgumentException("La operacion del servidor no es valida.", nameof(operacion));
+        }
+
+        if (_clienteLocal is not null)
+        {
+            // El bucle local usa el pipe autenticado y nunca recurre a TCP o NTLM.
+            return await _clienteLocal.EnviarAsync<TSolicitud, TRespuesta>(
+                operacion,
+                datos,
+                cancelacion);
         }
 
         using var limite = CancellationTokenSource.CreateLinkedTokenSource(cancelacion);

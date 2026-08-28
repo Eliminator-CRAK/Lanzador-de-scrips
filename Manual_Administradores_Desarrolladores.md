@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.3. -->
+<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.4. -->
 
 # Manual de administradores y desarrolladores
 
@@ -11,16 +11,16 @@
 4. Distribuir el MSI o la portable del cliente.
 5. Importar la configuracion cliente y probar con una cuenta nominal.
 
-No se deben mezclar clientes 1.8.3 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central.
+No se deben mezclar clientes 1.8.4 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central. El cliente 1.8.4 es compatible con el servidor 1.8.3.
 
 ## Cliente instalado
 
 ```powershell
-msiexec /i LanzadorScripts-1.8.3-x64.msi
-msiexec /i LanzadorScripts-1.8.3-x64.msi /qn /norestart
-msiexec /i LanzadorScripts-1.8.3-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-1.8.3-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.8.3-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.8.4-x64.msi
+msiexec /i LanzadorScripts-1.8.4-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.8.4-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-1.8.4-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.8.4-x64.msi /qn /norestart
 ```
 
 La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. Las actualizaciones conservan configuracion. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
@@ -65,7 +65,7 @@ La pareja actual se restaura en el mismo servidor porque DPAPI esta ligada a la 
 
 El servicio registra y retira automaticamente sus SPN en la cuenta de equipo porque se ejecuta como `LocalSystem`. Reintenta el registro si Active Directory no esta disponible durante el arranque. Los clientes deben pertenecer a un dominio de confianza, resolver el FQDN y no usar una IP. NTLM no se acepta porque no autentica mutuamente al servidor.
 
-Durante la migracion el cliente tambien prueba `HOST/<servidor>`, pero solo acepta el canal cuando Kerberos confirma autenticacion mutua, cifrado y firma. La consola administrativa muestra por separado el estado del canal local y el estado Kerberos remoto.
+Durante la migracion el cliente tambien prueba `HOST/<servidor>`, pero solo acepta el canal cuando Kerberos confirma autenticacion mutua, cifrado y firma. Si el cliente se ejecuta en el propio servidor, usa el pipe administrativo local con ACL de administradores en vez de abrir una conexion TCP en bucle. La consola administrativa muestra por separado el estado del canal local y el estado Kerberos remoto.
 
 ## Catalogo y scripts
 
@@ -97,4 +97,4 @@ El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certifi
 
 GitLab es el repositorio principal para ramas y merge requests. GitHub es una replica del mismo commit. Cada cambio debe superar pruebas, auditoria NuGet, Semgrep estricto, Gitleaks y revision CodeRabbit antes de fusionarse. No se utiliza Aikido.
 
-La release `v1.8.3` debe publicar bytes identicos en ambos proveedores y contener los tres entregables, hashes, certificado publico y notas de despliegue.
+La release `v1.8.4` debe publicar bytes identicos en ambos proveedores y contener los clientes 1.8.4, el servidor compatible 1.8.3, hashes, certificado publico y notas de despliegue.

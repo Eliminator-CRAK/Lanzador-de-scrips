@@ -267,8 +267,8 @@ function Verificar-Artefacto {
     # Comprueba los paquetes cliente y servidor y sus firmas.
     $carpeta = Join-Path $raizRepositorio 'publicacion'
     $archivosEsperados = @(
-        (Join-Path $carpeta 'LanzadorScripts-1.8.3-x64.msi'),
-        (Join-Path $carpeta 'LanzadorScripts_Portable-1.8.3-x64.exe')
+        (Join-Path $carpeta 'LanzadorScripts-1.8.4-x64.msi'),
+        (Join-Path $carpeta 'LanzadorScripts_Portable-1.8.4-x64.exe')
     )
     foreach ($archivo in $archivosEsperados) {
         if (-not (Test-Path -LiteralPath $archivo)) {

@@ -22,8 +22,8 @@ $gh = Get-Command gh -CommandType Application -ErrorAction Stop
 $raiz = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $prefijoRaiz = $raiz.TrimEnd('\') + '\'
 $archivosRelativos = @(
-    'publicacion\LanzadorScripts-1.8.3-x64.msi',
-    'publicacion\LanzadorScripts_Portable-1.8.3-x64.exe',
+    'publicacion\LanzadorScripts-1.8.4-x64.msi',
+    'publicacion\LanzadorScripts_Portable-1.8.4-x64.exe',
     'publicacion-servidor\LanzadorScripts_Servidor-1.8.3-x64.zip'
 )
 $archivos = foreach ($relativa in $archivosRelativos) {

@@ -35,6 +35,35 @@ public sealed class PruebasServidorCentral
     }
 
     [Fact]
+    public void ClienteUsaElPipeSoloParaElEquipoWindowsActual()
+    {
+        string[] nombresLocales =
+        [
+            "MAD002MICROPRU",
+            "MAD002MICROPRU.mad.ae.aena.es"
+        ];
+
+        Assert.True(DetectorServidorLocal.CoincideConNombreLocal(
+            "mad002micropru",
+            nombresLocales));
+        Assert.True(DetectorServidorLocal.CoincideConNombreLocal(
+            "MAD002MICROPRU.MAD.AE.AENA.ES.",
+            nombresLocales));
+        Assert.False(DetectorServidorLocal.CoincideConNombreLocal(
+            "localhost",
+            nombresLocales));
+        Assert.False(DetectorServidorLocal.CoincideConNombreLocal(
+            "MAD002MICROPRU2.mad.ae.aena.es",
+            nombresLocales));
+
+        var clienteLocal = new ClienteServidorCentral(Environment.MachineName, 47831);
+        var clienteRemoto = new ClienteServidorCentral("servidor-remoto.invalid", 47831);
+
+        Assert.True(clienteLocal.UsaCanalLocal);
+        Assert.False(clienteRemoto.UsaCanalLocal);
+    }
+
+    [Fact]
     public void RegistroSpnUsaAgregarYEliminarDesdeLocalSystem()
     {
         var operaciones = new List<OperacionRegistroSpn>();

@@ -39,7 +39,6 @@ $hashZipWebView2Fijado = '80C46993E2D5922EFDF6463ACDA737BA0525993D4D7757D377C38F
 $hashEjecutableWebView2Fijado = '30428A9075E5706B5E4A77E324B4331326566CDA027F49A8922089733C728859'
 $hashContenidoRuntimeFijado = '3345CEC7106D6A8EB3A5770DFF97DF36CB0750DF005331B54AB551CDF11E3DFB'
 $arquitecturaPeX64 = 0x8664
-$nombreRecursoWebView2 = 'Recursos.WebView2Runtime.zip'
 $raizCompleta = [System.IO.Path]::GetFullPath($raiz).TrimEnd(
     [System.IO.Path]::DirectorySeparatorChar,
     [System.IO.Path]::AltDirectorySeparatorChar)
@@ -76,12 +75,12 @@ if ($null -eq $propiedadesVersion -or
 
 $versionProductoEsperada = [string]$propiedadesVersion.Version
 $versionArchivoEsperada = [string]$propiedadesVersion.FileVersion
-if ($versionProductoEsperada -ne '1.8.3' -or $versionArchivoEsperada -ne '1.8.3.0') {
-    throw 'La publicacion MSI y portable requiere la version 1.8.3.'
+if ($versionProductoEsperada -ne '1.8.4' -or $versionArchivoEsperada -ne '1.8.4.0') {
+    throw 'La publicacion MSI y portable requiere la version 1.8.4.'
 }
 
-$nombreMsiFinal = 'LanzadorScripts-1.8.3-x64.msi'
-$nombrePortableFinal = 'LanzadorScripts_Portable-1.8.3-x64.exe'
+$nombreMsiFinal = 'LanzadorScripts-1.8.4-x64.msi'
+$nombrePortableFinal = 'LanzadorScripts_Portable-1.8.4-x64.exe'
 $msiCompilado = Join-Path $raiz "Instalador\Release\$nombreMsiFinal"
 $revisionGitEsperada = (& git -C $raiz rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revisionGitEsperada)) {
@@ -325,6 +324,8 @@ function New-NativeLauncher {
     param(
         [string]$RutaPayload,
         [string]$HashPayload,
+        [string]$RutaRuntimeWebView2,
+        [string]$HashRuntimeWebView2,
         [string]$RutaSalida
     )
 
@@ -350,6 +351,11 @@ function New-NativeLauncher {
         $archivoHash,
         $HashPayload,
         [System.Text.Encoding]::ASCII)
+    $archivoHashWebView2 = Join-Path $lanzadorNativoCompleta 'webview2.sha256'
+    [System.IO.File]::WriteAllText(
+        $archivoHashWebView2,
+        $HashRuntimeWebView2,
+        [System.Text.Encoding]::ASCII)
 
     $partesVersion = $versionArchivoEsperada.Split('.')
     if ($partesVersion.Count -ne 4 -or
@@ -374,6 +380,12 @@ function New-NativeLauncher {
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__RUTA_HASH_PAYLOAD__',
         (ConvertTo-RcLiteral $archivoHash))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__RUTA_WEBVIEW2_RUNTIME__',
+        (ConvertTo-RcLiteral $RutaRuntimeWebView2))
+    $contenidoRecursos = $contenidoRecursos.Replace(
+        '__RUTA_HASH_WEBVIEW2_RUNTIME__',
+        (ConvertTo-RcLiteral $archivoHashWebView2))
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__VERSION_ARCHIVO_COMAS__',
         ($partesVersion -join ','))
@@ -455,7 +467,9 @@ function Assert-NativeLauncherPayload {
     param(
         [string]$RutaLanzador,
         [string]$RutaPayload,
-        [string]$HashPayload
+        [string]$HashPayload,
+        [string]$RutaRuntimeWebView2,
+        [string]$HashRuntimeWebView2
     )
 
     # Comprueba que el EXE exterior contiene el runtime firmado esperado.
@@ -480,6 +494,31 @@ function Assert-NativeLauncherPayload {
         101)
     if (-not $hashPayloadEmbebido.Equals($HashPayload, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "El recurso .NET embebido esta corrupto. Esperado: $HashPayload. Detectado: $hashPayloadEmbebido."
+    }
+
+    $tamanoWebView2 = [LanzadorScripts.Publicacion.RecursosNativos]::ObtenerTamano(
+        $RutaLanzador,
+        103)
+    if ($tamanoWebView2 -ne (Get-Item -LiteralPath $RutaRuntimeWebView2).Length) {
+        throw "El recurso WebView2 embebido tiene un tamano inesperado: $tamanoWebView2."
+    }
+
+    $hashWebView2Publicado = [LanzadorScripts.Publicacion.RecursosNativos]::LeerAscii(
+        $RutaLanzador,
+        104).Trim()
+    if (-not $hashWebView2Publicado.Equals(
+            $HashRuntimeWebView2,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "El lanzador nativo contiene un hash WebView2 inesperado: $hashWebView2Publicado."
+    }
+
+    $hashWebView2Embebido = [LanzadorScripts.Publicacion.RecursosNativos]::ObtenerSha256(
+        $RutaLanzador,
+        103)
+    if (-not $hashWebView2Embebido.Equals(
+            $HashRuntimeWebView2,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "El recurso WebView2 nativo esta corrupto. Esperado: $HashRuntimeWebView2. Detectado: $hashWebView2Embebido."
     }
 }
 
@@ -811,37 +850,28 @@ function Initialize-WebView2EmbeddedRuntime {
     return $ejecutableMsi.Directory.FullName
 }
 
-function Assert-WebView2EmbeddedResource {
+function Assert-PortableRuntimePayload {
     param(
-        [string]$RutaEnsamblado
+        [string]$RutaPayload,
+        [string]$RutaCarpeta
     )
 
-    if (-not (Test-Path -LiteralPath $RutaEnsamblado -PathType Leaf)) {
-        throw "No se encontro el ensamblado publicado para validar WebView2: $RutaEnsamblado"
+    # Impide que el runtime WebView2 vuelva a duplicarse dentro del payload .NET.
+    if (-not (Test-Path -LiteralPath $RutaPayload -PathType Leaf)) {
+        throw "No se encontro el payload .NET portable: $RutaPayload"
     }
 
-    $bytesEnsamblado = [System.IO.File]::ReadAllBytes(
-        (Resolve-Path -LiteralPath $RutaEnsamblado).Path)
-    $ensamblado = [System.Reflection.Assembly]::Load($bytesEnsamblado)
-    if ($ensamblado.GetManifestResourceNames() -notcontains $nombreRecursoWebView2) {
-        throw "El ensamblado publicado no contiene el recurso $nombreRecursoWebView2."
+    $archivosRuntime = @(Get-ChildItem -LiteralPath $RutaCarpeta -Recurse -File)
+    if ($archivosRuntime.Count -ne 1 -or
+        -not $archivosRuntime[0].FullName.Equals(
+            $RutaPayload,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "La portable debe contener un unico payload .NET. Archivos detectados: $($archivosRuntime.Count)."
     }
 
-    $flujoRecurso = $ensamblado.GetManifestResourceStream($nombreRecursoWebView2)
-    if ($null -eq $flujoRecurso) {
-        throw "No se pudo abrir el recurso embebido $nombreRecursoWebView2."
-    }
-
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $hashRecurso = [Convert]::ToHexString($sha256.ComputeHash($flujoRecurso))
-    } finally {
-        $sha256.Dispose()
-        $flujoRecurso.Dispose()
-    }
-
-    if (-not $hashRecurso.Equals($hashZipWebView2Fijado, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "El recurso WebView2 embebido no coincide con el ZIP fijado. Esperado: $hashZipWebView2Fijado. Detectado: $hashRecurso."
+    $tamanoMaximoPayload = 160MB
+    if ($archivosRuntime[0].Length -gt $tamanoMaximoPayload) {
+        throw "El payload .NET portable supera 160 MB y puede contener WebView2 duplicado."
     }
 }
 
@@ -934,7 +964,7 @@ function Assert-PublishedMsi {
             $propiedades.ALLUSERS -ne '1' -or
             $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}' -or
             $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1') {
-            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.8.3.'
+            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.8.4.'
         }
     }
     finally {
@@ -998,6 +1028,9 @@ Invoke-NativeChecked -Descripcion 'dotnet publish' -Comando {
         -p:PublishSingleFile=true `
         -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:EnableCompressionInSingleFile=true `
+        -p:EmbedWebView2Runtime=false `
+        -p:IncludeInstalledWebView2Runtime=false `
+        -p:PublishReadyToRun=true `
         -p:PublishTrimmed=false `
         -p:UseAppHost=true `
         -p:DebugType=None `
@@ -1006,12 +1039,9 @@ Invoke-NativeChecked -Descripcion 'dotnet publish' -Comando {
 }
 
 $runtimeExe = Join-Path $runtimeStagingCompleta 'LanzadorScripts.exe'
-if (-not (Test-Path -LiteralPath $runtimeExe)) {
-    throw 'No se genero el runtime .NET interno.'
-}
-
-$ensambladoPublicado = Join-Path $raiz 'bin\Release\net10.0-windows\win-x64\LanzadorScripts.dll'
-Assert-WebView2EmbeddedResource -RutaEnsamblado $ensambladoPublicado
+Assert-PortableRuntimePayload `
+    -RutaPayload $runtimeExe `
+    -RutaCarpeta $runtimeStagingCompleta
 
 $certificadoFirma = Get-SigningCertificate
 if ($null -ne $certificadoFirma) {
@@ -1038,11 +1068,15 @@ $exePortable = Join-Path $stagingCompleta $nombrePortableFinal
 New-NativeLauncher `
     -RutaPayload $runtimeExe `
     -HashPayload $hashRuntimeExe `
+    -RutaRuntimeWebView2 $runtimeZipIntermedio `
+    -HashRuntimeWebView2 $hashZipWebView2Fijado `
     -RutaSalida $exePortable
 Assert-NativeLauncherPayload `
     -RutaLanzador $exePortable `
     -RutaPayload $runtimeExe `
-    -HashPayload $hashRuntimeExe
+    -HashPayload $hashRuntimeExe `
+    -RutaRuntimeWebView2 $runtimeZipIntermedio `
+    -HashRuntimeWebView2 $hashZipWebView2Fijado
 
 if ($null -ne $certificadoFirma) {
     Write-Host 'Firmando el lanzador portable final...'
@@ -1050,6 +1084,17 @@ if ($null -ne $certificadoFirma) {
         -RutaExe $exePortable `
         -Certificado $certificadoFirma `
         -Descripcion (Split-Path -Leaf $exePortable)
+}
+
+Write-Host 'Validando el arranque y la limpieza de la portable...'
+$pruebaPortable = Start-Process `
+    -FilePath $exePortable `
+    -ArgumentList '--validar-distribucion-portable' `
+    -Wait `
+    -PassThru `
+    -WindowStyle Hidden
+if ($pruebaPortable.ExitCode -ne 0) {
+    throw "La portable no supero la validacion de arranque protegido: $($pruebaPortable.ExitCode)."
 }
 
 Write-Host 'Compilando el instalador MSI con Visual Studio Professional 2026...'

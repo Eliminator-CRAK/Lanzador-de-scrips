@@ -1,21 +1,21 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 1.8.3
+# LanzadorScripts 1.8.4
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. La version 1.8.3 separa el cliente de un servicio central de Windows que administra permisos, catalogo y auditoria.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. Los clientes 1.8.4 usan el servicio central 1.8.3, que administra permisos, catalogo y auditoria.
 
 ## Entregables
 
-- `LanzadorScripts-1.8.3-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-1.8.3-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts-1.8.4-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-1.8.4-x64.exe`: cliente portable de sesion efimera.
 - `LanzadorScripts_Servidor-1.8.3-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64 y no descargan .NET ni WebView2 durante la ejecucion.
 
 ## Arquitectura
 
-El cliente abre los scripts desde la ruta compartida configurada y consulta al servidor central antes de mostrarlos o ejecutarlos. La comunicacion usa TCP con `NegotiateStream`, Kerberos, cifrado, firma y autenticacion mutua. El servicio registra automaticamente `LanzadorScripts/<servidor>` en la cuenta de equipo de Active Directory y el cliente rechaza cualquier negociacion que caiga a NTLM.
+El cliente abre los scripts desde la ruta compartida configurada y consulta al servidor central antes de mostrarlos o ejecutarlos. Desde otros equipos, la comunicacion usa TCP con `NegotiateStream`, Kerberos, cifrado, firma y autenticacion mutua. En el propio servidor usa el pipe administrativo local protegido, evitando el fallo de autenticacion Kerberos en bucle sin aceptar NTLM. El servicio registra automaticamente `LanzadorScripts/<servidor>` en la cuenta de equipo de Active Directory.
 
 El servidor mantiene una base SQLite local con tablas para:
 
@@ -68,7 +68,7 @@ La cuenta de dominio debe estar activa en la base central y disponer de lectura 
 
 Los administradores pueden abrir la auditoria con `Ctrl+Shift+M`. La ventana permite filtrar por usuario, fecha, resultado y script. En la version instalada, el boton de cerrar mantiene el cliente en la bandeja y **Cerrar** en su menu finaliza la aplicacion.
 
-La portable no crea icono de bandeja: el boton rojo cierra el proceso. Guarda sus datos exclusivamente bajo `%TEMP%\LanzadorScripts\Portable\<sesion>` y elimina la sesion al terminar. En el siguiente arranque limpia sesiones abandonadas cuyo proceso ya no exista.
+La portable no crea icono de bandeja: el boton rojo cierra el proceso. Guarda sus datos bajo `%TEMP%\LanzadorScripts\Portable\<sesion>` y ejecuta sus binarios desde una sesion protegida bajo `C:\Program Files\LanzadorScriptsPortable\Sesiones`. Elimina ambas sesiones al terminar y limpia restos abandonados en el siguiente arranque.
 
 ## Compilacion
 

@@ -128,6 +128,10 @@ public partial class VentanaPrincipal : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        _ = ServicioIdentidadBarraTareas.ConfigurarVentana(
+            new WindowInteropHelper(this).Handle,
+            RutasAplicacion.Distribucion,
+            ServicioEjecutableAplicacion.ResolverRutaRelanzable());
         AplicarEstiloNativoVentana();
         InstalarRedimensionNativo();
     }
@@ -145,12 +149,16 @@ public partial class VentanaPrincipal : Window
             PanelArranque.Visibility = Visibility.Visible;
             PanelArranque.IsHitTestVisible = true;
             BotonReintentarArranque.Visibility = Visibility.Collapsed;
-            TextoArranque.Text = "Iniciando backend local...";
-            var endpoint = await ObtenerEndpointBackendAsync();
+            TextoArranque.Text = "Preparando componentes locales...";
+            var tareaBackend = ObtenerEndpointBackendAsync();
+            var tareaWebView2 = _servicioArranqueWebView2.PrepararAsync(
+                () => VistaCliente,
+                RecrearVistaCliente);
+            await Task.WhenAll(tareaBackend, tareaWebView2);
+            var endpoint = await tareaBackend;
             _endpointServicio = endpoint;
 
-            TextoArranque.Text = "Preparando WebView2...";
-            var arranque = await _servicioArranqueWebView2.PrepararAsync(() => VistaCliente, RecrearVistaCliente);
+            var arranque = await tareaWebView2;
             if (!arranque.Exito)
             {
                 PanelArranque.IsHitTestVisible = true;
@@ -173,15 +181,18 @@ public partial class VentanaPrincipal : Window
             {
                 coreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 coreWebView2.Settings.AreDevToolsEnabled = false;
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerDiagnosticoErroresCliente());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionApiLocal(endpoint.TokenApiInterno));
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerProteccionTokenLocalStorage());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerMejorasInterfazScripts());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerPanelPermisosSubcarpetas());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAvisosConfiguracionApp());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerExportacionConfiguracionGestionada());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerAtajoAuditoria());
-                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ObtenerEstadoCargaAjustes());
+                var protecciones = string.Join(
+                    "\n;\n",
+                    ObtenerDiagnosticoErroresCliente(),
+                    ObtenerProteccionApiLocal(endpoint.TokenApiInterno),
+                    ObtenerProteccionTokenLocalStorage(),
+                    ObtenerMejorasInterfazScripts(),
+                    ObtenerPanelPermisosSubcarpetas(),
+                    ObtenerAvisosConfiguracionApp(),
+                    ObtenerExportacionConfiguracionGestionada(),
+                    ObtenerAtajoAuditoria(),
+                    ObtenerEstadoCargaAjustes());
+                await coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(protecciones);
                 _webViewConfigurada = coreWebView2;
             }
 
@@ -218,7 +229,7 @@ public partial class VentanaPrincipal : Window
     {
         if (_servidorLocalIntegrado is null)
         {
-            _servidorLocalIntegrado = ServidorLocalWeb.Iniciar();
+            _servidorLocalIntegrado = await Task.Run(ServidorLocalWeb.Iniciar);
             await _servicioLogInicio.RegistrarAsync(
                 "cliente.backend_integrado",
                 "Backend local integrado iniciado.");
