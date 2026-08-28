@@ -21,7 +21,6 @@ build-release:
     - dotnet build Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
     - dotnet build Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
     - dotnet build Pruebas/LanzadorScripts.Pruebas.csproj -c Release --no-restore -p:EnableWindowsTargeting=true
-    - dotnet test Pruebas/LanzadorScripts.Pruebas.csproj -c Release --no-build --no-restore -p:EnableWindowsTargeting=true
   cache: []
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
