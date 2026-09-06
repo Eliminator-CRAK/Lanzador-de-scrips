@@ -287,7 +287,8 @@ public sealed class PruebasActualizaciones
         var codigoVentana = Leer("VentanaPrincipal.xaml.cs");
         var aplicacion = Leer("Aplicacion.xaml.cs");
         var cliente = Leer("Servicios", "ServicioActualizacionesCliente.cs");
-        var actualizador = Leer("Actualizador", "LanzadorScripts.Actualizador.cpp");
+        var actualizador = Leer("Actualizador", "LanzadorScripts.Actualizador.cpp")
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
 
         Assert.Contains("x:Name=\"BotonActualizarAplicacion\"", ventana, StringComparison.Ordinal);
         Assert.Contains("Visibility=\"Collapsed\"", ventana, StringComparison.Ordinal);
