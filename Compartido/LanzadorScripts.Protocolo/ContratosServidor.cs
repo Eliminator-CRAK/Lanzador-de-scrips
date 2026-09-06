@@ -20,6 +20,8 @@ public static class OperacionesServidor
     public const string EliminarUsuario = "usuarios.eliminar";
     public const string CrearCopiaSeguridad = "mantenimiento.copia";
     public const string ComprobarIntegridad = "mantenimiento.integridad";
+    public const string ObtenerActualizacion = "actualizacion.obtener";
+    public const string ObtenerEstadoActualizaciones = "actualizacion.estado";
 }
 
 public sealed record SolicitudServidor(
@@ -115,6 +117,40 @@ public sealed record ResultadoCopiaServidorCentral(
     long Longitud);
 
 public sealed record ResultadoIntegridadServidorCentral(bool Integra, string Mensaje);
+
+public sealed record ConsultaActualizacionCliente(
+    string VersionCliente,
+    string Arquitectura,
+    string TipoDistribucion);
+
+public sealed record ActualizacionClienteServidor(
+    bool Disponible,
+    string Version,
+    string NombreArchivo,
+    string RecursoCompartido,
+    long Longitud,
+    string Sha256,
+    DateTimeOffset FechaUtc);
+
+public sealed record ConsultaEstadoActualizacionesServidor(bool ForzarValidacion = false);
+
+public sealed record PaqueteActualizacionServidorCentral(
+    string NombreArchivo,
+    string Version,
+    long Longitud,
+    string Sha256,
+    DateTimeOffset FechaUtc,
+    bool Valido,
+    string EstadoFirma,
+    string Mensaje);
+
+public sealed record EstadoActualizacionesServidorCentral(
+    string Carpeta,
+    string RecursoCompartido,
+    string VersionActiva,
+    IReadOnlyList<PaqueteActualizacionServidorCentral> Paquetes,
+    DateTimeOffset ComprobadoUtc,
+    string Mensaje);
 
 public sealed record RespuestaTipada<T>(bool Exito, string Codigo, string Mensaje, T? Datos)
 {

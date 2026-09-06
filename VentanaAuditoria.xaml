@@ -7,29 +7,58 @@
         Icon="Recursos/IconoLanzador.ico"
         Width="1180"
         Height="720"
-        MinWidth="900"
+        MinWidth="960"
         MinHeight="560"
         Background="{StaticResource SurfaceBrush}"
+        Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True"
         WindowStartupLocation="CenterOwner">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="64" />
+            <RowDefinition Height="72" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="34" />
+            <RowDefinition Height="38" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="#111827" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1" Padding="20,0">
+        <Border Grid.Row="0"
+                Background="#15181D"
+                BorderBrush="{StaticResource BorderBrushSubtle}"
+                BorderThickness="0,0,0,1"
+                Padding="22,0">
             <Grid>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Auditoría de scripts" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock x:Name="TextoServidor" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="38" Height="38" Background="#050607" CornerRadius="5">
+                        <TextBlock Text="&#xE9D5;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="18"
+                                   Foreground="#93C5FD"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Auditoría de scripts" FontSize="19" FontWeight="SemiBold" />
+                        <TextBlock x:Name="TextoServidor"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   FontSize="11"
+                                   Margin="0,3,0,0" />
+                    </StackPanel>
                 </StackPanel>
-                <Button HorizontalAlignment="Right" VerticalAlignment="Center" Click="Cerrar_Click" Content="Cerrar" />
+                <Button HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Click="Actualizar_Click"
+                        AutomationProperties.Name="Actualizar auditoría">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" />
+                        <TextBlock Text="Actualizar" />
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="20,16,20,12">
+        <Grid Grid.Row="1" Margin="22,18,22,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="230" />
                 <ColumnDefinition Width="145" />
@@ -55,7 +84,9 @@
                 <ComboBox x:Name="FiltroResultado" MinHeight="32">
                     <ComboBoxItem Content="Todos" />
                     <ComboBoxItem Content="permitido" />
+                    <ComboBoxItem Content="iniciado" />
                     <ComboBoxItem Content="correcto" />
+                    <ComboBoxItem Content="finalizado" />
                     <ComboBoxItem Content="error" />
                     <ComboBoxItem Content="denegado" />
                     <ComboBoxItem Content="cancelado" />
@@ -65,12 +96,22 @@
                 <TextBlock Text="Script" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
                 <TextBox x:Name="FiltroScript" />
             </StackPanel>
-            <Button Grid.Column="5" VerticalAlignment="Bottom" Click="Buscar_Click" Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource AccentBrush}" Content="Buscar" />
+            <Button Grid.Column="5"
+                    VerticalAlignment="Bottom"
+                    Click="Buscar_Click"
+                    Background="{StaticResource AccentSoftBrush}"
+                    BorderBrush="{StaticResource AccentBrush}"
+                    AutomationProperties.Name="Buscar en auditoría">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" />
+                    <TextBlock Text="Buscar" />
+                </StackPanel>
+            </Button>
         </Grid>
 
         <DataGrid x:Name="TablaAuditoria"
                   Grid.Row="2"
-                  Margin="20,0"
+                  Margin="22,0"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   CanUserAddRows="False"
@@ -94,9 +135,15 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <Grid Grid.Row="3" Margin="20,0">
-            <TextBlock x:Name="TextoEstado" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" />
-            <ProgressBar x:Name="Progreso" HorizontalAlignment="Right" VerticalAlignment="Center" Width="150" Height="4" IsIndeterminate="True" Visibility="Collapsed" />
-        </Grid>
+        <Border Grid.Row="3"
+                Background="#111419"
+                BorderBrush="{StaticResource BorderBrushSubtle}"
+                BorderThickness="0,1,0,0"
+                Padding="22,0">
+            <Grid>
+                <TextBlock x:Name="TextoEstado" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" />
+                <ProgressBar x:Name="Progreso" HorizontalAlignment="Right" VerticalAlignment="Center" Width="150" Height="4" IsIndeterminate="True" Visibility="Collapsed" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

@@ -7,7 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>LanzadorScripts.Protocolo</AssemblyName>
     <RootNamespace>LanzadorScripts.Protocolo</RootNamespace>
-    <Version>1.8.4</Version>
   </PropertyGroup>
 
   <ItemGroup>

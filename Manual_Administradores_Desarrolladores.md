@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.8.4. -->
+<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.9.0. -->
 
 # Manual de administradores y desarrolladores
 
@@ -11,16 +11,16 @@
 4. Distribuir el MSI o la portable del cliente.
 5. Importar la configuracion cliente y probar con una cuenta nominal.
 
-No se deben mezclar clientes 1.8.4 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central. El cliente 1.8.4 es compatible con el servidor 1.8.3.
+No se deben mezclar clientes 1.9.0 con los JSON operativos de 1.7.x. La fuente autoritativa es la base central. El cliente y el servidor 1.9.0 incorporan el protocolo aditivo de actualizaciones.
 
 ## Cliente instalado
 
 ```powershell
-msiexec /i LanzadorScripts-1.8.4-x64.msi
-msiexec /i LanzadorScripts-1.8.4-x64.msi /qn /norestart
-msiexec /i LanzadorScripts-1.8.4-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-1.8.4-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.8.4-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.9.0-x64.msi
+msiexec /i LanzadorScripts-1.9.0-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-1.9.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-1.9.0-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-1.9.0-x64.msi /qn /norestart
 ```
 
 La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. Las actualizaciones conservan configuracion. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
@@ -34,6 +34,7 @@ La consola `LanzadorScripts.Servidor.exe` debe ejecutarse como administrador en 
 - asignar rol, limite simultaneo y subcarpetas autorizadas;
 - consultar la auditoria por usuario, fecha, resultado y script;
 - recrear el catalogo y sus SHA-256;
+- revisar y revalidar los MSI publicados para actualizacion;
 - comprobar integridad SQLite;
 - crear copias de seguridad.
 
@@ -73,6 +74,14 @@ El servicio usa por defecto `R:\SCRIPS` para generar el catalogo. Los clientes u
 
 Tras cualquier modificacion autorizada de un script, abrir **Catalogo**, seleccionar la carpeta local y pulsar **Recrear catalogo**. El servidor crea antes una copia de seguridad y actualiza los hashes en una transaccion.
 
+## Actualizaciones del MSI
+
+El repositorio administrado es `C:\ProgramData\LanzadorScriptsServidor\Actualizaciones`, compartido como `LanzadorScriptsActualizaciones$`. Usuarios autenticados solo tienen lectura; `SYSTEM` y administradores locales tienen control total.
+
+El MSI 1.9.0 es el arranque manual del sistema de actualizacion. Para publicar 1.9.1 o posterior, copiar el MSI firmado a la carpeta y comprobarlo en **Actualizaciones**. El servidor selecciona la version valida mayor y cachea su validacion por ruta, tamano y fecha. El cliente vuelve a validar longitud, SHA-256, Authenticode, certificado, version, x64 y `UpgradeCode` antes de ejecutar el actualizador nativo.
+
+La actualizacion es opcional: no muestra ventanas emergentes al iniciar, no bloquea versiones anteriores y no cancela scripts activos. El actualizador usa `msiexec /passive /norestart`, conserva configuracion y relanza el cliente salvo que Windows solicite reinicio. La portable queda excluida.
+
 ## Desarrollo
 
 ```powershell
@@ -97,4 +106,4 @@ El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certifi
 
 GitLab es el repositorio principal para ramas y merge requests. GitHub es una replica del mismo commit. Cada cambio debe superar pruebas, auditoria NuGet, Semgrep estricto, Gitleaks y revision CodeRabbit antes de fusionarse. No se utiliza Aikido.
 
-La release `v1.8.4` debe publicar bytes identicos en ambos proveedores y contener los clientes 1.8.4, el servidor compatible 1.8.3, hashes, certificado publico y notas de despliegue.
+La release `v1.9.0` debe publicar bytes identicos en ambos proveedores y contener los clientes y el servidor 1.9.0, hashes, certificado publico y notas de despliegue.

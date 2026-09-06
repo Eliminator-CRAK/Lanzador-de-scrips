@@ -184,7 +184,7 @@ public sealed class PruebasLanzadorScripts
         Assert.DoesNotContain("artefactos.key", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.8.4-x64.msi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombreMsi", publicacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));
@@ -333,30 +333,32 @@ public sealed class PruebasLanzadorScripts
         var raizLocalAppData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "LanzadorScripts",
-            "WebView2-v5",
+            "WebView2-v6",
             "Sesiones");
         var raizProgramData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         var raizWindows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var raizTemporal = Path.GetFullPath(Path.GetTempPath());
 
         Assert.Equal(raizLocalAppData, RutasAplicacion.RutaRaizWebView2Usuario, ignoreCase: true);
         Assert.DoesNotContain(raizProgramData, RutasAplicacion.RutaRaizWebView2Usuario, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(raizWindows, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(raizTemporal, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void WebView2EntregaAEdgeUnaRutaFinalTodaviaNoCreada()
+    public void WebView2EntregaAEdgeUnPerfilFinalConAclPreparada()
     {
         using var entorno = EntornoPruebas.Crear();
         var raiz = Path.Combine(entorno.Raiz, "sesiones");
-        var rutaPerfil = ServicioArranqueWebView2.CrearRutaPerfilNoExistente(raiz);
+        var rutaPerfil = ServicioArranqueWebView2.CrearPerfilSesionSeguro(raiz);
         var rutaArranque = Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioArranqueWebView2.cs");
         var codigo = File.ReadAllText(rutaArranque);
 
         Assert.StartsWith(raiz, rutaPerfil, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith("Sesion-", Path.GetFileName(rutaPerfil), StringComparison.Ordinal);
-        Assert.False(Directory.Exists(rutaPerfil));
-        Assert.Contains("CrearRutaPerfilNoExistente(RutasAplicacion.RutaRaizWebView2Usuario)", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("PrepararDirectorioWebView2(rutaPerfil)", codigo, StringComparison.Ordinal);
+        Assert.True(Directory.Exists(rutaPerfil));
+        Assert.Contains("CrearPerfilSesionSeguro(RutasAplicacion.RutaRaizWebView2Usuario)", codigo, StringComparison.Ordinal);
+        Assert.Contains("PrepararPerfilWebView2(rutaPerfil)", codigo, StringComparison.Ordinal);
         Assert.Contains("CoreWebView2Environment.CreateAsync(runtimeFijo, rutaPerfil)", codigo, StringComparison.Ordinal);
     }
 
@@ -406,21 +408,40 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void DirectorioWebView2ConservaLaAclPredeterminada()
+    public void DirectorioWebView2ConservaHerenciaYConcedeEscrituraAlPerfil()
     {
         using var entorno = EntornoPruebas.Crear();
         var carpeta = Path.Combine(entorno.Raiz, "webview2");
-        Directory.CreateDirectory(carpeta);
-        var sddlAnterior = new DirectoryInfo(carpeta)
-            .GetAccessControl(AccessControlSections.Access)
-            .GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-
         ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(carpeta);
+        var perfil = Path.Combine(carpeta, $"Sesion-{Guid.NewGuid():N}");
+        ServicioDirectoriosAplicacion.PrepararPerfilWebView2(perfil);
 
-        var sddlPosterior = new DirectoryInfo(carpeta)
+        var reglasRaiz = new DirectoryInfo(carpeta)
             .GetAccessControl(AccessControlSections.Access)
-            .GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-        Assert.Equal(sddlAnterior, sddlPosterior);
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
+            .ToList();
+        var seguridadRaiz = new DirectoryInfo(carpeta)
+            .GetAccessControl(AccessControlSections.Access);
+        var reglasPerfil = new DirectoryInfo(perfil)
+            .GetAccessControl(AccessControlSections.Access)
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
+            .ToList();
+        var seguridadPerfil = new DirectoryInfo(perfil)
+            .GetAccessControl(AccessControlSections.Access);
+        var usuario = WindowsIdentity.GetCurrent().User?.Value;
+
+        Assert.Contains(reglasPerfil, regla =>
+            string.Equals(regla.IdentityReference.Value, usuario, StringComparison.Ordinal)
+            && regla.FileSystemRights.HasFlag(FileSystemRights.Modify));
+        Assert.Contains(reglasRaiz, regla =>
+            string.Equals(regla.IdentityReference.Value, usuario, StringComparison.Ordinal)
+            && regla.FileSystemRights.HasFlag(FileSystemRights.Modify));
+        Assert.False(seguridadRaiz.AreAccessRulesProtected);
+        Assert.False(seguridadPerfil.AreAccessRulesProtected);
     }
 
     [Fact]

@@ -12,6 +12,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$raiz = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'VersionAplicacion.ps1')
+$versionAplicacion = Get-LanzadorScriptsVersion -Raiz $raiz
 
 function Get-RutaArchivoValidada {
     param(
@@ -382,8 +385,8 @@ try {
     $appFiles = @($files | Where-Object {
         ($_.FileName -split '\|')[-1].Equals('LanzadorScripts.exe', [System.StringComparison]::OrdinalIgnoreCase)
     })
-    if ($appFiles.Count -ne 1 -or $appFiles[0].Version -ne '1.8.4.0') {
-        throw 'El MSI no contiene exactamente un LanzadorScripts.exe con version 1.8.4.0.'
+    if ($appFiles.Count -ne 1 -or $appFiles[0].Version -ne $versionAplicacion.Archivo) {
+        throw "El MSI no contiene exactamente un LanzadorScripts.exe con version $($versionAplicacion.Archivo)."
     }
 
     $features = @(Get-MsiRows `

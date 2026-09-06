@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Valida el contrato reproducible del instalador MSI 1.8.4.
+// Descripcion: Valida el contrato reproducible del instalador MSI 1.9.0.
 
 using Xunit;
 
@@ -19,9 +19,11 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[ProgramFiles64Folder]LanzadorScripts", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"InstallAllUsers\" = \"11:TRUE\"", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"TargetPlatform\" = \"3:1\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("\"ProductVersion\" = \"8:1.8.4\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{F895FB81-296D-4A0A-AC51-58E4DCF3296B}", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{69B1B1FD-FA3A-4955-BEA9-ABF1BE7F46AD}", vdproj, StringComparison.Ordinal);
+        Assert.Contains("\"ProductVersion\" = \"8:1.9.0\"", vdproj, StringComparison.Ordinal);
+        Assert.Contains("{A1CDFD1A-2D33-4FAA-816D-DE530C1F2001}", vdproj, StringComparison.Ordinal);
+        Assert.Contains("{49B57161-A7A1-44D9-BE98-3B89BAF6C1B1}", vdproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("{F895FB81-296D-4A0A-AC51-58E4DCF3296B}", vdproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("{69B1B1FD-FA3A-4955-BEA9-ABF1BE7F46AD}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{185E5B1A-2386-4CD0-A7B8-8D9FB729AF35}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{98A61296-1ABD-4C37-A79C-79735955A1E7}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{96640479-F6DF-4AE5-BC5B-0799ECCC938E}", vdproj, StringComparison.Ordinal);
@@ -43,12 +45,15 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("<PublishSingleFile>false</PublishSingleFile>", perfil, StringComparison.Ordinal);
         Assert.Contains("<EmbedWebView2Runtime>false</EmbedWebView2Runtime>", perfil, StringComparison.Ordinal);
         Assert.Contains("<IncludeInstalledWebView2Runtime>true</IncludeInstalledWebView2Runtime>", perfil, StringComparison.Ordinal);
+        Assert.Contains("<IncludeInstalledUpdater>true</IncludeInstalledUpdater>", perfil, StringComparison.Ordinal);
         Assert.Contains("<IncludeSourceRevisionInInformationalVersion>false", perfil, StringComparison.Ordinal);
-        Assert.Contains("1.8.4+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
+        Assert.Contains("$(LANZADOR_PRODUCT_VERSION)+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
 
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
         Assert.Contains("runtimes\\win-x64\\native\\WebView2Loader.dll", proyecto, StringComparison.Ordinal);
         Assert.Contains("'$(IncludeInstalledWebView2Runtime)' == 'true'", proyecto, StringComparison.Ordinal);
+        Assert.Contains("'$(IncludeInstalledUpdater)' == 'true'", proyecto, StringComparison.Ordinal);
+        Assert.Contains("LanzadorScripts.Actualizador.exe", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ResolvedFileToPublish Remove=\"@(ResolvedFileToPublish)\"", proyecto, StringComparison.Ordinal);
         Assert.Contains("BeforeTargets=\"PublishItemsOutputGroup\"", proyecto, StringComparison.Ordinal);
         Assert.Contains("EjecutablePublishItems", proyecto, StringComparison.Ordinal);
@@ -109,6 +114,7 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("FinalReleaseComObject($vista)", compilacion, StringComparison.Ordinal);
         Assert.Contains("FileAttributes]::ReparsePoint", compilacion, StringComparison.Ordinal);
         Assert.Contains("$env:InstalledWebView2RuntimeSource = $runtimeMsi", compilacion, StringComparison.Ordinal);
+        Assert.Contains("$env:LANZADOR_PRODUCT_VERSION = $versionAplicacion.Producto", compilacion, StringComparison.Ordinal);
         Assert.Contains("[System.IO.Directory]::Delete($runtimeMsi, $true)", compilacion, StringComparison.Ordinal);
         Assert.Contains("El ejecutable incluido en el MSI no conserva una firma Authenticode valida", compilacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Product.Community", preparacion, StringComparison.OrdinalIgnoreCase);
@@ -155,8 +161,9 @@ public sealed class PruebasInstaladorMsi
             "Herramientas",
             "PublicarPortable.ps1"));
 
-        Assert.Contains("LanzadorScripts-1.8.4-x64.msi", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.4-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("VersionAplicacion.ps1", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombreMsi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombrePortable", publicacion, StringComparison.Ordinal);
         Assert.Contains("$rutasEsperadas = @($msiPublicado, $exePortable)", publicacion, StringComparison.Ordinal);
         Assert.Contains("$archivosPublicados.Count -ne 2", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("$exeNormal", publicacion, StringComparison.Ordinal);

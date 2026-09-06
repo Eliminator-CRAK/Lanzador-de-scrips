@@ -7,7 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>LanzadorScripts.Servidor.Core</AssemblyName>
     <RootNamespace>LanzadorScripts.Servidor.Core</RootNamespace>
-    <Version>1.8.3</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Compartido\LanzadorScripts.Protocolo\LanzadorScripts.Protocolo.csproj" />

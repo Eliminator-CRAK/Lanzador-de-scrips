@@ -1,11 +1,12 @@
 (Autor: Alex Roman)
-Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.8.3.
+Descripcion: Puesta en marcha de LanzadorScripts Servidor 1.9.0.
 
 INSTALACION INTERACTIVA
 1. Extraiga el ZIP en el servidor MAD002MICROPRU.
 2. Ejecute LanzadorScripts.Servidor.exe como administrador.
 3. Pulse Instalar. La aplicacion copiara los binarios a C:\Program Files\LanzadorScriptsServidor.
 4. Inicie el servicio y compruebe que Resumen indica Kerberos remoto preparado.
+5. Abra Actualizaciones y compruebe la carpeta y el recurso UNC.
 
 La cuenta elevada que instala o inicia el servicio sera el primer administrador. La base, la clave y la configuracion se crean automaticamente. El archivo de configuracion no contiene una lista de administradores.
 
@@ -18,6 +19,13 @@ DATOS
 - Clave DPAPI de maquina: C:\ProgramData\LanzadorScriptsServidor\Seguridad\base-datos.key.dpapi
 - Copias: C:\ProgramData\LanzadorScriptsServidor\CopiasSeguridad
 - Configuracion: C:\ProgramData\LanzadorScriptsServidor\configuracion-servidor.json
+- Actualizaciones: C:\ProgramData\LanzadorScriptsServidor\Actualizaciones
+
+ACTUALIZACIONES MSI
+El instalador crea el recurso oculto LanzadorScriptsActualizaciones$ con lectura para usuarios autenticados.
+Copie MSI firmados LanzadorScripts-X.Y.Z-x64.msi en la carpeta Actualizaciones y pulse Volver a validar en la consola.
+La version valida mas alta queda activa. Renombre o elimine un MSI para retirarlo; conserve versiones anteriores para rollback manual.
+El cliente MSI 1.9.0 se instala manualmente una vez. La portable nunca consulta ni instala actualizaciones.
 
 La base y la clave deben copiarse juntas para una restauracion en el mismo servidor. DPAPI liga la clave a esa maquina. Los clientes no reciben claves privadas ni certificados de artefactos.
 
@@ -29,4 +37,4 @@ SEGURIDAD
 El contenido funcional de la base se cifra y autentica por filas. La estructura SQLite y columnas tecnicas siguen visibles. Mantenga las ACL, copias y control administrativo del servidor.
 
 DESINSTALACION
-Ejecute Desinstalar-Servidor.ps1 desde este ZIP. Conserva la base por defecto. Use -EliminarDatos solo si desea borrar tambien la base, su clave, copias y logs.
+Ejecute Desinstalar-Servidor.ps1 desde este ZIP. Conserva la base y las actualizaciones por defecto. Use -EliminarDatos solo si desea borrar tambien la base, su clave, copias, logs y paquetes MSI.

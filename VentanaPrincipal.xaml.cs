@@ -17,6 +17,7 @@ using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
+using LanzadorScripts.Protocolo;
 using LanzadorScripts.Servicios;
 using MessageBox = System.Windows.MessageBox;
 using Panel = System.Windows.Controls.Panel;
@@ -47,6 +48,7 @@ public partial class VentanaPrincipal : Window
     private readonly ServicioExecutionPolicy _servicioExecutionPolicy = new();
     private readonly Stopwatch _cronometroNavegacion = new();
     private readonly bool _esPortable = RutasAplicacion.Distribucion.EsPortable;
+    private readonly ServicioActualizacionesCliente? _servicioActualizaciones;
     private readonly ServicioIconoBandeja? _servicioIconoBandeja;
     private ServidorLocalWeb? _servidorLocalIntegrado;
     private EndpointServicioLanzador? _endpointServicio;
@@ -61,11 +63,19 @@ public partial class VentanaPrincipal : Window
     private bool _cierreDefinitivo;
     private bool _cierreEnCurso;
     private bool _confirmacionCierreAbierta;
+    private bool _comprobacionActualizacionIniciada;
+    private bool _actualizacionEnCurso;
+    private ActualizacionClienteServidor? _actualizacionDisponible;
     private int _recursosLiberados;
 
     public VentanaPrincipal()
     {
         InitializeComponent();
+        if (!_esPortable)
+        {
+            _servicioActualizaciones = new ServicioActualizacionesCliente();
+        }
+
         if (!_esPortable)
         {
             _servicioIconoBandeja = new ServicioIconoBandeja(
@@ -204,6 +214,7 @@ public partial class VentanaPrincipal : Window
             VistaCliente.NavigationCompleted -= VistaCliente_NavigationCompleted;
             VistaCliente.NavigationCompleted += VistaCliente_NavigationCompleted;
             VistaCliente.Source = new Uri(endpoint.UrlBase);
+            IniciarComprobacionActualizacion();
         }
         catch (Exception ex)
         {
@@ -560,8 +571,11 @@ public partial class VentanaPrincipal : Window
         _cierreEnCurso = true;
         _cierreDefinitivo = true;
         MostrarVentana(WindowState.Normal);
-        PanelCierre.Visibility = Visibility.Visible;
-        PanelCierre.IsHitTestVisible = true;
+        if (!string.Equals(origen, "actualizacion", StringComparison.Ordinal))
+        {
+            PanelCierre.Visibility = Visibility.Visible;
+            PanelCierre.IsHitTestVisible = true;
+        }
         await Dispatcher.Yield(DispatcherPriority.Render);
         await _servicioLogInicio.RegistrarAsync(
             "aplicacion.cierre_confirmado",
@@ -586,6 +600,150 @@ public partial class VentanaPrincipal : Window
         finally
         {
             System.Windows.Application.Current.Shutdown(CodigoSalidaCierreDefinitivo);
+        }
+    }
+
+    private void IniciarComprobacionActualizacion()
+    {
+        // Consulta una sola vez por proceso y nunca en la portable.
+        if (_servicioActualizaciones is null || _comprobacionActualizacionIniciada)
+        {
+            return;
+        }
+
+        _comprobacionActualizacionIniciada = true;
+        _ = ComprobarActualizacionAsync();
+    }
+
+    private async Task ComprobarActualizacionAsync()
+    {
+        try
+        {
+            var resultado = await _servicioActualizaciones!.ConsultarAsync(CancellationToken.None);
+            if (!resultado.Disponible || resultado.Actualizacion is null)
+            {
+                BotonActualizarAplicacion.Visibility = Visibility.Collapsed;
+                if (!string.IsNullOrWhiteSpace(resultado.Mensaje))
+                {
+                    await _servicioLogInicio.RegistrarAsync(
+                        "actualizacion.consulta_omitida",
+                        ServicioRedaccionSecretos.Sanitizar(resultado.Mensaje));
+                }
+
+                return;
+            }
+
+            _actualizacionDisponible = resultado.Actualizacion;
+            TextoBotonActualizacion.Text = $"Actualizar a {resultado.Actualizacion.Version}";
+            BotonActualizarAplicacion.Visibility = Visibility.Visible;
+            await _servicioLogInicio.RegistrarAsync(
+                "actualizacion.disponible",
+                $"Version disponible: {resultado.Actualizacion.Version}.");
+        }
+        catch (Exception ex)
+        {
+            // Una comprobacion opcional nunca impide usar la aplicacion.
+            BotonActualizarAplicacion.Visibility = Visibility.Collapsed;
+            await _servicioLogInicio.RegistrarExcepcionAsync(
+                "actualizacion.consulta_error",
+                "cliente",
+                string.Empty,
+                ex);
+        }
+    }
+
+    private async void BotonActualizarAplicacion_Click(object sender, RoutedEventArgs e)
+    {
+        if (_servicioActualizaciones is null || _actualizacionEnCurso)
+        {
+            return;
+        }
+
+        var ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
+            ?? Array.Empty<EjecucionActivaResumen>();
+        if (ejecuciones.Count > 0)
+        {
+            MessageBox.Show(
+                this,
+                $"Hay {ejecuciones.Count} script(s) en ejecución. Finalícelos antes de actualizar.",
+                "Actualización pendiente",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        _actualizacionEnCurso = true;
+        BotonActualizarAplicacion.IsEnabled = false;
+        PanelActualizacion.Visibility = Visibility.Visible;
+        PanelActualizacion.IsHitTestVisible = true;
+        TextoFaseActualizacion.Text = "Comprobando la versión disponible...";
+        ProgresoActualizacion.IsIndeterminate = true;
+        await Dispatcher.Yield(DispatcherPriority.Render);
+        try
+        {
+            var consulta = await _servicioActualizaciones.ConsultarAsync(CancellationToken.None);
+            if (!consulta.Disponible || consulta.Actualizacion is null)
+            {
+                _actualizacionDisponible = null;
+                BotonActualizarAplicacion.Visibility = Visibility.Collapsed;
+                throw new InvalidOperationException(
+                    "La actualización ya no está disponible en el servidor.");
+            }
+
+            _actualizacionDisponible = consulta.Actualizacion;
+            var progreso = new Progress<ProgresoActualizacionCliente>(ActualizarProgresoActualizacion);
+            var paquete = await _servicioActualizaciones.DescargarYPrepararAsync(
+                consulta.Actualizacion,
+                progreso,
+                CancellationToken.None);
+            TextoFaseActualizacion.Text = "Actualizando...";
+            ProgresoActualizacion.IsIndeterminate = true;
+            await Dispatcher.Yield(DispatcherPriority.Render);
+            _ = ServicioActualizacionesCliente.IniciarActualizador(paquete);
+            await _servicioLogInicio.RegistrarAsync(
+                "actualizacion.iniciada",
+                $"Se entrego la instalacion de la version {paquete.Version} al actualizador firmado.");
+            await CerrarDefinitivamenteAsync(0, "actualizacion");
+        }
+        catch (Exception ex)
+        {
+            PanelActualizacion.Visibility = Visibility.Collapsed;
+            PanelActualizacion.IsHitTestVisible = false;
+            BotonActualizarAplicacion.IsEnabled = true;
+            _actualizacionEnCurso = false;
+            await _servicioLogInicio.RegistrarExcepcionAsync(
+                "actualizacion.error",
+                "cliente",
+                string.Empty,
+                ex);
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "No se pudo actualizar LanzadorScripts",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void ActualizarProgresoActualizacion(ProgresoActualizacionCliente progreso)
+    {
+        TextoFaseActualizacion.Text = progreso.Fase switch
+        {
+            "Descargando" => "Descargando...",
+            "Verificando" => "Verificando...",
+            _ => progreso.Fase
+        };
+        if (progreso.Fase == "Descargando" && progreso.BytesTotales > 0)
+        {
+            ProgresoActualizacion.IsIndeterminate = false;
+            ProgresoActualizacion.Value = Math.Clamp(
+                progreso.BytesCompletados * 100d / progreso.BytesTotales,
+                0,
+                100);
+        }
+        else
+        {
+            ProgresoActualizacion.IsIndeterminate = true;
         }
     }
 

@@ -261,7 +261,7 @@ public sealed class ServicioArranqueWebView2
         try
         {
             ServicioDirectoriosAplicacion.PrepararDatosWebView2();
-            return CrearRutaPerfilNoExistente(RutasAplicacion.RutaRaizWebView2Usuario);
+            return CrearPerfilSesionSeguro(RutasAplicacion.RutaRaizWebView2Usuario);
         }
         catch (Exception ex)
         {
@@ -280,12 +280,12 @@ public sealed class ServicioArranqueWebView2
     private static string CrearPerfilRecuperacion()
     {
         ServicioDirectoriosAplicacion.PrepararRecuperacionWebView2Local();
-        return CrearRutaPerfilNoExistente(RutasAplicacion.RutaRaizWebView2RecuperacionLocal);
+        return CrearPerfilSesionSeguro(RutasAplicacion.RutaRaizWebView2RecuperacionLocal);
     }
 
-    internal static string CrearRutaPerfilNoExistente(string raiz)
+    internal static string CrearPerfilSesionSeguro(string raiz)
     {
-        // Deja que WebView2 cree la carpeta final y sus permisos de aislamiento.
+        // Crea una sesion nueva con permisos explicitos para todos los procesos de WebView2.
         ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(raiz);
         ProbarEscrituraDirectorio(raiz);
         LimpiarSesionesAnteriores(raiz);
@@ -295,6 +295,8 @@ public sealed class ServicioArranqueWebView2
             var rutaPerfil = Path.Combine(raiz, $"Sesion-{Guid.NewGuid():N}");
             if (!Directory.Exists(rutaPerfil) && !File.Exists(rutaPerfil))
             {
+                ServicioDirectoriosAplicacion.PrepararPerfilWebView2(rutaPerfil);
+                ProbarEscrituraDirectorio(rutaPerfil);
                 return rutaPerfil;
             }
         }

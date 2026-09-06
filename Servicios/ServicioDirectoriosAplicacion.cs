@@ -70,10 +70,37 @@ public static class ServicioDirectoriosAplicacion
 
     internal static void PrepararDirectorioWebView2(string ruta)
     {
-        // Conserva las ACL predeterminadas requeridas por el aislamiento de WebView2.
+        // Conserva la ACL de Windows y agrega acceso para las identidades del perfil.
         var directorio = new DirectoryInfo(ruta);
         directorio.Create();
         RechazarPuntosReanalisis(directorio.FullName);
+        ConcederEscrituraPerfilWebView2(directorio);
+    }
+
+    internal static void PrepararPerfilWebView2(string ruta)
+    {
+        // Prepara el perfil final sin retirar las reglas requeridas por WebView2.
+        var directorio = new DirectoryInfo(ruta);
+        directorio.Create();
+        RechazarPuntosReanalisis(directorio.FullName);
+        ConcederEscrituraPerfilWebView2(directorio);
+    }
+
+    private static void ConcederEscrituraPerfilWebView2(DirectoryInfo directorio)
+    {
+        // Mantiene la herencia para los procesos LowIL y AppContainer del navegador.
+        var identidadesEscritura = ObtenerIdentidadesEscrituraPerfil(directorio.FullName);
+        var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        var seguridad = directorio.GetAccessControl(AccessControlSections.Access);
+        foreach (var identidad in identidadesEscritura)
+        {
+            seguridad.SetAccessRule(CrearRegla(
+                identidad,
+                FileSystemRights.Modify | FileSystemRights.ReadAndExecute,
+                herencia));
+        }
+
+        directorio.SetAccessControl(seguridad);
     }
 
     internal static void PrepararDirectorioBase(string ruta)
@@ -252,5 +279,51 @@ public static class ServicioDirectoriosAplicacion
             herencia,
             PropagationFlags.None,
             AccessControlType.Allow);
+    }
+
+    private static IReadOnlyList<SecurityIdentifier> ObtenerIdentidadesEscrituraPerfil(string ruta)
+    {
+        // Incluye la cuenta elevada y el propietario del perfil que ejecutara WebView2.
+        var identidades = new Dictionary<string, SecurityIdentifier>(StringComparer.Ordinal);
+        using var identidadActual = WindowsIdentity.GetCurrent();
+        if (identidadActual.User is not null)
+        {
+            identidades[identidadActual.User.Value] = identidadActual.User;
+        }
+
+        var actual = new DirectoryInfo(Path.GetFullPath(ruta));
+        for (var nivel = 0; nivel < 12 && actual is not null; nivel++, actual = actual.Parent)
+        {
+            if (!actual.Exists)
+            {
+                continue;
+            }
+
+            SecurityIdentifier? propietario;
+            try
+            {
+                propietario = actual
+                    .GetAccessControl(AccessControlSections.Owner)
+                    .GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                continue;
+            }
+
+            if (propietario?.AccountDomainSid is not null
+                && !propietario.Equals(Administradores)
+                && !propietario.Equals(Sistema))
+            {
+                identidades[propietario.Value] = propietario;
+            }
+        }
+
+        if (identidades.Count == 0)
+        {
+            throw new InvalidOperationException("No se pudo identificar una cuenta para el perfil de WebView2.");
+        }
+
+        return identidades.Values.ToArray();
     }
 }

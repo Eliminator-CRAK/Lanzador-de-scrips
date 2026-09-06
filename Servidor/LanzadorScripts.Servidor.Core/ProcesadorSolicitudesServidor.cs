@@ -12,14 +12,17 @@ public sealed class ProcesadorSolicitudesServidor
 {
     private readonly RepositorioServidor _repositorio;
     private readonly Func<EstadoAutenticacionServidor> _obtenerEstadoAutenticacion;
+    private readonly CatalogoActualizacionesServidor? _catalogoActualizaciones;
 
     public ProcesadorSolicitudesServidor(
         RepositorioServidor repositorio,
-        Func<EstadoAutenticacionServidor>? obtenerEstadoAutenticacion = null)
+        Func<EstadoAutenticacionServidor>? obtenerEstadoAutenticacion = null,
+        CatalogoActualizacionesServidor? catalogoActualizaciones = null)
     {
         _repositorio = repositorio;
         _obtenerEstadoAutenticacion = obtenerEstadoAutenticacion
             ?? (() => EstadoAutenticacionServidor.Pendiente);
+        _catalogoActualizaciones = catalogoActualizaciones;
     }
 
     public RespuestaServidor Procesar(string identidadRemota, SolicitudServidor solicitud)
@@ -53,6 +56,10 @@ public sealed class ProcesadorSolicitudesServidor
                 OperacionesServidor.EliminarUsuario => ProcesarEliminarUsuario(cuenta, solicitud),
                 OperacionesServidor.CrearCopiaSeguridad => ProcesarCopia(cuenta, solicitud),
                 OperacionesServidor.ComprobarIntegridad => ProcesarIntegridad(cuenta, solicitud),
+                OperacionesServidor.ObtenerActualizacion =>
+                    ProcesarObtenerActualizacion(cuenta, solicitud),
+                OperacionesServidor.ObtenerEstadoActualizaciones =>
+                    ProcesarEstadoActualizaciones(cuenta, solicitud),
                 _ => Error(
                     solicitud.SolicitudId,
                     "operacion_desconocida",
@@ -261,6 +268,51 @@ public sealed class ProcesadorSolicitudesServidor
         }
 
         return Correcta(solicitud.SolicitudId, _repositorio.ComprobarIntegridad());
+    }
+
+    private RespuestaServidor ProcesarObtenerActualizacion(
+        string cuenta,
+        SolicitudServidor solicitud)
+    {
+        if (!_repositorio.EstaAutorizado(cuenta))
+        {
+            return AccesoDenegado(solicitud.SolicitudId);
+        }
+
+        var consulta = Deserializar<ConsultaActualizacionCliente>(solicitud.Datos);
+        var resultado = _catalogoActualizaciones?.ObtenerActualizacion(consulta)
+            ?? new ActualizacionClienteServidor(
+                false,
+                string.Empty,
+                string.Empty,
+                CatalogoActualizacionesServidor.NombreRecursoCompartido,
+                0,
+                string.Empty,
+                DateTimeOffset.MinValue);
+        return Correcta(solicitud.SolicitudId, resultado);
+    }
+
+    private RespuestaServidor ProcesarEstadoActualizaciones(
+        string cuenta,
+        SolicitudServidor solicitud)
+    {
+        if (!_repositorio.EsAdministrador(cuenta))
+        {
+            return AccesoDenegado(solicitud.SolicitudId);
+        }
+
+        if (_catalogoActualizaciones is null)
+        {
+            return Error(
+                solicitud.SolicitudId,
+                "actualizaciones_no_disponibles",
+                "El catalogo de actualizaciones no esta iniciado.");
+        }
+
+        var consulta = Deserializar<ConsultaEstadoActualizacionesServidor>(solicitud.Datos);
+        return Correcta(
+            solicitud.SolicitudId,
+            _catalogoActualizaciones.ObtenerEstado(consulta.ForzarValidacion));
     }
 
     private void RegistrarAccionAdministrativa(

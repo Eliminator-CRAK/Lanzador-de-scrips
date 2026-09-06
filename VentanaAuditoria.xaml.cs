@@ -38,9 +38,9 @@ public partial class VentanaAuditoria : Window
         await CargarAsync();
     }
 
-    private void Cerrar_Click(object sender, RoutedEventArgs e)
+    private async void Actualizar_Click(object sender, RoutedEventArgs e)
     {
-        Close();
+        await CargarAsync();
     }
 
     private async Task CargarAsync()

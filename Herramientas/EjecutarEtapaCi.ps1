@@ -15,6 +15,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $raizRepositorio = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'VersionAplicacion.ps1')
+$versionAplicacion = Get-LanzadorScriptsVersion -Raiz $raizRepositorio
 $huellaFirmaEsperada = '6C654649369000DDE0AA70F62645058D9A3437F5'
 $almacenesConfianzaAgregada = [System.Collections.Generic.List[
     System.Security.Cryptography.X509Certificates.StoreName]]::new()
@@ -267,8 +269,8 @@ function Verificar-Artefacto {
     # Comprueba los paquetes cliente y servidor y sus firmas.
     $carpeta = Join-Path $raizRepositorio 'publicacion'
     $archivosEsperados = @(
-        (Join-Path $carpeta 'LanzadorScripts-1.8.4-x64.msi'),
-        (Join-Path $carpeta 'LanzadorScripts_Portable-1.8.4-x64.exe')
+        (Join-Path $carpeta $versionAplicacion.NombreMsi),
+        (Join-Path $carpeta $versionAplicacion.NombrePortable)
     )
     foreach ($archivo in $archivosEsperados) {
         if (-not (Test-Path -LiteralPath $archivo)) {
@@ -292,8 +294,9 @@ function Verificar-Artefacto {
         Get-FileHash -LiteralPath $archivo -Algorithm SHA256 | Format-List
     }
 
-    $zipServidor = Join-Path $raizRepositorio `
-        'publicacion-servidor\LanzadorScripts_Servidor-1.8.3-x64.zip'
+    $zipServidor = Join-Path `
+        (Join-Path $raizRepositorio 'publicacion-servidor') `
+        $versionAplicacion.NombreServidor
     if (-not (Test-Path -LiteralPath $zipServidor -PathType Leaf)) {
         throw 'No se genero el paquete ZIP del servidor.'
     }

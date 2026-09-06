@@ -53,18 +53,26 @@ public static class RutasAplicacion
 
     public static string RutaStaging => Path.Combine(RaizDatosUsuario, "Staging");
 
+    public static string RutaActualizacionesCliente => Path.Combine(
+        RaizProgramData,
+        "Actualizaciones");
+
+    public static string RutaStagingActualizaciones => Path.Combine(
+        RutaActualizacionesCliente,
+        "Staging");
+
     public static string RutaRaizWebView2Usuario => Distribucion.EsPortable
         ? Path.Combine(Distribucion.RaizPortable!, "WebView2", "Sesiones")
         : Path.Combine(
             RaizLocalAppData,
-            "WebView2-v5",
+            "WebView2-v6",
             "Sesiones");
 
     public static string RutaRaizWebView2RecuperacionLocal => Distribucion.EsPortable
         ? Path.Combine(Distribucion.RaizPortable!, "WebView2-Recuperacion", "Sesiones")
         : Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LanzadorScripts-WebView2-Recuperacion-v5",
+            Path.GetTempPath(),
+            "LanzadorScripts-WebView2-Recuperacion-v6",
             "Sesiones");
 
     public static string RutaRuntimesWebView2 => Distribucion.EsPortable
