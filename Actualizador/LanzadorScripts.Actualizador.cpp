@@ -509,7 +509,8 @@ namespace
         }
 
         DWORD longitud = 0;
-        UINT resultado = MsiRecordGetStringW(registro, 1, nullptr, &longitud);
+        wchar_t consultaTamano[1]{};
+        UINT resultado = MsiRecordGetStringW(registro, 1, consultaTamano, &longitud);
         if (resultado != ERROR_MORE_DATA && resultado != ERROR_SUCCESS)
         {
             return {};
@@ -575,8 +576,7 @@ namespace
         return producto == NombreProducto
             && versionMsi == version
             && _wcsicmp(upgrade.c_str(), UpgradeCode) == 0
-            && (_wcsicmp(arquitectura.c_str(), L"x64") == 0
-                || _wcsicmp(arquitectura.c_str(), L"Intel64") == 0);
+            && _wcsicmp(arquitectura.c_str(), L"x64") == 0;
     }
 
     bool EsperarProcesoPadre(DWORD identificador)

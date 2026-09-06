@@ -2,6 +2,7 @@
 // Descripcion: Valida la publicacion y actualizacion opcional del cliente MSI.
 
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using LanzadorScripts.Protocolo;
 using LanzadorScripts.Servicios;
@@ -12,6 +13,35 @@ namespace LanzadorScripts.Pruebas;
 
 public sealed class PruebasActualizaciones
 {
+    [Theory]
+    [InlineData("LanzadorScripts", "1.9.1", "x64;1033", true, "firma Authenticode")]
+    [InlineData("Otro producto", "1.9.1", "x64;1033", true, "no pertenece")]
+    [InlineData("LanzadorScripts", "1.9.0", "x64;1033", true, "version interna")]
+    [InlineData("LanzadorScripts", "1.9.1", "x64;1033", false, "UpgradeCode")]
+    [InlineData("LanzadorScripts", "1.9.1", "Intel64;1033", true, "arquitectura")]
+    [InlineData("LanzadorScripts", "1.9.1", "Intel;1033", true, "arquitectura")]
+    [InlineData("LanzadorScripts", "1.9.1", "Arm64;1033", true, "arquitectura")]
+    public void ValidadorLeePropiedadesDeUnMsiRealAntesDeExigirFirma(
+        string producto, string version, string plantilla, bool upgradeCorrecto, string errorEsperado)
+    {
+        var raiz = CrearDirectorioTemporal();
+        try
+        {
+            var ruta = Path.Combine(raiz, "LanzadorScripts-1.9.1-x64.msi");
+            CrearBaseMsi(ruta, producto, version, plantilla,
+                upgradeCorrecto ? ValidadorPaqueteActualizacion.UpgradeCodeEsperado : Guid.NewGuid().ToString("B"));
+
+            var resultado = ValidadorPaqueteActualizacion.Validar(ruta);
+
+            Assert.False(resultado.Valido);
+            Assert.Contains(errorEsperado, resultado.Mensaje, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            EliminarDirectorioTemporal(raiz);
+        }
+    }
+
     [Fact]
     public void CatalogoSeleccionaVersionMayorYRetiraLaEliminada()
     {
@@ -333,6 +363,68 @@ public sealed class PruebasActualizaciones
         File.WriteAllBytes(ruta, Enumerable.Repeat((byte)0x5A, longitud).ToArray());
         return ruta;
     }
+
+    // Crea una base MSI minima real, sin instalar nada ni utilizar certificados privados.
+    private static void CrearBaseMsi(string ruta, string producto, string version, string plantilla, string upgrade)
+    {
+        Assert.Equal(0u, MsiOpenDatabase(ruta, new IntPtr(3), out var baseDatos));
+        try
+        {
+            EjecutarSqlMsi(baseDatos, "CREATE TABLE `Property` (`Property` CHAR(72) NOT NULL, `Value` CHAR(0) LOCALIZABLE PRIMARY KEY `Property`)");
+            foreach (var propiedad in new[] { ("ProductName", producto), ("ProductVersion", version), ("UpgradeCode", upgrade) })
+            {
+                EjecutarSqlMsi(baseDatos,
+                    $"INSERT INTO `Property` (`Property`, `Value`) VALUES ('{propiedad.Item1}', '{propiedad.Item2}')");
+            }
+
+            Assert.Equal(0u, MsiGetSummaryInformation(baseDatos, null, 1, out var resumen));
+            try
+            {
+                Assert.Equal(0u, MsiSummaryInfoSetProperty(resumen, 7, 30, 0, IntPtr.Zero, plantilla));
+                Assert.Equal(0u, MsiSummaryInfoPersist(resumen));
+            }
+            finally
+            {
+                _ = MsiCloseHandle(resumen);
+            }
+
+            Assert.Equal(0u, MsiDatabaseCommit(baseDatos));
+        }
+        finally
+        {
+            _ = MsiCloseHandle(baseDatos);
+        }
+    }
+
+    private static void EjecutarSqlMsi(uint baseDatos, string consulta)
+    {
+        Assert.Equal(0u, MsiDatabaseOpenView(baseDatos, consulta, out var vista));
+        try
+        {
+            Assert.Equal(0u, MsiViewExecute(vista, 0));
+        }
+        finally
+        {
+            _ = MsiCloseHandle(vista);
+        }
+    }
+
+    [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiOpenDatabaseW")]
+    private static extern uint MsiOpenDatabase(string ruta, IntPtr persistencia, out uint baseDatos);
+    [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiDatabaseOpenViewW")]
+    private static extern uint MsiDatabaseOpenView(uint baseDatos, string consulta, out uint vista);
+    [DllImport("msi.dll")]
+    private static extern uint MsiViewExecute(uint vista, uint registro);
+    [DllImport("msi.dll")]
+    private static extern uint MsiCloseHandle(uint identificador);
+    [DllImport("msi.dll")]
+    private static extern uint MsiDatabaseCommit(uint baseDatos);
+    [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiGetSummaryInformationW")]
+    private static extern uint MsiGetSummaryInformation(uint baseDatos, string? ruta, uint cambios, out uint resumen);
+    [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiSummaryInfoSetPropertyW")]
+    private static extern uint MsiSummaryInfoSetProperty(uint resumen, uint propiedad, uint tipo, int entero, IntPtr fecha, string valor);
+    [DllImport("msi.dll")]
+    private static extern uint MsiSummaryInfoPersist(uint resumen);
 
     private static ResultadoValidacionPaqueteActualizacion CrearResultadoValido(string ruta)
     {

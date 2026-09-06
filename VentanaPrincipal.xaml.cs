@@ -65,7 +65,6 @@ public partial class VentanaPrincipal : Window
     private bool _confirmacionCierreAbierta;
     private bool _comprobacionActualizacionIniciada;
     private bool _actualizacionEnCurso;
-    private ActualizacionClienteServidor? _actualizacionDisponible;
     private int _recursosLiberados;
 
     public VentanaPrincipal()
@@ -633,7 +632,6 @@ public partial class VentanaPrincipal : Window
                 return;
             }
 
-            _actualizacionDisponible = resultado.Actualizacion;
             TextoBotonActualizacion.Text = $"Actualizar a {resultado.Actualizacion.Version}";
             BotonActualizarAplicacion.Visibility = Visibility.Visible;
             await _servicioLogInicio.RegistrarAsync(
@@ -674,6 +672,8 @@ public partial class VentanaPrincipal : Window
 
         _actualizacionEnCurso = true;
         BotonActualizarAplicacion.IsEnabled = false;
+        // El HWND de WebView2 no puede quedar delante de la superposicion WPF.
+        VistaCliente.Visibility = Visibility.Hidden;
         PanelActualizacion.Visibility = Visibility.Visible;
         PanelActualizacion.IsHitTestVisible = true;
         TextoFaseActualizacion.Text = "Comprobando la versión disponible...";
@@ -684,18 +684,22 @@ public partial class VentanaPrincipal : Window
             var consulta = await _servicioActualizaciones.ConsultarAsync(CancellationToken.None);
             if (!consulta.Disponible || consulta.Actualizacion is null)
             {
-                _actualizacionDisponible = null;
                 BotonActualizarAplicacion.Visibility = Visibility.Collapsed;
                 throw new InvalidOperationException(
                     "La actualización ya no está disponible en el servidor.");
             }
 
-            _actualizacionDisponible = consulta.Actualizacion;
             var progreso = new Progress<ProgresoActualizacionCliente>(ActualizarProgresoActualizacion);
             var paquete = await _servicioActualizaciones.DescargarYPrepararAsync(
                 consulta.Actualizacion,
                 progreso,
                 CancellationToken.None);
+            if (_servidorLocalIntegrado?.ObtenerEjecucionesActivas().Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "Hay scripts en ejecucion. Finalicelos antes de actualizar.");
+            }
+
             TextoFaseActualizacion.Text = "Actualizando...";
             ProgresoActualizacion.IsIndeterminate = true;
             await Dispatcher.Yield(DispatcherPriority.Render);
@@ -709,6 +713,7 @@ public partial class VentanaPrincipal : Window
         {
             PanelActualizacion.Visibility = Visibility.Collapsed;
             PanelActualizacion.IsHitTestVisible = false;
+            VistaCliente.Visibility = Visibility.Visible;
             BotonActualizarAplicacion.IsEnabled = true;
             _actualizacionEnCurso = false;
             await _servicioLogInicio.RegistrarExcepcionAsync(

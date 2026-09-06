@@ -69,17 +69,18 @@ public partial class VentanaAuditoria : Window
                 resultado = null;
             }
 
-            var respuesta = await Task.Run(() => _datos.ConsultarAuditoria(
-                new FiltroAuditoriaServidorCentral(
-                    usuario,
-                    InicioDiaUtc(FiltroDesde.SelectedDate),
-                    FinDiaUtc(FiltroHasta.SelectedDate),
-                    resultado,
-                    string.IsNullOrWhiteSpace(FiltroScript.Text)
-                        ? null
-                        : FiltroScript.Text.Trim(),
-                    1000,
-                    0)));
+            // Lee los controles en el hilo WPF antes de consultar en segundo plano.
+            var filtro = new FiltroAuditoriaServidorCentral(
+                usuario,
+                InicioDiaUtc(FiltroDesde.SelectedDate),
+                FinDiaUtc(FiltroHasta.SelectedDate),
+                resultado,
+                string.IsNullOrWhiteSpace(FiltroScript.Text)
+                    ? null
+                    : FiltroScript.Text.Trim(),
+                1000,
+                0);
+            var respuesta = await Task.Run(() => _datos.ConsultarAuditoria(filtro));
             if (!respuesta.Exito || respuesta.Datos is null)
             {
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(respuesta.Mensaje)

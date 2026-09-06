@@ -52,7 +52,7 @@ public static partial class ValidadorPaqueteActualizacion
     private const uint InterfazNinguna = 2;
     private const uint EleccionArchivo = 1;
     private const uint AccionEstadoIgnorar = 0;
-    private const uint SoloCacheRevocacion = 0x00000010;
+    private const uint SoloCacheRevocacion = 0x00001000;
     private const uint PropiedadPlantilla = 7;
 
     private static readonly Guid AccionVerificacionGenerica =
@@ -304,6 +304,7 @@ public static partial class ValidadorPaqueteActualizacion
             }
 
             var texto = new StringBuilder(checked((int)longitud + 1));
+            longitud = (uint)texto.Capacity;
             ComprobarMsi(MsiSummaryInfoGetProperty(
                 resumen,
                 PropiedadPlantilla,
@@ -323,13 +324,15 @@ public static partial class ValidadorPaqueteActualizacion
     private static string LeerCadenaRegistro(uint registro, uint campo)
     {
         uint longitud = 0;
-        var resultado = MsiRecordGetString(registro, campo, null, ref longitud);
+        var resultado = MsiRecordGetString(registro, campo, new StringBuilder(1), ref longitud);
         if (resultado is not ErrorCorrecto and not ErrorMasDatos)
         {
             ComprobarMsi(resultado);
         }
 
         var texto = new StringBuilder(checked((int)longitud + 1));
+        // Windows Installer devuelve el tamano sin incluir el terminador nulo.
+        longitud = (uint)texto.Capacity;
         ComprobarMsi(MsiRecordGetString(registro, campo, texto, ref longitud));
         return texto.ToString();
     }
@@ -381,8 +384,7 @@ public static partial class ValidadorPaqueteActualizacion
     private static bool EsPlantillaX64(string plantilla)
     {
         var arquitectura = plantilla.Split(';', 2)[0].Trim();
-        return arquitectura.Equals("x64", StringComparison.OrdinalIgnoreCase)
-            || arquitectura.Equals("Intel64", StringComparison.OrdinalIgnoreCase);
+        return arquitectura.Equals("x64", StringComparison.OrdinalIgnoreCase);
     }
 
     private static (long Longitud, DateTimeOffset FechaUtc) IntentarObtenerInformacion(string? ruta)
