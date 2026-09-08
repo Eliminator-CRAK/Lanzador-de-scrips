@@ -618,9 +618,11 @@ namespace
             const std::wstring perfil = UnirRuta(perfiles, nombre);
             const std::wstring local = UnirRuta(perfil, L"AppData\\Local");
             const std::wstring lanzador = UnirRuta(local, NombreAplicacion);
-            const std::wstring recuperacion = UnirRuta(local, L"LanzadorScripts-WebView2-Recuperacion-v5");
+            const std::wstring recuperacionV5 = UnirRuta(local, L"LanzadorScripts-WebView2-Recuperacion-v5");
+            const std::wstring recuperacionV6 = UnirRuta(local, L"LanzadorScripts-WebView2-Recuperacion-v6");
             correcto = EliminarArbolSeguro(perfiles, lanzador) && correcto;
-            correcto = EliminarArbolSeguro(perfiles, recuperacion) && correcto;
+            correcto = EliminarArbolSeguro(perfiles, recuperacionV5) && correcto;
+            correcto = EliminarArbolSeguro(perfiles, recuperacionV6) && correcto;
         } while (FindNextFileW(busqueda, &datos));
 
         FindClose(busqueda);

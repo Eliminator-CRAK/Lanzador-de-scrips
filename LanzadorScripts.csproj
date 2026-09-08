@@ -13,9 +13,6 @@
     <ApplicationIcon>Recursos\IconoLanzador.ico</ApplicationIcon>
     <AssemblyName>LanzadorScripts</AssemblyName>
     <RootNamespace>LanzadorScripts</RootNamespace>
-    <Version>1.8.4</Version>
-    <AssemblyVersion>1.8.4.0</AssemblyVersion>
-    <FileVersion>1.8.4.0</FileVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
@@ -54,6 +51,16 @@
     <EmbeddedResource Include="$(WebView2RuntimeZip)" Condition="'$(EmbedWebView2Runtime)' == 'true' and Exists('$(WebView2RuntimeZip)')">
       <LogicalName>Recursos.WebView2Runtime.zip</LogicalName>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IncludeInstalledUpdater)' == 'true' and Exists('$(InstalledUpdaterSource)')">
+    <Content Include="$(InstalledUpdaterSource)">
+      <Link>LanzadorScripts.Actualizador.exe</Link>
+      <TargetPath>LanzadorScripts.Actualizador.exe</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -111,6 +118,12 @@
           BeforeTargets="ComputeFilesToPublish"
           Condition="'$(IncludeInstalledWebView2Runtime)' == 'true' and !Exists('$(InstalledWebView2RuntimeSource)\msedgewebview2.exe')">
     <Error Text="No se encontro WebView2 Fixed Runtime en $(InstalledWebView2RuntimeSource)." />
+  </Target>
+
+  <Target Name="ValidarActualizadorInstalado"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(IncludeInstalledUpdater)' == 'true' and !Exists('$(InstalledUpdaterSource)')">
+    <Error Text="No se encontro el actualizador nativo en $(InstalledUpdaterSource)." />
   </Target>
 
   <Target Name="FirmarEjecutableInstalado"

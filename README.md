@@ -1,15 +1,15 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 1.8.4
+# LanzadorScripts 1.9.0
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. Los clientes 1.8.4 usan el servicio central 1.8.3, que administra permisos, catalogo y auditoria.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. El cliente y el servidor 1.9.0 administran permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
 
 ## Entregables
 
-- `LanzadorScripts-1.8.4-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-1.8.4-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-1.8.3-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-1.9.0-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-1.9.0-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-1.9.0-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64 y no descargan .NET ni WebView2 durante la ejecucion.
 
@@ -37,6 +37,7 @@ C:\ProgramData\LanzadorScriptsServidor\Datos\LanzadorScripts.db
 C:\ProgramData\LanzadorScriptsServidor\Seguridad\base-datos.key.dpapi
 C:\ProgramData\LanzadorScriptsServidor\CopiasSeguridad
 C:\ProgramData\LanzadorScriptsServidor\Logs
+C:\ProgramData\LanzadorScriptsServidor\Actualizaciones
 C:\ProgramData\LanzadorScriptsServidor\configuracion-servidor.json
 ```
 
@@ -44,11 +45,12 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Extraer `LanzadorScripts_Servidor-1.8.3-x64.zip` en `MAD002MICROPRU`.
+1. Extraer `LanzadorScripts_Servidor-1.9.0-x64.zip` en `MAD002MICROPRU`.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
 3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado, que el resumen muestra `Kerberos remoto preparado` y que el firewall de dominio admite TCP 47831.
 4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.
-5. Generar un `.lanzadorconfig` con `Crear-ConfiguracionCliente.ps1` y distribuirlo junto al MSI o la portable.
+5. Revisar **Actualizaciones** y confirmar el recurso `LanzadorScriptsActualizaciones$`.
+6. Generar un `.lanzadorconfig` con `Crear-ConfiguracionCliente.ps1` y distribuirlo junto al MSI o la portable.
 
 La cuenta elevada que realiza la instalacion se registra como primer administrador. La identidad se entrega al servicio mediante un archivo DPAPI de un solo uso, se elimina tras crear o validar la base y no se guarda en `configuracion-servidor.json`.
 
@@ -67,6 +69,10 @@ Scripts: \\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS
 La cuenta de dominio debe estar activa en la base central y disponer de lectura sobre la carpeta compartida de scripts. La ejecucion queda bloqueada si no se confirman permisos, catalogo o el evento inicial de auditoria.
 
 Los administradores pueden abrir la auditoria con `Ctrl+Shift+M`. La ventana permite filtrar por usuario, fecha, resultado y script. En la version instalada, el boton de cerrar mantiene el cliente en la bandeja y **Cerrar** en su menu finaliza la aplicacion.
+
+El MSI 1.9.0 se instala manualmente una vez. El cliente instalado consulta una sola vez al iniciar y, cuando el servidor publica una version posterior valida, muestra **Actualizar a X.Y.Z**. Ignorar el boton no bloquea la aplicacion ni guarda aplazamientos. La portable nunca consulta ni instala actualizaciones.
+
+Los MSI se publican copiandolos a `C:\ProgramData\LanzadorScriptsServidor\Actualizaciones`. El servicio selecciona la version valida mas alta y rechaza paquetes incompletos, enlazados, de otra arquitectura, producto, `UpgradeCode`, firma o certificado. Para retirar una version basta con renombrar o eliminar su MSI; las anteriores se conservan para rollback manual.
 
 La portable no crea icono de bandeja: el boton rojo cierra el proceso. Guarda sus datos bajo `%TEMP%\LanzadorScripts\Portable\<sesion>` y ejecuta sus binarios desde una sesion protegida bajo `C:\Program Files\LanzadorScriptsPortable\Sesiones`. Elimina ambas sesiones al terminar y limpia restos abandonados en el siguiente arranque.
 

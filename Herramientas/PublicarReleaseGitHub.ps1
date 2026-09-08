@@ -20,11 +20,13 @@ if ($Repositorio -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
 
 $gh = Get-Command gh -CommandType Application -ErrorAction Stop
 $raiz = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'VersionAplicacion.ps1')
+$versionAplicacion = Get-LanzadorScriptsVersion -Raiz $raiz
 $prefijoRaiz = $raiz.TrimEnd('\') + '\'
 $archivosRelativos = @(
-    'publicacion\LanzadorScripts-1.8.4-x64.msi',
-    'publicacion\LanzadorScripts_Portable-1.8.4-x64.exe',
-    'publicacion-servidor\LanzadorScripts_Servidor-1.8.3-x64.zip'
+    (Join-Path 'publicacion' $versionAplicacion.NombreMsi),
+    (Join-Path 'publicacion' $versionAplicacion.NombrePortable),
+    (Join-Path 'publicacion-servidor' $versionAplicacion.NombreServidor)
 )
 $archivos = foreach ($relativa in $archivosRelativos) {
     $ruta = [System.IO.Path]::GetFullPath((Join-Path $raiz $relativa))

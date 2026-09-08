@@ -1,12 +1,12 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Uso del cliente LanzadorScripts 1.8.4. -->
+<!-- Descripcion: Uso del cliente LanzadorScripts 1.9.0. -->
 
 # Manual de usuarios
 
 ## Elegir version
 
-- Instalada: ejecutar `LanzadorScripts-1.8.4-x64.msi`. Conserva configuracion y runtimes.
-- Portable: ejecutar `LanzadorScripts_Portable-1.8.4-x64.exe`. Elimina sus datos locales al cerrar.
+- Instalada: ejecutar `LanzadorScripts-1.9.0-x64.msi`. Conserva configuracion y runtimes.
+- Portable: ejecutar `LanzadorScripts_Portable-1.9.0-x64.exe`. Elimina sus datos locales al cerrar.
 
 Ambas variantes necesitan conexion de dominio con el servidor central y acceso de lectura a la carpeta compartida de scripts.
 
@@ -31,6 +31,12 @@ En la version instalada, el boton de cerrar oculta la aplicacion y la mantiene e
 
 La portable no trabaja en segundo plano ni crea icono de bandeja. Su boton rojo finaliza la aplicacion y activa la limpieza de la sesion temporal.
 
+## Actualizaciones
+
+La version instalada comprueba una sola vez al iniciar si el servidor ofrece un MSI posterior. Cuando existe, aparece **Actualizar a X.Y.Z** en la barra superior. El boton es opcional: ignorarlo no bloquea el uso ni muestra recordatorios emergentes.
+
+No se puede comenzar la actualizacion mientras haya scripts activos. Al pulsar el boton, la aplicacion muestra el progreso de descarga, verificacion e instalacion. Si Windows requiere reinicio, debe reiniciarse antes de volver a abrir LanzadorScripts. La portable no consulta ni instala actualizaciones.
+
 ## Auditoria
 
 Los administradores pueden pulsar `Ctrl+Shift+M` para consultar la auditoria central. Los usuarios nominales no pueden abrir esa vista.
@@ -43,4 +49,4 @@ Los administradores pueden pulsar `Ctrl+Shift+M` para consultar la auditoria cen
 - **No se pudo confirmar la auditoria**: el servicio central no pudo guardar el evento y bloquea la ejecucion por seguridad.
 - **Ruta de scripts no disponible**: comprobar permisos de lectura sobre la carpeta compartida.
 
-La version 1.8.4 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.
+La version 1.9.0 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.

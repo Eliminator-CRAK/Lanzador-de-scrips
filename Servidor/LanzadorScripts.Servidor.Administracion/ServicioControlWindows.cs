@@ -6,6 +6,7 @@ using System.IO;
 using System.Security.Principal;
 using System.ServiceProcess;
 using LanzadorScripts.Servidor.Core;
+using Microsoft.Win32;
 
 namespace LanzadorScripts.Servidor.Administracion;
 
@@ -42,6 +43,7 @@ public sealed class ServicioControlWindows
         }
 
         var ejecutable = PrepararBinariosPermanentes();
+        PrepararRepositorioActualizaciones();
         PrepararAdministradorInicial();
         EjecutarSc("create", NombreServicio, "binPath=", $"\"{ejecutable}\"", "start=", "delayed-auto", "obj=", "LocalSystem", "DisplayName=", "LanzadorScripts Servidor");
         EjecutarSc("description", NombreServicio, "Servicio central cifrado de permisos, catalogo y auditoria.");
@@ -101,6 +103,56 @@ public sealed class ServicioControlWindows
         }
 
         Iniciar();
+    }
+
+    public void PrepararRepositorioActualizaciones()
+    {
+        // Crea la carpeta protegida y el recurso de solo lectura para clientes.
+        var rutas = new RutasServidor();
+        rutas.PrepararDirectorios();
+        var rutaExistente = ObtenerRutaRecursoExistente(
+            CatalogoActualizacionesServidor.NombreRecursoCompartido);
+        if (string.Equals(
+                rutaExistente,
+                rutas.RutaActualizaciones,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var net = Path.Combine(Environment.SystemDirectory, "net.exe");
+        if (!string.IsNullOrWhiteSpace(rutaExistente))
+        {
+            EjecutarProceso(
+                net,
+                [
+                    "share",
+                    CatalogoActualizacionesServidor.NombreRecursoCompartido,
+                    "/delete",
+                    "/y"
+                ],
+                ignorarError: true);
+        }
+
+        var usuarios = new SecurityIdentifier(
+            WellKnownSidType.AuthenticatedUserSid,
+            null).Translate(typeof(NTAccount)).Value;
+        var administradores = new SecurityIdentifier(
+            WellKnownSidType.BuiltinAdministratorsSid,
+            null).Translate(typeof(NTAccount)).Value;
+        var sistema = new SecurityIdentifier(
+            WellKnownSidType.LocalSystemSid,
+            null).Translate(typeof(NTAccount)).Value;
+        EjecutarProceso(
+            net,
+            [
+                "share",
+                $"{CatalogoActualizacionesServidor.NombreRecursoCompartido}={rutas.RutaActualizaciones}",
+                $"/GRANT:{usuarios},READ",
+                $"/GRANT:{administradores},FULL",
+                $"/GRANT:{sistema},FULL",
+                "/CACHE:None"
+            ]);
     }
 
     private static string ResolverEjecutableServicio()
@@ -236,6 +288,17 @@ public sealed class ServicioControlWindows
         {
             File.Delete(acceso);
         }
+    }
+
+    private static string? ObtenerRutaRecursoExistente(string nombre)
+    {
+        using var clave = Registry.LocalMachine.OpenSubKey(
+            @"SYSTEM\CurrentControlSet\Services\LanmanServer\Shares",
+            writable: false);
+        var datos = clave?.GetValue(nombre) as string[];
+        var entrada = datos?.FirstOrDefault(valor =>
+            valor.StartsWith("Path=", StringComparison.OrdinalIgnoreCase));
+        return entrada is null ? null : Path.GetFullPath(entrada[5..]);
     }
 
     private static void RechazarPuntoReanalisis(string ruta)

@@ -24,7 +24,7 @@ public sealed class PruebasPaqueteServidor
         var publicacion = Leer("Herramientas", "PublicarServidor.ps1");
 
         Assert.Contains("LanzadorScripts_Servidor-$version-x64.zip", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$version = '1.8.3'", publicacion, StringComparison.Ordinal);
+        Assert.Contains("Get-LanzadorScriptsVersion", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt", publicacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-CodeSigning-Public.cer", publicacion, StringComparison.Ordinal);
         Assert.Contains("Instalar-Servidor.ps1", publicacion, StringComparison.Ordinal);
@@ -152,13 +152,15 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("LanzadorScripts.Servidor.Servicio.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Servidor.Administracion.csproj", gitlab, StringComparison.Ordinal);
         Assert.Contains("PublicarServidor.ps1", etapas, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Servidor-1.8.3-x64.zip", etapas, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombreServidor", etapas, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt no cubre", etapas, StringComparison.Ordinal);
     }
 
     [Fact]
     public void ProyectosServidorPublicanVersionActual()
     {
+        var version = Leer("Directory.Build.props");
+        Assert.Contains("<LanzadorScriptsVersion>1.9.0</LanzadorScriptsVersion>", version, StringComparison.Ordinal);
         foreach (var ruta in new[]
                  {
                      new[] { "Servidor", "LanzadorScripts.Servidor.Core", "LanzadorScripts.Servidor.Core.csproj" },
@@ -166,7 +168,7 @@ public sealed class PruebasPaqueteServidor
                      new[] { "Servidor", "LanzadorScripts.Servidor.Administracion", "LanzadorScripts.Servidor.Administracion.csproj" }
                  })
         {
-            Assert.Contains("<Version>1.8.3</Version>", Leer(ruta), StringComparison.Ordinal);
+            Assert.DoesNotContain("<Version>", Leer(ruta), StringComparison.Ordinal);
         }
     }
 

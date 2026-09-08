@@ -68,7 +68,8 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
 
             var procesador = new ProcesadorSolicitudesServidor(
                 _repositorio,
-                () => _estadoAutenticacion);
+                () => _estadoAutenticacion,
+                new CatalogoActualizacionesServidor(_rutas));
             _servidor = new ServidorTcpSeguro(configuracion, procesador, _registro.Escribir);
             _servidor.Iniciar();
             _administracionLocal = new ServidorAdministracionLocal(

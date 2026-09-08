@@ -55,8 +55,8 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("status --porcelain --untracked-files=all", publicacion, StringComparison.Ordinal);
         Assert.Contains("Assert-PublishedExecutable", publicacion, StringComparison.Ordinal);
         Assert.Contains("-SufijoProducto '.portable'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-1.8.4-x64.msi", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.4-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombreMsi", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombrePortable", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
         Assert.Contains("obj\\PublicacionStaging", publicacion, StringComparison.Ordinal);
         Assert.Contains("Sustituye la publicacion solo despues de validar todo el staging", publicacion, StringComparison.Ordinal);
@@ -76,22 +76,18 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersion184()
+    public void ProyectoPublicaVersionCentralizada190()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
-        var cliente = File.ReadAllText(ObtenerRutaProyecto(
-            "ClienteWeb",
-            "assets",
-            "index-DgdNDMM1.js"));
+        var version = File.ReadAllText(ObtenerRutaProyecto("Directory.Build.props"));
 
-        Assert.Contains("<Version>1.8.4</Version>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<AssemblyVersion>1.8.4.0</AssemblyVersion>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<FileVersion>1.8.4.0</FileVersion>", proyecto, StringComparison.Ordinal);
+        Assert.Contains("<LanzadorScriptsVersion>1.9.0</LanzadorScriptsVersion>", version, StringComparison.Ordinal);
+        Assert.Contains("<LanzadorScriptsFileVersion>1.9.0.0</LanzadorScriptsFileVersion>", version, StringComparison.Ordinal);
+        Assert.Contains("<Version>$(LanzadorScriptsVersion)</Version>", version, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Version>1.9.0</Version>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);
-        Assert.Contains("v1.8.4", cliente, StringComparison.Ordinal);
-        Assert.DoesNotContain("v1.2.0", cliente, StringComparison.Ordinal);
     }
 
     // Comprueba que el icono conserva resoluciones adecuadas para Windows.
@@ -155,7 +151,7 @@ public sealed class PruebasPublicacionWebView2
         Assert.DoesNotContain("L\"WebView2\\\\Perfil\"", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts.Runtime.exe", codigoNativo, StringComparison.Ordinal);
         Assert.Contains("LANZADOR_DISTRIBUTION_EXE", codigoNativo, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.4-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombrePortable", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("-Variante normal", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("LANZADOR_LIMPIEZA_COMPLETA", publicacion, StringComparison.Ordinal);
         Assert.Contains("FOLDERID_ProgramFiles", codigoNativo, StringComparison.Ordinal);

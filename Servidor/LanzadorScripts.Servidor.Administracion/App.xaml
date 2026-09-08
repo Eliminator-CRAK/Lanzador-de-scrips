@@ -454,17 +454,19 @@
                                     </Grid.ColumnDefinitions>
                                     <Button x:Name="PART_PreviousButton"
                                             Grid.Column="0"
-                                            Content="&#xE76B;"
-                                            FontFamily="Segoe MDL2 Assets"
-                                            Style="{StaticResource BotonNavegacionCalendario}" />
+                                            ToolTip="Mes anterior"
+                                            Style="{StaticResource BotonNavegacionCalendario}">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE76B;" />
+                                    </Button>
                                     <Button x:Name="PART_HeaderButton"
                                             Grid.Column="1"
                                             Style="{StaticResource BotonNavegacionCalendario}" />
                                     <Button x:Name="PART_NextButton"
                                             Grid.Column="2"
-                                            Content="&#xE76C;"
-                                            FontFamily="Segoe MDL2 Assets"
-                                            Style="{StaticResource BotonNavegacionCalendario}" />
+                                            ToolTip="Mes siguiente"
+                                            Style="{StaticResource BotonNavegacionCalendario}">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE76C;" />
+                                    </Button>
                                 </Grid>
                                 <Grid x:Name="PART_MonthView" Grid.Row="1" Margin="4">
                                     <Grid.ColumnDefinitions>

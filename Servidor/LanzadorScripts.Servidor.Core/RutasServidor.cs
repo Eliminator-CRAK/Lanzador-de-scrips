@@ -20,6 +20,7 @@ public sealed class RutasServidor
         RutaSeguridad = Path.Combine(Raiz, "Seguridad");
         RutaCopias = Path.Combine(Raiz, "CopiasSeguridad");
         RutaLogs = Path.Combine(Raiz, "Logs");
+        RutaActualizaciones = Path.Combine(Raiz, "Actualizaciones");
         RutaBaseDatos = Path.Combine(RutaDatos, "LanzadorScripts.db");
         RutaClaveProtegida = Path.Combine(RutaSeguridad, "base-datos.key.dpapi");
         RutaAdministradorInicialProtegido = Path.Combine(
@@ -37,6 +38,8 @@ public sealed class RutasServidor
     public string RutaCopias { get; }
 
     public string RutaLogs { get; }
+
+    public string RutaActualizaciones { get; }
 
     public string RutaBaseDatos { get; }
 
@@ -56,10 +59,22 @@ public sealed class RutasServidor
             AplicarAclAdministrativa(Raiz);
         }
 
-        foreach (var ruta in new[] { RutaDatos, RutaSeguridad, RutaCopias, RutaLogs })
+        foreach (var ruta in new[]
+                 {
+                     RutaDatos,
+                     RutaSeguridad,
+                     RutaCopias,
+                     RutaLogs,
+                     RutaActualizaciones
+                 })
         {
             Directory.CreateDirectory(ruta);
             RechazarPuntoReanalisis(ruta);
+        }
+
+        if (_usarAclAdministrativa)
+        {
+            AplicarAclActualizaciones(RutaActualizaciones);
         }
     }
 
@@ -114,6 +129,39 @@ public sealed class RutasServidor
         seguridad.AddAccessRule(new FileSystemAccessRule(
             sistema,
             FileSystemRights.FullControl,
+            herencia,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        new DirectoryInfo(ruta).SetAccessControl(seguridad);
+    }
+
+    private static void AplicarAclActualizaciones(string ruta)
+    {
+        // Permite descargar paquetes sin conceder escritura a los clientes.
+        var administradores = new SecurityIdentifier(
+            WellKnownSidType.BuiltinAdministratorsSid,
+            null);
+        var sistema = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var usuarios = new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null);
+        var herencia = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        var seguridad = new DirectorySecurity();
+        seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        seguridad.SetOwner(administradores);
+        seguridad.AddAccessRule(new FileSystemAccessRule(
+            administradores,
+            FileSystemRights.FullControl,
+            herencia,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        seguridad.AddAccessRule(new FileSystemAccessRule(
+            sistema,
+            FileSystemRights.FullControl,
+            herencia,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        seguridad.AddAccessRule(new FileSystemAccessRule(
+            usuarios,
+            FileSystemRights.ReadAndExecute | FileSystemRights.ListDirectory,
             herencia,
             PropagationFlags.None,
             AccessControlType.Allow));

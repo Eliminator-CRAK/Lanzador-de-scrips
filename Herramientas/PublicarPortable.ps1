@@ -20,6 +20,8 @@ if ($PSVersionTable.PSEdition -ne 'Core' -or
 }
 
 $raiz = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'VersionAplicacion.ps1')
+$versionAplicacion = Get-LanzadorScriptsVersion -Raiz $raiz
 $proyecto = Join-Path $raiz 'LanzadorScripts.csproj'
 $salida = Join-Path $raiz 'publicacion'
 $salidaStaging = Join-Path $raiz 'obj\PublicacionStaging'
@@ -64,23 +66,10 @@ if (-not $stagingCompleta.StartsWith($carpetaObjCompleta, [System.StringComparis
     throw 'Las carpetas temporales de publicacion no estan dentro de obj.'
 }
 
-$proyectoXml = [xml](Get-Content -LiteralPath $proyecto -Raw)
-$propiedadesVersion = @($proyectoXml.Project.PropertyGroup) |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_.Version) } |
-    Select-Object -First 1
-if ($null -eq $propiedadesVersion -or
-    [string]::IsNullOrWhiteSpace($propiedadesVersion.FileVersion)) {
-    throw 'No se pudo leer la version de publicacion desde LanzadorScripts.csproj.'
-}
-
-$versionProductoEsperada = [string]$propiedadesVersion.Version
-$versionArchivoEsperada = [string]$propiedadesVersion.FileVersion
-if ($versionProductoEsperada -ne '1.8.4' -or $versionArchivoEsperada -ne '1.8.4.0') {
-    throw 'La publicacion MSI y portable requiere la version 1.8.4.'
-}
-
-$nombreMsiFinal = 'LanzadorScripts-1.8.4-x64.msi'
-$nombrePortableFinal = 'LanzadorScripts_Portable-1.8.4-x64.exe'
+$versionProductoEsperada = $versionAplicacion.Producto
+$versionArchivoEsperada = $versionAplicacion.Archivo
+$nombreMsiFinal = $versionAplicacion.NombreMsi
+$nombrePortableFinal = $versionAplicacion.NombrePortable
 $msiCompilado = Join-Path $raiz "Instalador\Release\$nombreMsiFinal"
 $revisionGitEsperada = (& git -C $raiz rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revisionGitEsperada)) {
@@ -964,7 +953,7 @@ function Assert-PublishedMsi {
             $propiedades.ALLUSERS -ne '1' -or
             $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}' -or
             $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1') {
-            throw 'Los metadatos del MSI publicado no coinciden con el contrato 1.8.4.'
+            throw "Los metadatos del MSI publicado no coinciden con el contrato $versionProductoEsperada."
         }
     }
     finally {

@@ -103,6 +103,25 @@
                        Foreground="#6B7280"
                        FontSize="11"
                        FontWeight="SemiBold" />
+
+            <Button x:Name="BotonActualizarAplicacion"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Height="28"
+                    Margin="0,0,12,0"
+                    Padding="10,0"
+                    Background="#1E3A5F"
+                    BorderBrush="#315B8A"
+                    Foreground="#F9FAFB"
+                    Visibility="Collapsed"
+                    Click="BotonActualizarAplicacion_Click"
+                    ToolTip="Descargar e instalar la versión disponible"
+                    WindowChrome.IsHitTestVisibleInChrome="True">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" />
+                    <TextBlock x:Name="TextoBotonActualizacion" Text="Actualizar" />
+                </StackPanel>
+            </Button>
         </Grid>
 
         <Grid Grid.Row="1">
@@ -171,6 +190,36 @@
                                  Height="6"
                                  Margin="0,22,0,0"
                                  Foreground="#F59E0B"
+                                 Background="#1F2937" />
+                </StackPanel>
+            </Border>
+            <Border x:Name="PanelActualizacion"
+                    Background="#0F1115"
+                    Padding="32"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="30">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Width="520">
+                    <TextBlock Text="Actualizando LanzadorScripts"
+                               Foreground="#F9FAFB"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center" />
+                    <TextBlock x:Name="TextoFaseActualizacion"
+                               Text="Preparando la actualización..."
+                               Foreground="#9CA3AF"
+                               FontSize="13"
+                               Margin="0,14,0,0"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <ProgressBar x:Name="ProgresoActualizacion"
+                                 IsIndeterminate="True"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Height="6"
+                                 Margin="0,22,0,0"
+                                 Foreground="#60A5FA"
                                  Background="#1F2937" />
                 </StackPanel>
             </Border>

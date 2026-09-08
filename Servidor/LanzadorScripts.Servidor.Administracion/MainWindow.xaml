@@ -34,7 +34,7 @@
                     </Border>
                     <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="LanzadorScripts" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock Text="Servidor 1.8.3" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
+                        <TextBlock x:Name="TextoVersionServidor" Text="Servidor" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
                     </StackPanel>
                 </StackPanel>
 
@@ -50,6 +50,9 @@
                     </Button>
                     <Button x:Name="BotonCatalogo" Click="MostrarCatalogo_Click" HorizontalContentAlignment="Left" Margin="0,0,0,6">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0" /><TextBlock Text="Catálogo" /></StackPanel>
+                    </Button>
+                    <Button x:Name="BotonActualizaciones" Click="MostrarActualizaciones_Click" HorizontalContentAlignment="Left" Margin="0,0,0,6">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0" /><TextBlock Text="Actualizaciones" /></StackPanel>
                     </Button>
                     <Button x:Name="BotonMantenimiento" Click="MostrarMantenimiento_Click" HorizontalContentAlignment="Left">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE90F;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0" /><TextBlock Text="Mantenimiento" /></StackPanel>
@@ -137,6 +140,56 @@
                             </Border>
                         </StackPanel>
                     </ScrollViewer>
+                </TabItem>
+
+                <TabItem>
+                    <Grid Margin="24">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border Background="{StaticResource Superficie}" BorderBrush="{StaticResource Borde}" BorderThickness="1" CornerRadius="6" Padding="18">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Repositorio de paquetes" FontWeight="SemiBold" FontSize="15" />
+                                    <TextBlock x:Name="TextoCarpetaActualizaciones" Foreground="{StaticResource TextoSecundario}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="TextoRecursoActualizaciones" Foreground="{StaticResource TextoSecundario}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <Button Click="AbrirCarpetaActualizaciones_Click" Margin="0,0,8,0">
+                                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xED25;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" /><TextBlock Text="Abrir carpeta" /></StackPanel>
+                                    </Button>
+                                    <Button Click="RevalidarActualizaciones_Click" Background="#1E3A5F" BorderBrush="#315B8A">
+                                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" /><TextBlock Text="Volver a validar" /></StackPanel>
+                                    </Button>
+                                </WrapPanel>
+                            </Grid>
+                        </Border>
+                        <Border Grid.Row="1" Background="{StaticResource Superficie}" BorderBrush="{StaticResource Borde}" BorderThickness="1" CornerRadius="6" Padding="16" Margin="0,14,0,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <StackPanel><TextBlock Text="VERSIÓN ACTIVA" Foreground="{StaticResource TextoSecundario}" FontSize="11" /><TextBlock x:Name="TextoVersionActualizacion" Text="--" FontSize="20" FontWeight="SemiBold" Margin="0,7,0,0" /></StackPanel>
+                                <TextBlock x:Name="TextoResumenActualizaciones" Grid.Column="1" Foreground="{StaticResource TextoSecundario}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                        <DataGrid x:Name="TablaActualizaciones" Grid.Row="2">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Archivo" Binding="{Binding NombreArchivo}" Width="2*" />
+                                <DataGridTextColumn Header="Versión" Binding="{Binding Version}" Width="90" />
+                                <DataGridTextColumn Header="Tamaño" Binding="{Binding Longitud, StringFormat={}{0:N0}}" Width="110" />
+                                <DataGridTextColumn Header="Fecha UTC" Binding="{Binding FechaUtc, StringFormat={}{0:dd/MM/yyyy HH:mm:ss}}" Width="155" />
+                                <DataGridCheckBoxColumn Header="Válido" Binding="{Binding Valido}" Width="70" />
+                                <DataGridTextColumn Header="Firma" Binding="{Binding EstadoFirma}" Width="150" />
+                                <DataGridTextColumn Header="SHA-256" Binding="{Binding Sha256}" Width="2*" />
+                                <DataGridTextColumn Header="Validación" Binding="{Binding Mensaje}" Width="2*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
                 </TabItem>
 
                 <TabItem>

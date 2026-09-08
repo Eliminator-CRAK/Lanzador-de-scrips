@@ -98,6 +98,8 @@ public partial class Aplicacion : System.Windows.Application
         try
         {
             ServicioDirectoriosAplicacion.PrepararEstructuraAplicacion();
+            ServicioActualizacionesCliente.LimpiarStagingAbandonado();
+            _ = ServicioActualizacionesCliente.ReintentarLimpiezaStagingAbandonadoAsync();
         }
         catch (Exception ex)
         {

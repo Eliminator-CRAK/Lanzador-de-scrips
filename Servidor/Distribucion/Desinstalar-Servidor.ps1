@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 $nombreServicio = 'LanzadorScriptsServidor'
 $destino = [System.IO.Path]::GetFullPath((Join-Path $env:ProgramFiles 'LanzadorScriptsServidor'))
 $datos = [System.IO.Path]::GetFullPath((Join-Path $env:ProgramData 'LanzadorScriptsServidor'))
+$nombreRecursoActualizaciones = 'LanzadorScriptsActualizaciones$'
 
 function Assert-Administrador {
     $identidad = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -113,6 +114,24 @@ if ([System.IO.Directory]::Exists($destino)) {
 }
 
 if ($EliminarDatos) {
+    $net = Join-Path $env:SystemRoot 'System32\net.exe'
+    $inicio = [Diagnostics.ProcessStartInfo]::new()
+    $inicio.FileName = $net
+    $inicio.UseShellExecute = $false
+    $inicio.CreateNoWindow = $true
+    foreach ($argumento in @('share', $nombreRecursoActualizaciones, '/delete', '/y')) {
+        [void]$inicio.ArgumentList.Add($argumento)
+    }
+    $procesoRecurso = [Diagnostics.Process]::Start($inicio)
+    if ($null -ne $procesoRecurso) {
+        try {
+            [void]$procesoRecurso.WaitForExit(30000)
+        }
+        finally {
+            $procesoRecurso.Dispose()
+        }
+    }
+
     Assert-ArbolSinReparse -Ruta $datos
     if ([System.IO.Directory]::Exists($datos)) {
         Remove-Item -LiteralPath $datos -Recurse -Force

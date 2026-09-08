@@ -21,6 +21,8 @@ $nombreServicio = 'LanzadorScriptsServidor'
 $raizPaquete = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $destino = [System.IO.Path]::GetFullPath((Join-Path $env:ProgramFiles 'LanzadorScriptsServidor'))
 $datos = [System.IO.Path]::GetFullPath((Join-Path $env:ProgramData 'LanzadorScriptsServidor'))
+$actualizaciones = [System.IO.Path]::GetFullPath((Join-Path $datos 'Actualizaciones'))
+$nombreRecursoActualizaciones = 'LanzadorScriptsActualizaciones$'
 $servicioOrigen = Join-Path $raizPaquete 'Servicio\LanzadorScripts.Servidor.Servicio.exe'
 $administracionOrigen = Join-Path $raizPaquete 'LanzadorScripts.Servidor.exe'
 $servicioDestino = Join-Path $destino 'Servicio\LanzadorScripts.Servidor.Servicio.exe'
@@ -240,6 +242,34 @@ Invoke-Nativo -Ejecutable $icacls -Argumentos @(
     '/grant:r',
     '*S-1-5-18:(OI)(CI)F',
     '*S-1-5-32-544:(OI)(CI)F')
+[System.IO.Directory]::CreateDirectory($actualizaciones) | Out-Null
+Assert-SinReparse -Ruta $actualizaciones
+Invoke-Nativo -Ejecutable $icacls -Argumentos @(
+    $actualizaciones,
+    '/inheritance:r',
+    '/grant:r',
+    '*S-1-5-18:(OI)(CI)F',
+    '*S-1-5-32-544:(OI)(CI)F',
+    '*S-1-5-11:(OI)(CI)RX')
+$usuariosAutenticados = ([Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::AuthenticatedUserSid,
+        $null)).Translate([Security.Principal.NTAccount]).Value
+$administradoresLocales = ([Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid,
+        $null)).Translate([Security.Principal.NTAccount]).Value
+$sistemaLocal = ([Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::LocalSystemSid,
+        $null)).Translate([Security.Principal.NTAccount]).Value
+$net = Join-Path $env:SystemRoot 'System32\net.exe'
+Invoke-Nativo -Ejecutable $net -Argumentos @(
+    'share', $nombreRecursoActualizaciones, '/delete', '/y') -IgnorarError
+Invoke-Nativo -Ejecutable $net -Argumentos @(
+    'share',
+    "$nombreRecursoActualizaciones=$actualizaciones",
+    "/GRANT:$usuariosAutenticados,READ",
+    "/GRANT:$administradoresLocales,FULL",
+    "/GRANT:$sistemaLocal,FULL",
+    '/CACHE:None')
 $rutaConfiguracion = Join-Path $datos 'configuracion-servidor.json'
 if (-not [System.IO.File]::Exists($rutaConfiguracion)) {
     $configuracion = [ordered]@{
@@ -344,6 +374,7 @@ Start-Service -Name $nombreServicio
 (Get-Service -Name $nombreServicio).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
 Write-Host "LanzadorScripts Servidor instalado y activo en el puerto $puertoEfectivo."
 Write-Host "Datos protegidos: $datos"
+Write-Host "Actualizaciones: \\$env:COMPUTERNAME\$nombreRecursoActualizaciones"
 if (-not $NoAbrir) {
     Start-Process -FilePath $administracionDestino
 }

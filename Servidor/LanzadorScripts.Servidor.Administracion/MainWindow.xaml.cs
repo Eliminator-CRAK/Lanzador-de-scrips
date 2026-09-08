@@ -2,7 +2,9 @@
 // Descripcion: Coordina las operaciones de la consola administrativa.
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
@@ -26,6 +28,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<UsuarioServidorCentral> _usuarios = [];
     private readonly ObservableCollection<AuditoriaVista> _auditoria = [];
     private readonly ObservableCollection<CatalogoVista> _catalogo = [];
+    private readonly ObservableCollection<PaqueteActualizacionServidorCentral> _actualizaciones = [];
     private string? _usuarioSeleccionadoId;
     private bool _ocupado;
 
@@ -34,11 +37,17 @@ public partial class MainWindow : Window
         InitializeComponent();
         _configuracion = new AlmacenConfiguracionServidor(_rutas).CargarOCrear();
         _cliente = new ClienteAdministracionLocal(TimeSpan.FromSeconds(8));
+        TextoVersionServidor.Text =
+            $"Servidor {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "--"}";
         TextoCuentaActual.Text = WindowsIdentity.GetCurrent().Name;
         TextoRutasServidor.Text = $"Base: {_rutas.RutaBaseDatos}\nCopias: {_rutas.RutaCopias}\nLogs: {_rutas.RutaLogs}";
         TablaUsuarios.ItemsSource = _usuarios;
         TablaAuditoria.ItemsSource = _auditoria;
         TablaCatalogo.ItemsSource = _catalogo;
+        TablaActualizaciones.ItemsSource = _actualizaciones;
+        TextoCarpetaActualizaciones.Text = $"Carpeta: {_rutas.RutaActualizaciones}";
+        TextoRecursoActualizaciones.Text =
+            $@"Recurso: \\{Environment.MachineName}\{CatalogoActualizacionesServidor.NombreRecursoCompartido}";
         CampoRolUsuario.SelectedIndex = 1;
         CampoRutaScripts.Text = _configuracion.RutaScripts;
         FiltroResultadoAuditoria.SelectedIndex = 0;
@@ -73,25 +82,31 @@ public partial class MainWindow : Window
 
     private async void MostrarUsuarios_Click(object sender, RoutedEventArgs e)
     {
-        SeleccionarVista(1, "Usuarios y permisos", "Cuentas autorizadas para administrar o ejecutar scripts");
+        SeleccionarVista(2, "Usuarios y permisos", "Cuentas autorizadas para administrar o ejecutar scripts");
         await CargarUsuariosAsync();
     }
 
     private async void MostrarAuditoria_Click(object sender, RoutedEventArgs e)
     {
-        SeleccionarVista(2, "Auditoría", "Consulta central por usuario, fecha, resultado y script");
+        SeleccionarVista(3, "Auditoría", "Consulta central por usuario, fecha, resultado y script");
         await CargarAuditoriaAsync();
     }
 
     private async void MostrarCatalogo_Click(object sender, RoutedEventArgs e)
     {
-        SeleccionarVista(3, "Catálogo de scripts", "Hashes autorizados almacenados en la base central");
+        SeleccionarVista(4, "Catálogo de scripts", "Hashes autorizados almacenados en la base central");
         await CargarCatalogoAsync();
+    }
+
+    private async void MostrarActualizaciones_Click(object sender, RoutedEventArgs e)
+    {
+        SeleccionarVista(1, "Actualizaciones", "Paquetes MSI disponibles para clientes instalados");
+        await CargarActualizacionesAsync(forzarValidacion: false);
     }
 
     private void MostrarMantenimiento_Click(object sender, RoutedEventArgs e)
     {
-        SeleccionarVista(4, "Mantenimiento", "Integridad, copias y ciclo de vida del servicio");
+        SeleccionarVista(5, "Mantenimiento", "Integridad, copias y ciclo de vida del servicio");
     }
 
     private async Task ActualizarVistaActualAsync()
@@ -102,15 +117,18 @@ public partial class MainWindow : Window
                 await ActualizarResumenAsync();
                 break;
             case 1:
-                await CargarUsuariosAsync();
+                await CargarActualizacionesAsync(forzarValidacion: false);
                 break;
             case 2:
-                await CargarAuditoriaAsync();
+                await CargarUsuariosAsync();
                 break;
             case 3:
-                await CargarCatalogoAsync();
+                await CargarAuditoriaAsync();
                 break;
             case 4:
+                await CargarCatalogoAsync();
+                break;
+            case 5:
                 await ComprobarIntegridadAsync();
                 break;
         }
@@ -241,6 +259,60 @@ public partial class MainWindow : Window
         {
             await CargarCatalogoSinEstadoAsync();
         });
+    }
+
+    private async Task CargarActualizacionesAsync(bool forzarValidacion)
+    {
+        await EjecutarOperacionAsync("Validando paquetes MSI...", async () =>
+        {
+            var respuesta = await _cliente.EnviarAsync<
+                ConsultaEstadoActualizacionesServidor,
+                EstadoActualizacionesServidorCentral>(
+                OperacionesServidor.ObtenerEstadoActualizaciones,
+                new ConsultaEstadoActualizacionesServidor(forzarValidacion),
+                CancellationToken.None);
+            ExigirRespuesta(respuesta);
+            var estado = respuesta.Datos!;
+            _actualizaciones.Clear();
+            foreach (var paquete in estado.Paquetes)
+            {
+                _actualizaciones.Add(paquete);
+            }
+
+            TextoCarpetaActualizaciones.Text = $"Carpeta: {estado.Carpeta}";
+            TextoRecursoActualizaciones.Text = $"Recurso: {estado.RecursoCompartido}";
+            TextoVersionActualizacion.Text = string.IsNullOrWhiteSpace(estado.VersionActiva)
+                ? "--"
+                : estado.VersionActiva;
+            TextoResumenActualizaciones.Text =
+                $"{estado.Mensaje} Comprobado: {estado.ComprobadoUtc.ToLocalTime():dd/MM/yyyy HH:mm:ss}.";
+        });
+    }
+
+    private void AbrirCarpetaActualizaciones_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _controlServicio.PrepararRepositorioActualizaciones();
+            var inicio = new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                UseShellExecute = true
+            };
+            inicio.ArgumentList.Add(_rutas.RutaActualizaciones);
+            _ = Process.Start(inicio);
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
+        {
+            MostrarError(ex.Message);
+        }
+    }
+
+    private async void RevalidarActualizaciones_Click(object sender, RoutedEventArgs e)
+    {
+        await CargarActualizacionesAsync(forzarValidacion: true);
     }
 
     private async Task CargarCatalogoSinEstadoAsync()

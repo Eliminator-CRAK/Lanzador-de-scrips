@@ -69,12 +69,25 @@ public sealed class PruebasCicloVidaAplicacion
     public void AtajoAdministrativoAbreSoloLaAuditoriaCentral()
     {
         var ventana = File.ReadAllText(ObtenerRutaProyecto("VentanaPrincipal.xaml.cs"));
+        var auditoria = File.ReadAllText(ObtenerRutaProyecto("VentanaAuditoria.xaml"));
+        var recursos = File.ReadAllText(ObtenerRutaProyecto("Aplicacion.xaml"));
 
         Assert.Contains("MostrarAuditoria();", ventana, StringComparison.Ordinal);
         Assert.Contains("postMessage('mostrarAuditoria')", ventana, StringComparison.Ordinal);
         Assert.Contains("new VentanaAuditoria", ventana, StringComparison.Ordinal);
         Assert.DoesNotContain("ls-diagnostico-panel", ventana, StringComparison.Ordinal);
         Assert.DoesNotContain("alternarDiagnostico", ventana, StringComparison.Ordinal);
+        Assert.Contains("Actualizar_Click", auditoria, StringComparison.Ordinal);
+        Assert.Contains("FiltroUsuario", auditoria, StringComparison.Ordinal);
+        Assert.Contains("FiltroDesde", auditoria, StringComparison.Ordinal);
+        Assert.Contains("FiltroHasta", auditoria, StringComparison.Ordinal);
+        Assert.Contains("FiltroResultado", auditoria, StringComparison.Ordinal);
+        Assert.Contains("TablaAuditoria", auditoria, StringComparison.Ordinal);
+        Assert.Contains("Content=\"iniciado\"", auditoria, StringComparison.Ordinal);
+        Assert.Contains("Content=\"finalizado\"", auditoria, StringComparison.Ordinal);
+        Assert.Contains("<Style TargetType=\"ComboBox\">", recursos, StringComparison.Ordinal);
+        Assert.Contains("<Style TargetType=\"DatePicker\">", recursos, StringComparison.Ordinal);
+        Assert.Contains("<Style TargetType=\"DataGrid\">", recursos, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,7 +154,7 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("--validar-limpieza-ruta-larga", nativo, StringComparison.Ordinal);
         Assert.Contains("rutaArchivo.size() <= MAX_PATH", nativo, StringComparison.Ordinal);
         Assert.Contains("-ArgumentList '--validar-limpieza-ruta-larga'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts_Portable-1.8.4-x64.exe", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$versionAplicacion.NombrePortable", publicacion, StringComparison.Ordinal);
 
         var manifiesto = File.ReadAllText(ObtenerRutaProyecto("manifiesto.manifest"));
         Assert.Contains("<ws2:longPathAware>true</ws2:longPathAware>", manifiesto, StringComparison.Ordinal);

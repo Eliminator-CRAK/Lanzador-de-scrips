@@ -17,8 +17,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $raiz = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'VersionAplicacion.ps1')
+$versionAplicacion = Get-LanzadorScriptsVersion -Raiz $raiz
 $objRaiz = [System.IO.Path]::GetFullPath((Join-Path $raiz 'obj'))
 $objInstalador = [System.IO.Path]::GetFullPath((Join-Path $objRaiz 'Instalador'))
+$objActualizador = [System.IO.Path]::GetFullPath((Join-Path $objRaiz 'Actualizador'))
 $vdproj = Join-Path $raiz 'Instalador\LanzadorScripts.Instalador.vdproj'
 $solucion = Join-Path $raiz 'LanzadorScripts.slnx'
 $fuenteHelper = Join-Path $raiz 'Instalador\LanzadorScripts.Instalador.cpp'
@@ -26,8 +29,13 @@ $recursoHelper = Join-Path $raiz 'Instalador\LanzadorScripts.Instalador.rc'
 $helperExe = Join-Path $objInstalador 'LanzadorScripts.Instalador.exe'
 $helperObj = Join-Path $objInstalador 'LanzadorScripts.Instalador.obj'
 $helperRes = Join-Path $objInstalador 'LanzadorScripts.Instalador.res'
+$fuenteActualizador = Join-Path $raiz 'Actualizador\LanzadorScripts.Actualizador.cpp'
+$recursoActualizador = Join-Path $raiz 'Actualizador\LanzadorScripts.Actualizador.rc'
+$actualizadorExe = Join-Path $objActualizador 'LanzadorScripts.Actualizador.exe'
+$actualizadorObj = Join-Path $objActualizador 'LanzadorScripts.Actualizador.obj'
+$actualizadorRes = Join-Path $objActualizador 'LanzadorScripts.Actualizador.res'
 $logValidacionMsi = Join-Path $objInstalador 'MsiAdminImage.log'
-$msi = Join-Path $raiz 'Instalador\Release\LanzadorScripts-1.8.4-x64.msi'
+$msi = Join-Path $raiz (Join-Path 'Instalador\Release' $versionAplicacion.NombreMsi)
 $publicacion = Join-Path $raiz 'bin\Release\net10.0-windows\win-x64\publish'
 $exeInstalado = Join-Path $publicacion 'LanzadorScripts.exe'
 $scriptFirma = Join-Path $PSScriptRoot 'FirmarPublicacionInstalada.ps1'
@@ -42,6 +50,8 @@ foreach ($archivo in @(
         $solucion,
         $fuenteHelper,
         $recursoHelper,
+        $fuenteActualizador,
+        $recursoActualizador,
         $scriptFirma,
         $scriptConfigurar,
         $scriptVisualStudio)) {
@@ -86,6 +96,9 @@ $prefijoObj = $objRaiz.TrimEnd('\') + '\'
 if (-not $objInstalador.StartsWith($prefijoObj, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "La carpeta temporal no esta dentro de obj: $objInstalador"
 }
+if (-not $objActualizador.StartsWith($prefijoObj, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "La carpeta del actualizador no esta dentro de obj: $objActualizador"
+}
 
 & $scriptVisualStudio
 if ($LASTEXITCODE -ne 0) {
@@ -107,8 +120,12 @@ $vsDevCmd = Join-Path $rutaVisualStudio 'Common7\Tools\VsDevCmd.bat'
 if ([System.IO.Directory]::Exists($objInstalador)) {
     [System.IO.Directory]::Delete($objInstalador, $true)
 }
+if ([System.IO.Directory]::Exists($objActualizador)) {
+    [System.IO.Directory]::Delete($objActualizador, $true)
+}
 
 [System.IO.Directory]::CreateDirectory($objInstalador) | Out-Null
+[System.IO.Directory]::CreateDirectory($objActualizador) | Out-Null
 $compilarCmd = Join-Path $objInstalador 'CompilarHelper.cmd'
 $lineasCompilacion = @(
     '@echo off',
@@ -119,12 +136,20 @@ $lineasCompilacion = @(
     ('cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf ' +
         "/DUNICODE /D_UNICODE /Fo:`"$helperObj`" /Fe:`"$helperExe`" `"$fuenteHelper`" `"$helperRes`" " +
         '/link /WX /SUBSYSTEM:WINDOWS /MACHINE:X64 /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT /INCREMENTAL:NO /Brepro'),
+    'if errorlevel 1 exit /b %errorlevel%',
+    "rc.exe /nologo /fo `"$actualizadorRes`" `"$recursoActualizador`"",
+    'if errorlevel 1 exit /b %errorlevel%',
+    ('cl.exe /nologo /std:c++20 /O2 /MT /EHsc /W4 /WX /utf-8 /permissive- /sdl /guard:cf ' +
+        "/DUNICODE /D_UNICODE /Fo:`"$actualizadorObj`" /Fe:`"$actualizadorExe`" `"$fuenteActualizador`" `"$actualizadorRes`" " +
+        '/link /WX /SUBSYSTEM:WINDOWS /MACHINE:X64 /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT /INCREMENTAL:NO /Brepro'),
     'exit /b %errorlevel%'
 )
 [System.IO.File]::WriteAllLines($compilarCmd, $lineasCompilacion, [System.Text.Encoding]::ASCII)
 & $env:ComSpec /d /c $compilarCmd
-if ($LASTEXITCODE -ne 0 -or -not [System.IO.File]::Exists($helperExe)) {
-    throw "No se pudo compilar el helper del MSI. Codigo: $LASTEXITCODE"
+if ($LASTEXITCODE -ne 0 -or
+    -not [System.IO.File]::Exists($helperExe) -or
+    -not [System.IO.File]::Exists($actualizadorExe)) {
+    throw "No se pudieron compilar los auxiliares nativos. Codigo: $LASTEXITCODE"
 }
 
 $procesoValidacionHelper = Start-Process `
@@ -148,12 +173,14 @@ if ($procesoValidacionRutaLarga.ExitCode -ne 0) {
 }
 
 if (-not $DesarrolloSinFirma) {
-    & $scriptFirma `
-        -RutaArchivo $helperExe `
-        -Thumbprint $CertThumbprint `
-        -TimestampServer $TimestampServer
-    if ($LASTEXITCODE -ne 0) {
-        throw 'No se pudo firmar el helper del MSI.'
+    foreach ($auxiliar in @($helperExe, $actualizadorExe)) {
+        & $scriptFirma `
+            -RutaArchivo $auxiliar `
+            -Thumbprint $CertThumbprint `
+            -TimestampServer $TimestampServer
+        if ($LASTEXITCODE -ne 0) {
+            throw "No se pudo firmar el auxiliar nativo: $auxiliar"
+        }
     }
 }
 
@@ -163,10 +190,12 @@ if ($LASTEXITCODE -ne 0 -or $revisionGit -notmatch '^[0-9a-f]{40}$') {
 }
 
 $entornoAnterior = @{
+    LANZADOR_PRODUCT_VERSION = $env:LANZADOR_PRODUCT_VERSION
     LANZADOR_GIT_REVISION = $env:LANZADOR_GIT_REVISION
     LANZADOR_SIGNING_THUMBPRINT = $env:LANZADOR_SIGNING_THUMBPRINT
     LANZADOR_TIMESTAMP_SERVER = $env:LANZADOR_TIMESTAMP_SERVER
     InstalledWebView2RuntimeSource = $env:InstalledWebView2RuntimeSource
+    InstalledUpdaterSource = $env:InstalledUpdaterSource
 }
 
 try {
@@ -178,10 +207,12 @@ try {
         throw 'No se pudo preparar la copia corta del runtime WebView2 para el MSI.'
     }
 
+    $env:LANZADOR_PRODUCT_VERSION = $versionAplicacion.Producto
     $env:LANZADOR_GIT_REVISION = $revisionGit
     $env:LANZADOR_SIGNING_THUMBPRINT = if ($DesarrolloSinFirma) { '' } else { $CertThumbprint }
     $env:LANZADOR_TIMESTAMP_SERVER = $TimestampServer
     $env:InstalledWebView2RuntimeSource = $runtimeMsi
+    $env:InstalledUpdaterSource = $actualizadorExe
     if ([System.IO.File]::Exists($msi)) {
         [System.IO.File]::Delete($msi)
     }
@@ -209,7 +240,10 @@ finally {
     }
 }
 
-if (-not [System.IO.File]::Exists($msi) -or -not [System.IO.File]::Exists($exeInstalado)) {
+$actualizadorInstalado = Join-Path $publicacion 'LanzadorScripts.Actualizador.exe'
+if (-not [System.IO.File]::Exists($msi) -or
+    -not [System.IO.File]::Exists($exeInstalado) -or
+    -not [System.IO.File]::Exists($actualizadorInstalado)) {
     throw 'Visual Studio no genero el MSI o el ejecutable instalado.'
 }
 
@@ -230,18 +264,18 @@ if (-not $DesarrolloSinFirma) {
 }
 
 $versionExe = (Get-Item -LiteralPath $exeInstalado).VersionInfo.FileVersion
-if ($versionExe -ne '1.8.4.0') {
-    throw "La version del ejecutable instalado no es 1.8.4.0: $versionExe"
+if ($versionExe -ne $versionAplicacion.Archivo) {
+    throw "La version del ejecutable instalado no es $($versionAplicacion.Archivo): $versionExe"
 }
 
 $productoExe = (Get-Item -LiteralPath $exeInstalado).VersionInfo.ProductVersion
-$productoEsperado = "1.8.4+$revisionGit.installed"
+$productoEsperado = "$($versionAplicacion.Producto)+$revisionGit.installed"
 if ($productoExe -ne $productoEsperado) {
     throw "La version de producto instalada no identifica el commit: $productoExe"
 }
 
 if (-not $DesarrolloSinFirma) {
-    foreach ($archivo in @($helperExe, $exeInstalado, $msi)) {
+    foreach ($archivo in @($helperExe, $actualizadorExe, $actualizadorInstalado, $exeInstalado, $msi)) {
         $firma = Get-AuthenticodeSignature -LiteralPath $archivo
         if ($firma.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
             $null -eq $firma.TimeStamperCertificate) {
@@ -272,11 +306,11 @@ try {
         }
     }
 
-    if ($propiedades.ProductVersion -ne '1.8.4' -or
+    if ($propiedades.ProductVersion -ne $versionAplicacion.Producto -or
         $propiedades.ALLUSERS -ne '1' -or
         $propiedades.LANZADOR_MSI_CONFIGURADO -ne '1' -or
         $propiedades.UpgradeCode -ne '{24169C78-5164-45C8-AB1A-AFC281D86DE9}') {
-        throw 'Los metadatos finales del MSI no coinciden con el contrato 1.8.4.'
+        throw "Los metadatos finales del MSI no coinciden con el contrato $($versionAplicacion.Producto)."
     }
 }
 finally {
@@ -342,9 +376,15 @@ try {
     }
 
     $versionExtraida = (Get-Item -LiteralPath $exeExtraido).VersionInfo
-    if ($versionExtraida.FileVersion -ne '1.8.4.0' -or
+    if ($versionExtraida.FileVersion -ne $versionAplicacion.Archivo -or
         $versionExtraida.ProductVersion -ne $productoEsperado) {
         throw 'El ejecutable incluido en el MSI no conserva la version esperada.'
+    }
+
+    $actualizadorExtraido = Join-Path $validacionMsi 'LanzadorScripts.Actualizador.exe'
+    if (-not [System.IO.File]::Exists($actualizadorExtraido) -or
+        (Get-Item -LiteralPath $actualizadorExtraido).VersionInfo.FileVersion -ne $versionAplicacion.Archivo) {
+        throw "La imagen administrativa no contiene el actualizador nativo $($versionAplicacion.Producto)."
     }
 
     $loadersExtraidos = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'WebView2Loader.dll')
@@ -359,10 +399,12 @@ try {
     }
 
     if (-not $DesarrolloSinFirma) {
-        $firmaExtraida = Get-AuthenticodeSignature -LiteralPath $exeExtraido
-        if ($firmaExtraida.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-            $null -eq $firmaExtraida.TimeStamperCertificate) {
-            throw 'El ejecutable incluido en el MSI no conserva una firma Authenticode valida.'
+        foreach ($extraido in @($exeExtraido, $actualizadorExtraido)) {
+            $firmaExtraida = Get-AuthenticodeSignature -LiteralPath $extraido
+            if ($firmaExtraida.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+                $null -eq $firmaExtraida.TimeStamperCertificate) {
+                throw "El ejecutable incluido en el MSI no conserva una firma Authenticode valida: $extraido"
+            }
         }
     }
 }
