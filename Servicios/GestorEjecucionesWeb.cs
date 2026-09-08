@@ -12,6 +12,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
+using LanzadorScripts.Monitorizacion;
+
 namespace LanzadorScripts.Servicios;
 
 public sealed class GestorEjecucionesWeb : IDisposable
@@ -296,6 +298,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
     private async Task EjecutarAsync(EjecucionWeb ejecucion)
     {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir("script.ejecucion");
         var resultadoAuditoria = "error";
         int? codigoSalida = null;
         string? detalleAuditoria = null;
@@ -433,6 +436,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
             }
 
             ejecucion.MarcarFinalizada();
+            medicion.Completar(resultadoAuditoria == "correcto" && auditoria.Exito);
         }
     }
 

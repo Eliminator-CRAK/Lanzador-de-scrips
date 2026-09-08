@@ -1,15 +1,17 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 1.9.0
+# LanzadorScripts 1.9.1
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. El cliente y el servidor 1.9.0 administran permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. El cliente y el servidor 1.9.1 administran permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
+
+La version 1.9.1 incorpora [monitorizacion tecnica en GitLab con OpenTelemetry](Documentacion/MonitorizacionGitLab.md), sin exportar datos personales, scripts ni auditorias. Se puede desactivar con `LANZADOR_MONITORIZACION_HABILITADA=false`.
 
 ## Entregables
 
-- `LanzadorScripts-1.9.0-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-1.9.0-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-1.9.0-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-1.9.1-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-1.9.1-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-1.9.1-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64 y no descargan .NET ni WebView2 durante la ejecucion.
 
@@ -45,7 +47,7 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Extraer `LanzadorScripts_Servidor-1.9.0-x64.zip` en `MAD002MICROPRU`.
+1. Extraer `LanzadorScripts_Servidor-1.9.1-x64.zip` en `MAD002MICROPRU`.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
 3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado, que el resumen muestra `Kerberos remoto preparado` y que el firewall de dominio admite TCP 47831.
 4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.

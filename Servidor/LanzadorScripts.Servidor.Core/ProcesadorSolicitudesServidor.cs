@@ -5,6 +5,8 @@ using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanzadorScripts.Protocolo;
+using LanzadorScripts.Monitorizacion;
+using System.Diagnostics;
 
 namespace LanzadorScripts.Servidor.Core;
 
@@ -26,6 +28,14 @@ public sealed class ProcesadorSolicitudesServidor
     }
 
     public RespuestaServidor Procesar(string identidadRemota, SolicitudServidor solicitud)
+    {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir(solicitud.Operacion, ActivityKind.Server);
+        var respuesta = ProcesarInterno(identidadRemota, solicitud);
+        medicion.Completar(respuesta.Exito);
+        return respuesta;
+    }
+
+    private RespuestaServidor ProcesarInterno(string identidadRemota, SolicitudServidor solicitud)
     {
         if (solicitud.Version != TransporteProtocolo.VersionActual
             || solicitud.SolicitudId == Guid.Empty

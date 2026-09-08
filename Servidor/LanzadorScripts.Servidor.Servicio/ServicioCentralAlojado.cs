@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using LanzadorScripts.Servidor.Core;
 using Microsoft.Extensions.Hosting;
+using LanzadorScripts.Monitorizacion;
 
 namespace LanzadorScripts.Servidor.Servicio;
 
@@ -42,6 +43,7 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir("servicio.inicio");
         try
         {
             Volatile.Write(ref _cierreIniciado, 0);
@@ -81,6 +83,7 @@ public sealed class ServicioCentralAlojado : IHostedService, IAsyncDisposable
                 () => MantenerRegistroSpnAsync(_cancelacionSpn.Token),
                 CancellationToken.None);
             _registro.Escribir("servicio.iniciado", "Base central preparada.");
+            medicion.Completar();
             return Task.CompletedTask;
         }
         catch (Exception ex)

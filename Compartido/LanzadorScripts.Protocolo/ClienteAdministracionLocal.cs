@@ -4,6 +4,8 @@
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text.Json;
+using LanzadorScripts.Monitorizacion;
+using System.Diagnostics;
 
 namespace LanzadorScripts.Protocolo;
 
@@ -23,6 +25,17 @@ public sealed class ClienteAdministracionLocal
     }
 
     public async Task<RespuestaTipada<TRespuesta>> EnviarAsync<TSolicitud, TRespuesta>(
+        string operacion,
+        TSolicitud datos,
+        CancellationToken cancelacion)
+    {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir(operacion, ActivityKind.Client);
+        var respuesta = await EnviarInternoAsync<TSolicitud, TRespuesta>(operacion, datos, cancelacion);
+        medicion.Completar(respuesta.Exito);
+        return respuesta;
+    }
+
+    private async Task<RespuestaTipada<TRespuesta>> EnviarInternoAsync<TSolicitud, TRespuesta>(
         string operacion,
         TSolicitud datos,
         CancellationToken cancelacion)

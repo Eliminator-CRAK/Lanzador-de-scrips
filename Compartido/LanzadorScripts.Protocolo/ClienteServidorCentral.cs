@@ -7,6 +7,8 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Principal;
 using System.Text.Json;
+using LanzadorScripts.Monitorizacion;
+using System.Diagnostics;
 
 namespace LanzadorScripts.Protocolo;
 
@@ -55,18 +57,22 @@ public sealed class ClienteServidorCentral
         TSolicitud datos,
         CancellationToken cancelacion)
     {
+        if (_clienteLocal is not null)
+            return await _clienteLocal.EnviarAsync<TSolicitud, TRespuesta>(operacion, datos, cancelacion);
+        using var medicion = MonitorizacionAplicacion.Actual.Medir(operacion, ActivityKind.Client);
+        var respuesta = await EnviarInternoAsync<TSolicitud, TRespuesta>(operacion, datos, cancelacion);
+        medicion.Completar(respuesta.Exito);
+        return respuesta;
+    }
+
+    private async Task<RespuestaTipada<TRespuesta>> EnviarInternoAsync<TSolicitud, TRespuesta>(
+        string operacion,
+        TSolicitud datos,
+        CancellationToken cancelacion)
+    {
         if (string.IsNullOrWhiteSpace(operacion) || operacion.Length > 100)
         {
             throw new ArgumentException("La operacion del servidor no es valida.", nameof(operacion));
-        }
-
-        if (_clienteLocal is not null)
-        {
-            // El bucle local usa el pipe autenticado y nunca recurre a TCP o NTLM.
-            return await _clienteLocal.EnviarAsync<TSolicitud, TRespuesta>(
-                operacion,
-                datos,
-                cancelacion);
         }
 
         using var limite = CancellationTokenSource.CreateLinkedTokenSource(cancelacion);

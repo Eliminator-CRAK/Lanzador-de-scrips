@@ -76,15 +76,18 @@ public sealed class PruebasPublicacionWebView2
 
     // Comprueba la version del producto y sus ensamblados.
     [Fact]
-    public void ProyectoPublicaVersionCentralizada190()
+    public void ProyectoPublicaVersionCentralizada()
     {
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
         var version = File.ReadAllText(ObtenerRutaProyecto("Directory.Build.props"));
 
-        Assert.Contains("<LanzadorScriptsVersion>1.9.0</LanzadorScriptsVersion>", version, StringComparison.Ordinal);
-        Assert.Contains("<LanzadorScriptsFileVersion>1.9.0.0</LanzadorScriptsFileVersion>", version, StringComparison.Ordinal);
+        var propiedades = System.Xml.Linq.XDocument.Parse(version);
+        var versionProducto = propiedades.Descendants("LanzadorScriptsVersion").Single().Value;
+        var versionArchivo = propiedades.Descendants("LanzadorScriptsFileVersion").Single().Value;
+        Assert.Equal(versionProducto + ".0", versionArchivo);
+        Assert.Equal(versionArchivo, typeof(Aplicacion).Assembly.GetName().Version!.ToString());
         Assert.Contains("<Version>$(LanzadorScriptsVersion)</Version>", version, StringComparison.Ordinal);
-        Assert.DoesNotContain("<Version>1.9.0</Version>", proyecto, StringComparison.Ordinal);
+        Assert.DoesNotContain($"<Version>{versionProducto}</Version>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon>Recursos\\IconoLanzador.ico</ApplicationIcon>", proyecto, StringComparison.Ordinal);
         Assert.Contains("<LogicalName>Recursos.WebView2Runtime.zip</LogicalName>", proyecto, StringComparison.Ordinal);

@@ -5,6 +5,7 @@
     <Project Path="Pruebas/LanzadorScripts.Pruebas.csproj" />
   </Folder>
   <Folder Name="/Compartido/">
+    <Project Path="Compartido/LanzadorScripts.Monitorizacion/LanzadorScripts.Monitorizacion.csproj" />
     <Project Path="Compartido/LanzadorScripts.Protocolo/LanzadorScripts.Protocolo.csproj" />
   </Folder>
   <Folder Name="/Servidor/">

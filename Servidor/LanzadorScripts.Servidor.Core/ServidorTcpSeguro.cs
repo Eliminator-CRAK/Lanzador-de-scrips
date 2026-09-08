@@ -9,6 +9,8 @@ using System.Security.Authentication;
 using System.Security.Principal;
 using LanzadorScripts.Protocolo;
 
+using LanzadorScripts.Monitorizacion;
+
 namespace LanzadorScripts.Servidor.Core;
 
 public sealed class ServidorTcpSeguro : IAsyncDisposable
@@ -134,6 +136,7 @@ public sealed class ServidorTcpSeguro : IAsyncDisposable
 
     private async Task AtenderClienteAsync(TcpClient cliente, CancellationToken cancelacionServidor)
     {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir("servidor.conexion");
         using (cliente)
         using (var limite = CancellationTokenSource.CreateLinkedTokenSource(cancelacionServidor))
         {
@@ -161,6 +164,7 @@ public sealed class ServidorTcpSeguro : IAsyncDisposable
                 limite.CancelAfter(TimeSpan.FromSeconds(30));
                 var respuesta = _procesador.Procesar(identidad, solicitud);
                 await TransporteProtocolo.EscribirAsync(seguro, respuesta, limite.Token);
+                medicion.Completar();
             }
             catch (OperationCanceledException) when (limite.IsCancellationRequested)
             {
