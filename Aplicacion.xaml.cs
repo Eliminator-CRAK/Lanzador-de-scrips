@@ -7,6 +7,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Windows;
 using LanzadorScripts.Servicios;
+using LanzadorScripts.Monitorizacion;
 using MessageBox = System.Windows.MessageBox;
 
 namespace LanzadorScripts;
@@ -24,6 +25,7 @@ public partial class Aplicacion : System.Windows.Application
     private bool _instanciaPrincipal;
     private string _nombrePipe = string.Empty;
     private readonly ServicioLogInicio _servicioLogInicio = new();
+    private MonitorizacionAplicacion? _monitorizacion;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -95,6 +97,9 @@ public partial class Aplicacion : System.Windows.Application
             return;
         }
 
+        _monitorizacion = MonitorizacionAplicacion.Iniciar(distribucion.EsPortable
+            ? ComponenteMonitorizado.ClientePortable : ComponenteMonitorizado.ClienteInstalado);
+        using var medicionInicio = _monitorizacion.Medir("aplicacion.inicio");
         try
         {
             ServicioDirectoriosAplicacion.PrepararEstructuraAplicacion();
@@ -122,6 +127,7 @@ public partial class Aplicacion : System.Windows.Application
             "La ventana principal se mostro antes de iniciar los componentes pesados.");
         _ = EscucharArgumentosAsync(_cancelacionPipe.Token);
         ProcesarArgumentos(e.Args);
+        medicionInicio.Completar();
     }
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
@@ -141,6 +147,7 @@ public partial class Aplicacion : System.Windows.Application
         }
 
         _mutex?.Dispose();
+        _monitorizacion?.Dispose();
         base.OnExit(e);
     }
 

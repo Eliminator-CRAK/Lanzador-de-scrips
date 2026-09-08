@@ -160,7 +160,10 @@ public sealed class PruebasPaqueteServidor
     public void ProyectosServidorPublicanVersionActual()
     {
         var version = Leer("Directory.Build.props");
-        Assert.Contains("<LanzadorScriptsVersion>1.9.0</LanzadorScriptsVersion>", version, StringComparison.Ordinal);
+        var central = System.Xml.Linq.XDocument.Parse(version)
+            .Descendants("LanzadorScriptsVersion").Single().Value;
+        Assert.Equal(central + ".0", typeof(LanzadorScripts.Servidor.Core.RegistroServidor)
+            .Assembly.GetName().Version!.ToString());
         foreach (var ruta in new[]
                  {
                      new[] { "Servidor", "LanzadorScripts.Servidor.Core", "LanzadorScripts.Servidor.Core.csproj" },

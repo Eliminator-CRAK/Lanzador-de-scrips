@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using LanzadorScripts.Monitorizacion;
 
 namespace LanzadorScripts.Servicios;
 
@@ -20,6 +21,14 @@ public sealed class ServicioArranqueWebView2
     private readonly ServicioLogInicio _logInicio = new();
 
     public async Task<ResultadoArranqueWebView2> PrepararAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
+    {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir("webview2.inicio");
+        var resultado = await PrepararInternoAsync(obtenerVista, recrearVista);
+        medicion.Completar(resultado.Exito);
+        return resultado;
+    }
+
+    private async Task<ResultadoArranqueWebView2> PrepararInternoAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
     {
         var cronometroRuntime = Stopwatch.StartNew();
         var runtimeEmbebido = ResultadoRuntimeWebView2Embebido.NoDisponible(

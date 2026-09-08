@@ -6,6 +6,7 @@ using LanzadorScripts.Servidor.Servicio;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Security.Principal;
+using LanzadorScripts.Monitorizacion;
 
 const string ArgumentoAdministradorInicial = "--preparar-administrador-inicial";
 if (args.Length > 0)
@@ -40,6 +41,7 @@ if (args.Length > 0)
     }
 }
 
+using var monitorizacion = MonitorizacionAplicacion.Iniciar(ComponenteMonitorizado.ServicioServidor);
 var host = Host.CreateDefaultBuilder(args)
     .UseWindowsService(opciones =>
     {

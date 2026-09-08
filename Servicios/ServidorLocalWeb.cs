@@ -15,6 +15,8 @@ using System.Text.RegularExpressions;
 using LanzadorScripts.Modelos;
 using LanzadorScripts.Protocolo;
 
+using LanzadorScripts.Monitorizacion;
+
 namespace LanzadorScripts.Servicios;
 
 public sealed class ServidorLocalWeb : IDisposable
@@ -257,6 +259,7 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private async Task ProcesarPeticionAsync(HttpListenerContext contexto)
     {
+        using var medicion = MonitorizacionAplicacion.Actual.Medir("backend.solicitud", System.Diagnostics.ActivityKind.Server);
         try
         {
             var ruta = contexto.Request.Url?.AbsolutePath ?? "/";
@@ -270,10 +273,12 @@ public sealed class ServidorLocalWeb : IDisposable
                 }
 
                 await ProcesarApiAsync(contexto, ruta);
+                medicion.Completar(contexto.Response.StatusCode < 400);
                 return;
             }
 
             await EntregarClienteAsync(contexto, ruta);
+            medicion.Completar(contexto.Response.StatusCode < 400);
         }
         catch (Exception ex)
         {
