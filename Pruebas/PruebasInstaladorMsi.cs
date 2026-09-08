@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Valida el contrato reproducible del instalador MSI 1.9.0.
+// Descripcion: Valida el contrato reproducible y la version del instalador MSI.
 
 using Xunit;
 
@@ -19,9 +19,18 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("[ProgramFiles64Folder]LanzadorScripts", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"InstallAllUsers\" = \"11:TRUE\"", vdproj, StringComparison.Ordinal);
         Assert.Contains("\"TargetPlatform\" = \"3:1\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("\"ProductVersion\" = \"8:1.9.0\"", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{A1CDFD1A-2D33-4FAA-816D-DE530C1F2001}", vdproj, StringComparison.Ordinal);
-        Assert.Contains("{49B57161-A7A1-44D9-BE98-3B89BAF6C1B1}", vdproj, StringComparison.Ordinal);
+        var version = System.Xml.Linq.XDocument.Load(ObtenerRutaProyecto("Directory.Build.props"))
+            .Descendants("LanzadorScriptsVersion").Single().Value;
+        Assert.Contains($"\"ProductVersion\" = \"8:{version}\"", vdproj, StringComparison.Ordinal);
+        Assert.Contains($"Release\\\\LanzadorScripts-{version}-x64.msi", vdproj, StringComparison.Ordinal);
+        Assert.Contains($"Debug\\\\LanzadorScripts-{version}-x64.msi", vdproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("{A1CDFD1A-2D33-4FAA-816D-DE530C1F2001}", vdproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("{49B57161-A7A1-44D9-BE98-3B89BAF6C1B1}", vdproj, StringComparison.Ordinal);
+        foreach (var recurso in new[] { "Instalador", "Actualizador" })
+        {
+            var contenido = File.ReadAllText(ObtenerRutaProyecto(recurso, $"LanzadorScripts.{recurso}.rc"));
+            Assert.Contains($"FILEVERSION {version.Replace('.', ',')},0", contenido, StringComparison.Ordinal);
+        }
         Assert.DoesNotContain("{F895FB81-296D-4A0A-AC51-58E4DCF3296B}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{69B1B1FD-FA3A-4955-BEA9-ABF1BE7F46AD}", vdproj, StringComparison.Ordinal);
         Assert.DoesNotContain("{185E5B1A-2386-4CD0-A7B8-8D9FB729AF35}", vdproj, StringComparison.Ordinal);
