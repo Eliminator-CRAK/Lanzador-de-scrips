@@ -1541,6 +1541,10 @@ public partial class VentanaPrincipal : Window
                         .ls-navegacion-carpetas { margin-bottom: .75rem; padding: .65rem; border: 1px solid rgba(255,255,255,.08); border-radius: .75rem; background: rgba(15,17,21,.78); display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: .75rem; }
                         .ls-navegacion-carpetas button { padding: .35rem .6rem; border-radius: .5rem; background: rgba(255,255,255,.06); color: #d1d5db; font-size: .72rem; }
                         .ls-navegacion-carpetas span { color: #9ca3af; font-size: .72rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                        @media (max-width: 760px) {
+                            header { height: auto !important; flex-wrap: wrap; padding: 12px 16px !important; gap: 10px; }
+                            [data-ls-barra-acciones="1"] { flex-wrap: wrap; width: 100%; }
+                        }
                     `;
                     document.head.appendChild(estilo);
                 }
@@ -1603,7 +1607,8 @@ public partial class VentanaPrincipal : Window
                         sessionStorage.removeItem(claveCarpetaScripts);
                     }
 
-                    window.location.reload();
+                    window.dispatchEvent(new Event('lanzador:carpeta'));
+                    programarActualizacionInterfaz();
                 }
 
                 function recordarScriptsCliente(respuesta) {
@@ -1640,6 +1645,24 @@ public partial class VentanaPrincipal : Window
                     }
 
                     wrapperAjustesActivo = true;
+                    window.addEventListener('lanzador:listado-estado', evento => {
+                        const mensaje = String(evento.detail?.mensaje || '');
+                        let aviso = document.getElementById('ls-estado-listado');
+                        if (!mensaje) { aviso?.remove(); return; }
+                        if (!aviso) {
+                            const buscador = document.querySelector('input[placeholder="Buscar scripts..."]');
+                            if (!buscador) return;
+                            aviso = document.createElement('div');
+                            aviso.id = 'ls-estado-listado';
+                            aviso.style.cssText = 'padding:8px;border:1px solid #974646;color:#ffb4b4;font-size:12px;overflow-wrap:anywhere';
+                            buscador.parentElement.before(aviso);
+                        }
+                        aviso.replaceChildren(document.createTextNode(mensaje + ' '));
+                        const boton = document.createElement('button');
+                        boton.textContent = 'Reintentar';
+                        boton.addEventListener('click', () => window.dispatchEvent(new Event('lanzador:carpeta')));
+                        aviso.append(boton);
+                    });
                     const fetchAnterior = window.fetch.bind(window);
                     window.fetch = async (entrada, opciones = {}) => {
                         const peticionScripts = esApiScripts(entrada, opciones);
@@ -2052,7 +2075,7 @@ public partial class VentanaPrincipal : Window
                     boton.textContent = 'Refrescar';
                     boton.title = 'Refrescar scripts';
                     boton.className = 'ls-accion-principal ls-accion-refrescar';
-                    boton.addEventListener('click', () => window.location.reload());
+                    boton.addEventListener('click', () => window.dispatchEvent(new Event('lanzador:carpeta')));
                     botonDetener.parentElement.insertBefore(boton, botonDetener.nextSibling);
                     organizarAccionesPrincipales();
                 }
@@ -2287,7 +2310,7 @@ public partial class VentanaPrincipal : Window
                     window.addEventListener('keydown', (evento) => {
                         if (evento.key === 'F5') {
                             evento.preventDefault();
-                            window.location.reload();
+                            window.dispatchEvent(new Event('lanzador:carpeta'));
                         }
                     }, true);
 

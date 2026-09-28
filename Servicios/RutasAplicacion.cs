@@ -29,9 +29,7 @@ public static class RutasAplicacion
 
     public static string RaizDatosUsuario => Distribucion.EsPortable
         ? Path.Combine(Distribucion.RaizPortable!, "Datos")
-        : Path.Combine(
-            RutaUsuarios,
-            PerfilAplicacion.ObtenerIdentificadorUsuarioActual());
+        : Path.Combine(ServicioSesionCliente.RutaActual, "Datos");
 
     public static string RutaUsuarios => Path.Combine(RaizProgramData, "Usuarios");
 
@@ -63,17 +61,11 @@ public static class RutasAplicacion
 
     public static string RutaRaizWebView2Usuario => Distribucion.EsPortable
         ? Path.Combine(Distribucion.RaizPortable!, "WebView2", "Sesiones")
-        : Path.Combine(
-            RaizLocalAppData,
-            "WebView2-v6",
-            "Sesiones");
+        : Path.Combine(ServicioSesionCliente.RutaActual, "WebView2", "Sesiones");
 
     public static string RutaRaizWebView2RecuperacionLocal => Distribucion.EsPortable
         ? Path.Combine(Distribucion.RaizPortable!, "WebView2-Recuperacion", "Sesiones")
-        : Path.Combine(
-            Path.GetTempPath(),
-            "LanzadorScripts-WebView2-Recuperacion-v6",
-            "Sesiones");
+        : Path.Combine(ServicioSesionCliente.RutaActual, "WebView2-Recuperacion", "Sesiones");
 
     public static string RutaRuntimesWebView2 => Distribucion.EsPortable
         ? Path.Combine(Distribucion.RaizEjecucionPortable!, "Runtimes", "WebView2")

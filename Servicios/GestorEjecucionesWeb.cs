@@ -305,9 +305,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
         try
         {
-            Directory.CreateDirectory(ejecucion.RutaLogs);
-            var rutaLog = ConstruirRutaLog(ejecucion);
-            await using var log = new StreamWriter(rutaLog, append: false, Encoding.UTF8)
+            // La salida permanece en la consola en memoria; el servidor recibe solo auditoria.
+            await using var log = new StreamWriter(Stream.Null, Encoding.UTF8)
             {
                 AutoFlush = true
             };

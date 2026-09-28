@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<PaqueteActualizacionServidorCentral> _actualizaciones = [];
     private string? _usuarioSeleccionadoId;
     private bool _ocupado;
+    private long _revisionConfiguracion;
 
     public MainWindow()
     {
@@ -109,6 +110,43 @@ public partial class MainWindow : Window
         SeleccionarVista(5, "Mantenimiento", "Integridad, copias y ciclo de vida del servicio");
     }
 
+    private async void MostrarConfiguracion_Click(object sender, RoutedEventArgs e)
+    {
+        SeleccionarVista(6, "Configuracion de clientes", "Configuracion global");
+        await CargarConfiguracionGlobalAsync();
+    }
+
+    private Task CargarConfiguracionGlobalAsync() => EjecutarOperacionAsync("Consultando configuracion...", async () =>
+    {
+        var respuesta = await _cliente.EnviarAsync<object, ConfiguracionGlobalServidorCentral>(
+            OperacionesServidor.ObtenerConfiguracion, new { }, CancellationToken.None);
+        ExigirRespuesta(respuesta);
+        AplicarConfiguracionGlobal(respuesta.Datos!);
+    });
+
+    private void AplicarConfiguracionGlobal(ConfiguracionGlobalServidorCentral datos)
+    {
+        _revisionConfiguracion = datos.Revision;
+        CampoRutaGlobal.Text = datos.RutaScripts;
+        CampoMaximoGlobal.Text = datos.MaximoEjecucionesParalelas.ToString();
+        TextoRevisionGlobal.Text = $"Revision {datos.Revision}";
+    }
+
+    private async void GuardarConfiguracionGlobal_Click(object sender, RoutedEventArgs e)
+    {
+        await EjecutarOperacionAsync("Guardando configuracion...", async () =>
+        {
+            if (!int.TryParse(CampoMaximoGlobal.Text, out var maximo))
+                throw new InvalidDataException("El maximo debe ser un numero entre 1 y 20.");
+            new ConfiguracionGlobalServidorCentral(_revisionConfiguracion, CampoRutaGlobal.Text.Trim(), maximo).Validar();
+            var respuesta = await _cliente.EnviarAsync<GuardarConfiguracionGlobalServidorCentral, ConfiguracionGlobalServidorCentral>(
+                OperacionesServidor.GuardarConfiguracion,
+                new(_revisionConfiguracion, CampoRutaGlobal.Text.Trim(), maximo), CancellationToken.None);
+            ExigirRespuesta(respuesta);
+            AplicarConfiguracionGlobal(respuesta.Datos!);
+        });
+    }
+
     private async Task ActualizarVistaActualAsync()
     {
         switch (Vistas.SelectedIndex)
@@ -130,6 +168,9 @@ public partial class MainWindow : Window
                 break;
             case 5:
                 await ComprobarIntegridadAsync();
+                break;
+            case 6:
+                await CargarConfiguracionGlobalAsync();
                 break;
         }
     }
@@ -312,6 +353,44 @@ public partial class MainWindow : Window
 
     private async void RevalidarActualizaciones_Click(object sender, RoutedEventArgs e)
     {
+        await CargarActualizacionesAsync(forzarValidacion: true);
+    }
+
+    private async void SeleccionarMsi_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ocupado) return;
+        var dialogo = new OpenFileDialog
+        {
+            Title = "Seleccionar actualizacion de LanzadorScripts",
+            Filter = "Instalador MSI|LanzadorScripts-*-x64.msi", CheckFileExists = true, Multiselect = false
+        };
+        if (dialogo.ShowDialog(this) != true) return;
+        await EjecutarOperacionAsync("Preparando y verificando MSI...", async () =>
+        {
+            // Verifica el rol en la base antes de preparar archivos administrativos.
+            var autorizacion = await _cliente.EnviarAsync<object, List<UsuarioServidorCentral>>(
+                OperacionesServidor.ListarUsuarios, new { }, CancellationToken.None);
+            ExigirRespuesta(autorizacion);
+            _controlServicio.PrepararRepositorioActualizaciones();
+            var publicador = new PublicadorActualizacionesServidor(_rutas);
+            var preparado = await Task.Run(() => publicador.Preparar(dialogo.FileName));
+            try
+            {
+                var paquete = preparado.Paquete;
+                var confirmacion = MessageBox.Show(this,
+                    $"Version: {paquete.Version}\nTamano: {paquete.Longitud:N0} bytes\nFirma: {paquete.EstadoFirma}\nSHA-256: {paquete.Sha256}\n\nPublicar este MSI?",
+                    "Publicar actualizacion", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+                if (confirmacion != MessageBoxResult.Yes) return;
+                var clientePublicacion = new ClienteAdministracionLocal(TimeSpan.FromMinutes(5));
+                var respuesta = await clientePublicacion.EnviarAsync<PublicarActualizacionServidor, ResultadoValidacionPaqueteActualizacion>(
+                    OperacionesServidor.PublicarActualizacion, preparado.Solicitud, CancellationToken.None);
+                ExigirRespuesta(respuesta);
+            }
+            finally
+            {
+                await Task.Run(() => publicador.Descartar(preparado.Solicitud));
+            }
+        });
         await CargarActualizacionesAsync(forzarValidacion: true);
     }
 

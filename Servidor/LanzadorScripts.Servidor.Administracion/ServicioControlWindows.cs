@@ -205,7 +205,6 @@ public sealed class ServicioControlWindows
         CopiarArchivoAtomico(servicioOrigen, servicioDestino);
         CopiarArchivoAtomico(administracionOrigen, administracionDestino);
         CopiarArchivoOpcional("Desinstalar-Servidor.ps1", CarpetaInstalacion);
-        CopiarArchivoOpcional("Crear-ConfiguracionCliente.ps1", CarpetaInstalacion);
         CopiarArchivoOpcional("LEEME-Servidor.txt", CarpetaInstalacion);
         return servicioDestino;
     }

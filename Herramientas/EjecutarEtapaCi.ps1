@@ -312,7 +312,6 @@ function Verificar-Artefacto {
                 'LanzadorScripts.Servidor.exe',
                 'Instalar-Servidor.ps1',
                 'Desinstalar-Servidor.ps1',
-                'Crear-ConfiguracionCliente.ps1',
                 'LEEME-Servidor.txt',
                 'SHA256SUMS.txt')) {
             [void]$esperadas.Add($nombre)
@@ -355,8 +354,7 @@ function Verificar-Artefacto {
                     'Servicio\LanzadorScripts.Servidor.Servicio.exe',
                     'LanzadorScripts.Servidor.exe',
                     'Instalar-Servidor.ps1',
-                    'Desinstalar-Servidor.ps1',
-                    'Crear-ConfiguracionCliente.ps1')) {
+                    'Desinstalar-Servidor.ps1')) {
                 $firma = Get-AuthenticodeSignature -LiteralPath (Join-Path $temporal $relativa)
                 if ($firma.Status -ne 'Valid' -or $null -eq $firma.TimeStamperCertificate) {
                     throw "La firma interna de $relativa no es valida: $($firma.Status)."

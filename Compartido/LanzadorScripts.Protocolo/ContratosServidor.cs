@@ -8,6 +8,9 @@ namespace LanzadorScripts.Protocolo;
 
 public static class OperacionesServidor
 {
+    public const string ObtenerConfiguracion = "configuracion.obtener";
+    public const string PublicarActualizacion = "actualizacion.publicar";
+    public const string GuardarConfiguracion = "configuracion.guardar";
     public const string Salud = "salud";
     public const string ObtenerPermisos = "permisos.obtener";
     public const string GuardarPermisos = "permisos.guardar";

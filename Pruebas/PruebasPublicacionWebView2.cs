@@ -8,22 +8,19 @@ namespace LanzadorScripts.Pruebas;
 
 public sealed class PruebasPublicacionWebView2
 {
-    // Comprueba la identidad exacta del runtime permitido.
+    // Comprueba el instalador oficial fijado y la reutilizacion del runtime compartido.
     [Fact]
-    public void PublicacionFijaWebView2Runtime150X64()
+    public void PublicacionFijaInstaladorEvergreenX64()
     {
         var publicacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PublicarPortable.ps1"));
 
-        Assert.Contains("$versionWebView2Fijada = '150.0.4078.48'", publicacion, StringComparison.Ordinal);
-        Assert.Contains("9E347BA96D031E381D1041D1C20FD434D457875C422EEAC3F40EEE4A5E0AB5C0", publicacion, StringComparison.Ordinal);
-        Assert.Contains("80C46993E2D5922EFDF6463ACDA737BA0525993D4D7757D377C38F50D8BB417B", publicacion, StringComparison.Ordinal);
-        Assert.Contains("30428A9075E5706B5E4A77E324B4331326566CDA027F49A8922089733C728859", publicacion, StringComparison.Ordinal);
-        Assert.Contains("3345CEC7106D6A8EB3A5770DFF97DF36CB0750DF005331B54AB551CDF11E3DFB", publicacion, StringComparison.Ordinal);
+        var preparacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PrepararWebView2Evergreen.ps1"));
+        Assert.Contains(ServicioWebView2Evergreen.HashInstalador, preparacion, StringComparison.Ordinal);
+        Assert.Contains(ServicioWebView2Evergreen.NombreInstalador, preparacion, StringComparison.Ordinal);
+        Assert.Contains("Get-AuthenticodeSignature", preparacion, StringComparison.Ordinal);
+        Assert.Contains("Microsoft Corporation", preparacion, StringComparison.Ordinal);
         Assert.Contains("$arquitecturaPeX64 = 0x8664", publicacion, StringComparison.Ordinal);
-        Assert.Contains("60926d99-f201-46bb-91a0-d868dc06b275", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$informacionVersion.FileVersion", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$informacionVersion.ProductVersion", publicacion, StringComparison.Ordinal);
-        Assert.Contains("Microsoft Corporation", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Sort-Object { [version]", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Get-WebView2FixedRuntimeInfo", publicacion, StringComparison.Ordinal);
     }
@@ -33,7 +30,7 @@ public sealed class PruebasPublicacionWebView2
     public void PublicacionPreparaRuntimeAntesDeCompilar()
     {
         var publicacion = File.ReadAllText(ObtenerRutaProyecto("Herramientas", "PublicarPortable.ps1"));
-        var preparacion = publicacion.LastIndexOf("Initialize-WebView2EmbeddedRuntime", StringComparison.Ordinal);
+        var preparacion = publicacion.LastIndexOf("PrepararWebView2Evergreen.ps1", StringComparison.Ordinal);
         var compilacion = publicacion.IndexOf("Write-Host 'Compilando aplicacion...'", StringComparison.Ordinal);
 
         Assert.True(preparacion >= 0);
@@ -45,13 +42,10 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("-p:IncludeInstalledWebView2Runtime=false", publicacion, StringComparison.Ordinal);
         Assert.Contains("$archivosRuntime.Count -ne 1", publicacion, StringComparison.Ordinal);
         Assert.Contains("$tamanoMaximoPayload = 160MB", publicacion, StringComparison.Ordinal);
-        Assert.Contains("Get-RuntimeContentHash -Ruta $origen", publicacion, StringComparison.Ordinal);
-        Assert.Contains("return $ejecutableMsi.Directory.FullName", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Recursos.WebView2Runtime.zip", publicacion, StringComparison.Ordinal);
         Assert.Contains("$PSVersionTable.PSEdition -ne 'Core'", publicacion, StringComparison.Ordinal);
         Assert.Contains("$PSVersionTable.PSVersion.Minor -ne 6", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$cabTemporal = \"$cab.$PID.tmp\"", publicacion, StringComparison.Ordinal);
-        Assert.Contains("Move-Item -LiteralPath $cabTemporal -Destination $cab -Force", publicacion, StringComparison.Ordinal);
+        Assert.Contains("$instaladorEvergreen = $evergreen.Ruta", publicacion, StringComparison.Ordinal);
         Assert.Contains("status --porcelain --untracked-files=all", publicacion, StringComparison.Ordinal);
         Assert.Contains("Assert-PublishedExecutable", publicacion, StringComparison.Ordinal);
         Assert.Contains("-SufijoProducto '.portable'", publicacion, StringComparison.Ordinal);
@@ -69,8 +63,6 @@ public sealed class PruebasPublicacionWebView2
         Assert.Contains("FinalReleaseComObject($vista)", publicacion, StringComparison.Ordinal);
         Assert.Contains("[void]$vista.Execute()", publicacion, StringComparison.Ordinal);
         Assert.Contains("[void]$vista.Close()", publicacion, StringComparison.Ordinal);
-        Assert.Contains("function ConvertTo-WindowsExtendedPath", publicacion, StringComparison.Ordinal);
-        Assert.Contains("GetVersionInfo($rutaVersion)", publicacion, StringComparison.Ordinal);
         Assert.Contains("SHA-256 final", publicacion, StringComparison.Ordinal);
     }
 

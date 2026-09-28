@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LanzadorScripts.Modelos;
+using LanzadorScripts.Protocolo;
 
 namespace LanzadorScripts.Servicios;
 
@@ -34,13 +35,16 @@ public sealed class ServicioConfiguracion
     private readonly bool _prepararDatosUsuario;
     private readonly object _bloqueo;
     private bool _directorioPreparado;
+    private readonly bool _central;
+    private static ConfiguracionGlobalServidorCentral? _configuracionCentral;
 
     public ServicioConfiguracion()
         : this(
             RutasAplicacion.RutaConfiguracionUsuario,
-            ObtenerRutasLegadasPermitidas(),
-            prepararDatosUsuario: true)
+            [],
+            prepararDatosUsuario: false)
     {
+        _central = true;
     }
 
     private static IReadOnlyList<string> ObtenerRutasLegadasPermitidas()
@@ -88,6 +92,18 @@ public sealed class ServicioConfiguracion
 
     public ConfiguracionLanzador Cargar()
     {
+        if (_central)
+        {
+            var configuracion = CargarConfiguracionPredeterminada();
+            var central = Volatile.Read(ref _configuracionCentral);
+            if (central is not null)
+            {
+                configuracion.RutaScripts = central.RutaScripts;
+                configuracion.MaximoEjecucionesParalelas = central.MaximoEjecucionesParalelas;
+            }
+            configuracion.RutaLogs = RutasAplicacion.RutaLogsUsuario;
+            return configuracion;
+        }
         lock (_bloqueo)
         {
             return CargarSinBloqueo();
@@ -96,6 +112,7 @@ public sealed class ServicioConfiguracion
 
     public void Guardar(ConfiguracionLanzador configuracion)
     {
+        ExigirAlmacenLocal();
         ArgumentNullException.ThrowIfNull(configuracion);
         lock (_bloqueo)
         {
@@ -105,6 +122,7 @@ public sealed class ServicioConfiguracion
 
     public void AplicarRutasImportadas(string rutaScripts, string rutaPermisos)
     {
+        ExigirAlmacenLocal();
         lock (_bloqueo)
         {
             var configuracion = CargarSinBloqueo();
@@ -112,6 +130,32 @@ public sealed class ServicioConfiguracion
             configuracion.RutaPermisos = rutaPermisos;
             GuardarSinBloqueo(configuracion);
         }
+    }
+
+    public async Task ActualizarDesdeServidorAsync(CancellationToken cancelacion = default)
+    {
+        if (!_central) return;
+        var bootstrap = CargarConfiguracionPredeterminada();
+        var cliente = new ClienteServidorCentral(bootstrap.ServidorCentral, bootstrap.PuertoServidorCentral, TimeSpan.FromSeconds(8));
+        var respuesta = await cliente.EnviarAsync<object, ConfiguracionGlobalServidorCentral>(
+            OperacionesServidor.ObtenerConfiguracion, new { }, cancelacion).ConfigureAwait(false);
+        if (!respuesta.Exito || respuesta.Datos is null)
+        {
+            throw new InvalidOperationException("Configuracion central no disponible. Reintente la conexion. " + respuesta.Mensaje);
+        }
+        respuesta.Datos.Validar();
+        // Una respuesta atrasada no sustituye a una revision mas reciente.
+        while (true)
+        {
+            var anterior = Volatile.Read(ref _configuracionCentral);
+            if (anterior is not null && anterior.Revision > respuesta.Datos.Revision) break;
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _configuracionCentral, respuesta.Datos, anterior), anterior)) break;
+        }
+    }
+
+    private void ExigirAlmacenLocal()
+    {
+        if (_central) throw new InvalidOperationException("La configuracion se administra desde la consola del servidor.");
     }
 
     private ConfiguracionLanzador CargarSinBloqueo()

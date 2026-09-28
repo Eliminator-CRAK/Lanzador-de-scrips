@@ -17,7 +17,6 @@ public sealed class ServicioArranqueWebView2
     private const string EjecutableWebView2 = "msedgewebview2.exe";
 
     private readonly ServicioDisponibilidadWebView2 _servicioDisponibilidadWebView2 = new();
-    private readonly ServicioRuntimeWebView2Embebido _servicioRuntimeEmbebido = new();
     private readonly ServicioLogInicio _logInicio = new();
 
     public async Task<ResultadoArranqueWebView2> PrepararAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
@@ -31,63 +30,19 @@ public sealed class ServicioArranqueWebView2
     private async Task<ResultadoArranqueWebView2> PrepararInternoAsync(Func<WebView2> obtenerVista, Func<WebView2> recrearVista)
     {
         var cronometroRuntime = Stopwatch.StartNew();
-        var runtimeEmbebido = ResultadoRuntimeWebView2Embebido.NoDisponible(
-            "WebView2 usara el runtime disponible en Windows.");
-        var usarRuntimeSistema = false;
         var disponibilidad = ResultadoDisponibilidadWebView2.Error(null);
         string? runtimeFijo = null;
 
-        if (RutasAplicacion.Distribucion.EsPortable)
+        try
         {
-            var sistema = _servicioDisponibilidadWebView2.Comprobar();
-            if (sistema.Exito && EsVersionSistemaCompatible(sistema.Version))
-            {
-                usarRuntimeSistema = true;
-                disponibilidad = sistema;
-            }
-            else
-            {
-                disponibilidad = ResultadoDisponibilidadWebView2.Error(null);
-            }
+            await ServicioWebView2Evergreen.AsegurarAsync();
+            disponibilidad = _servicioDisponibilidadWebView2.Comprobar();
         }
-
-        if (!usarRuntimeSistema)
+        catch (Exception ex)
         {
-            try
-            {
-                runtimeEmbebido = await PrepararRuntimeEnSegundoPlanoAsync(
-                    _servicioRuntimeEmbebido.Preparar);
-            }
-            catch (Exception ex)
-            {
-                cronometroRuntime.Stop();
-                await _logInicio.RegistrarExcepcionAsync(
-                    "webview2.runtime.embebido.error",
-                    "preparar-runtime-embebido",
-                    RutasAplicacion.RutaRuntimesWebView2,
-                    ex,
-                    CrearDatosBase(
-                        null,
-                        RutasAplicacion.RutaRaizWebView2Usuario,
-                        duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-                return ResultadoArranqueWebView2.Error("No se pudo preparar WebView2 Fixed Runtime embebido.");
-            }
-
-            if (!runtimeEmbebido.Exito && runtimeEmbebido.RecursoEncontrado)
-            {
-                cronometroRuntime.Stop();
-                await _logInicio.RegistrarAsync(
-                    "webview2.runtime.embebido.error",
-                    runtimeEmbebido.Mensaje,
-                    CrearDatosBase(
-                        null,
-                        RutasAplicacion.RutaRaizWebView2Usuario,
-                        duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-                return ResultadoArranqueWebView2.Error(runtimeEmbebido.Mensaje);
-            }
-
-            runtimeFijo = runtimeEmbebido.RutaRuntime ?? ResolverRuntimeFijoPortable();
-            disponibilidad = _servicioDisponibilidadWebView2.Comprobar(runtimeFijo);
+            await _logInicio.RegistrarExcepcionAsync("webview2.runtime.error", "instalar-evergreen",
+                string.Empty, ex);
+            return ResultadoArranqueWebView2.Error(ex.Message);
         }
 
         cronometroRuntime.Stop();
@@ -104,51 +59,11 @@ public sealed class ServicioArranqueWebView2
         }
 
         var versionRuntime = disponibilidad.Version;
-        if (usarRuntimeSistema)
-        {
-            await _logInicio.RegistrarAsync(
-                "webview2.runtime.sistema",
-                "WebView2 usara el runtime actualizado disponible en Windows.",
-                CrearDatosBase(
-                    null,
-                    RutasAplicacion.RutaRaizWebView2Usuario,
-                    versionRuntime,
-                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-        }
-        else if (runtimeEmbebido.Exito)
-        {
-            await _logInicio.RegistrarAsync(
-                runtimeEmbebido.ExtraidoAhora ? "webview2.runtime.embebido.extraido" : "webview2.runtime.embebido.reutilizado",
-                "WebView2 usara el runtime embebido autoextraido.",
-                CrearDatosBase(
-                    runtimeFijo,
-                    RutasAplicacion.RutaRaizWebView2Usuario,
-                    versionRuntime,
-                    hashRuntime: runtimeEmbebido.Hash,
-                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-        }
-        else if (!string.IsNullOrWhiteSpace(runtimeFijo))
-        {
-            await _logInicio.RegistrarAsync(
-                "webview2.runtime.portable",
-                "WebView2 usara el runtime portable.",
-                CrearDatosBase(
-                    runtimeFijo,
-                    RutasAplicacion.RutaRaizWebView2Usuario,
-                    versionRuntime,
-                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-        }
-        else
-        {
-            await _logInicio.RegistrarAsync(
-                "webview2.runtime.instalado",
-                "WebView2 usara el runtime instalado del sistema.",
-                CrearDatosBase(
-                    runtimeFijo,
-                    RutasAplicacion.RutaRaizWebView2Usuario,
-                    versionRuntime,
-                    duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
-        }
+        await _logInicio.RegistrarAsync(
+            "webview2.runtime.sistema",
+            "WebView2 usara el runtime compartido de Windows.",
+            CrearDatosBase(null, RutasAplicacion.RutaRaizWebView2Usuario, versionRuntime,
+                duracionRuntimeMs: cronometroRuntime.ElapsedMilliseconds));
 
         string rutaPerfilPrincipal;
         try
@@ -223,7 +138,7 @@ public sealed class ServicioArranqueWebView2
             .FirstOrDefault();
         return Version.TryParse(versionLimpia, out var versionActual)
             && Version.TryParse(
-                ServicioRuntimeWebView2Embebido.VersionRuntimeFijada,
+                ServicioWebView2Evergreen.VersionMinima,
                 out var versionMinima)
             && versionActual >= versionMinima;
     }

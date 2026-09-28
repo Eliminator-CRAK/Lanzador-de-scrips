@@ -171,21 +171,19 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PublicacionIncluyeMsiSinInstaladoresRuntime()
+    public void PublicacionIncluyeEvergreenOfflineSinInstaladorDotnet()
     {
         var raiz = ObtenerRaizProyecto();
         var proyecto = File.ReadAllText(Path.Combine(raiz, "LanzadorScripts.csproj"));
         var publicacion = File.ReadAllText(Path.Combine(raiz, "Herramientas", "PublicarPortable.ps1"));
 
-        Assert.DoesNotContain("RuntimeInstaller", proyecto, StringComparison.Ordinal);
-        Assert.DoesNotContain("WebView2RuntimeInstaller", publicacion, StringComparison.Ordinal);
+        Assert.Contains("MicrosoftEdgeWebView2RuntimeInstallerX64.exe", proyecto, StringComparison.Ordinal);
+        Assert.Contains("PrepararWebView2Evergreen.ps1", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("dotnet-runtime-", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("InicializarArtefactos", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("artefactos.key", publicacion, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Initialize-WebView2EmbeddedRuntime", publicacion, StringComparison.Ordinal);
         Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
         Assert.Contains("$versionAplicacion.NombreMsi", publicacion, StringComparison.Ordinal);
-        Assert.Contains("Microsoft.WebView2.FixedVersionRuntime", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));
     }
@@ -330,19 +328,14 @@ public sealed class PruebasLanzadorScripts
     [Fact]
     public void PerfilWebView2PrincipalUsaLocalAppDataDelUsuario()
     {
-        var raizLocalAppData = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LanzadorScripts",
-            "WebView2-v6",
-            "Sesiones");
+        var raizLocalAppData = Path.Combine(ServicioSesionCliente.RutaActual, "WebView2", "Sesiones");
         var raizProgramData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         var raizWindows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        var raizTemporal = Path.GetFullPath(Path.GetTempPath());
 
         Assert.Equal(raizLocalAppData, RutasAplicacion.RutaRaizWebView2Usuario, ignoreCase: true);
         Assert.DoesNotContain(raizProgramData, RutasAplicacion.RutaRaizWebView2Usuario, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(raizWindows, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(raizTemporal, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(ServicioSesionCliente.RutaActual, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -363,7 +356,7 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void RutasPersistentesUsanProgramDataYWebView2UsaLocalAppData()
+    public void DatosYWebView2QuedanAisladosEnLaSesionEfimera()
     {
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
@@ -376,13 +369,13 @@ public sealed class PruebasLanzadorScripts
             RutasAplicacion.RutaStaging
         };
 
-        Assert.All(rutasDatos, ruta => Assert.StartsWith(programData, ruta, StringComparison.OrdinalIgnoreCase));
+        Assert.All(rutasDatos, ruta => Assert.StartsWith(ServicioSesionCliente.RutaActual, ruta, StringComparison.OrdinalIgnoreCase));
         Assert.StartsWith(localAppData, RutasAplicacion.RutaRaizWebView2Usuario, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(localAppData, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(programFiles, RutasAplicacion.RutaRuntimesWebView2, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(programData, RutasAplicacion.RutaStaging, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(programData, RutasAplicacion.RutaStagingActualizaciones, StringComparison.OrdinalIgnoreCase);
         Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
-        Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizLocalAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
+        Assert.All(rutasDatos, ruta => Assert.Contains("SesionesCliente", ruta, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -476,13 +469,14 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void WebView2SoportaRuntimeEmbebidoAutoextraible()
+    public void WebView2UsaEvergreenCompartidoEnAmbasDistribuciones()
     {
         var rutaArranque = Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioArranqueWebView2.cs");
         var codigo = File.ReadAllText(rutaArranque);
 
-        Assert.Contains("ServicioRuntimeWebView2Embebido", codigo, StringComparison.Ordinal);
-        Assert.Contains("runtime.embebido", codigo, StringComparison.Ordinal);
+        Assert.Contains("ServicioWebView2Evergreen.AsegurarAsync", codigo, StringComparison.Ordinal);
+        Assert.Contains("webview2.runtime.sistema", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("ServicioRuntimeWebView2Embebido", codigo, StringComparison.Ordinal);
         Assert.Contains("ResolverRuntimeFijoPortable", codigo, StringComparison.Ordinal);
         Assert.Contains("Runtimes", RutasAplicacion.RutaRuntimesWebView2, StringComparison.Ordinal);
         Assert.Contains("msedgewebview2.exe", codigo, StringComparison.Ordinal);
@@ -1404,6 +1398,44 @@ public sealed class PruebasLanzadorScripts
         var privado = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=privado")) as JsonArray;
         Assert.NotNull(privado);
         Assert.Empty(privado!);
+
+        var busqueda = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?carpeta=privado&buscar=ok")) as JsonArray;
+        Assert.NotNull(busqueda);
+        Assert.Contains(busqueda!, script => script?["id"]?.GetValue<string>() == "sub/ok.cmd"
+            && script?["carpeta"]?.GetValue<string>() == "sub");
+        Assert.DoesNotContain(busqueda!, script => script?["esCarpeta"]?.GetValue<bool>() == true);
+        var sinAcceso = await LeerJsonAsync(await cliente.GetAsync("/api/scripts?buscar=a.ps1")) as JsonArray;
+        Assert.Empty(sinAcceso!);
+        Assert.Equal(HttpStatusCode.BadRequest, (await cliente.GetAsync("/api/scripts?buscar=" + new string('a', 201))).StatusCode);
+    }
+
+    [Fact]
+    public void BundleAdaptadoConservaConsolasYRetiraRutasLocales()
+    {
+        var raiz = ObtenerRaizProyecto();
+        var original = File.ReadAllText(Path.Combine(raiz, "ClienteWeb", "assets", "index-DgdNDMM1.js"));
+        var adaptado = AdaptadorNavegacionCliente.Aplicar(original);
+        Assert.Contains("lanzador:carpeta", adaptado);
+        Assert.Contains("AbortController", adaptado);
+        Assert.DoesNotContain("Rutas de Configuración", adaptado);
+        Assert.DoesNotContain("/api/configuracion-app\",{method:\"POST\"", adaptado);
+        Assert.Throws<InvalidDataException>(() => AdaptadorNavegacionCliente.Aplicar("otro bundle"));
+        Directory.CreateDirectory(Path.Combine(raiz, "obj", "ValidacionCliente"));
+        File.WriteAllText(Path.Combine(raiz, "obj", "ValidacionCliente", "cliente.js"), adaptado);
+        var mejoras = typeof(VentanaPrincipal).GetMethod("ObtenerMejorasInterfazScripts",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        File.WriteAllText(Path.Combine(raiz, "obj", "ValidacionCliente", "mejoras.js"), (string)mejoras.Invoke(null, null)!);
+    }
+
+    [Fact]
+    public void ConfiguracionPredeterminadaNoLeeNiEscribeElArchivoLocal()
+    {
+        var servicio = new ServicioConfiguracion();
+        var configuracion = servicio.Cargar();
+        Assert.Equal("MAD002MICROPRU.mad.ae.aena.es", configuracion.ServidorCentral);
+        Assert.Throws<InvalidOperationException>(() => servicio.Guardar(configuracion));
+        Assert.Throws<InvalidOperationException>(() => servicio.AplicarRutasImportadas("C:\\otro", "C:\\permisos"));
+        Assert.False(File.Exists(RutasAplicacion.RutaConfiguracionUsuario));
     }
 
     [Fact]

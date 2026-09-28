@@ -135,6 +135,20 @@ public sealed class RutasServidor
         new DirectoryInfo(ruta).SetAccessControl(seguridad);
     }
 
+    internal static void PrepararArchivoActualizacion(string ruta)
+    {
+        // Un movimiento NTFS conserva la ACL del staging; fija lectura antes de publicarlo.
+        RechazarPuntoReanalisis(ruta);
+        var administradores = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var seguridad = new FileSecurity();
+        seguridad.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        seguridad.SetOwner(administradores);
+        seguridad.AddAccessRule(new FileSystemAccessRule(administradores, FileSystemRights.FullControl, AccessControlType.Allow));
+        seguridad.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
+        seguridad.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null), FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+        new FileInfo(ruta).SetAccessControl(seguridad);
+    }
+
     private static void AplicarAclActualizaciones(string ruta)
     {
         // Permite descargar paquetes sin conceder escritura a los clientes.

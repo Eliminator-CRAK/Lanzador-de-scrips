@@ -60,13 +60,17 @@ foreach ($archivo in @(
     }
 }
 
+$evergreen = & (Join-Path $PSScriptRoot 'PrepararWebView2Evergreen.ps1')
 if ([string]::IsNullOrWhiteSpace($RutaRuntimeWebView2)) {
-    $RutaRuntimeWebView2 = Join-Path $raiz 'Recursos\WebView2\FixedRuntime-150.0.4078.48-x64\Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64'
+    $RutaRuntimeWebView2 = Split-Path -Parent $evergreen.Ruta
 }
 
 $runtime = [System.IO.Path]::GetFullPath($RutaRuntimeWebView2)
-if (-not [System.IO.File]::Exists((Join-Path $runtime 'msedgewebview2.exe'))) {
-    throw "No se encontro el runtime fijo de WebView2: $runtime"
+if (-not [System.IO.File]::Exists((Join-Path $runtime 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe'))) {
+    throw "No se encontro el instalador Evergreen de WebView2: $runtime"
+}
+if ((Get-FileHash -LiteralPath (Join-Path $runtime 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe') -Algorithm SHA256).Hash -ne $evergreen.Sha256) {
+    throw 'El instalador WebView2 del MSI no coincide con el paquete oficial verificado.'
 }
 if (([System.IO.DirectoryInfo]::new($runtime).Attributes -band
         [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
@@ -74,7 +78,7 @@ if (([System.IO.DirectoryInfo]::new($runtime).Attributes -band
         Where-Object {
             ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
         }).Count -gt 0) {
-    throw 'El runtime fijo de WebView2 no puede contener puntos de reanalisis.'
+    throw 'El instalador de WebView2 no puede contener puntos de reanalisis.'
 }
 
 $raizTemporal = [System.IO.Path]::GetFullPath(
@@ -203,7 +207,7 @@ try {
     Get-ChildItem -LiteralPath $runtime -Force | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $runtimeMsi -Recurse -Force
     }
-    if (-not [System.IO.File]::Exists((Join-Path $runtimeMsi 'msedgewebview2.exe'))) {
+    if (-not [System.IO.File]::Exists((Join-Path $runtimeMsi 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe'))) {
         throw 'No se pudo preparar la copia corta del runtime WebView2 para el MSI.'
     }
 
