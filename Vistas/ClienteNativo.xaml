@@ -7,6 +7,7 @@
  <UserControl.Resources>
   <BooleanToVisibilityConverter x:Key="VisibleSi" />
   <vistas:InvertirBooleano x:Key="InvertirBooleano" />
+  <vistas:AlturaConsolasNativas x:Key="AlturaConsolas" />
   <Style x:Key="BotonIconoNativo" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
    <Setter Property="Width" Value="32"/><Setter Property="Height" Value="32"/><Setter Property="Padding" Value="7"/>
   </Style>
@@ -63,7 +64,9 @@
     </Button>
    </Grid>
    <ScrollViewer Grid.Column="1" x:Name="DesplazamientoConsolas" Margin="0,0,16,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <ItemsControl ItemsSource="{Binding Consolas}" MinHeight="{Binding ViewportHeight, ElementName=DesplazamientoConsolas}">
+    <ItemsControl ItemsSource="{Binding Consolas}">
+     <!-- Acota la salida y mantiene la entrada visible dentro de cada consola. -->
+     <ItemsControl.Height><MultiBinding Converter="{StaticResource AlturaConsolas}"><Binding Path="ViewportHeight" ElementName="DesplazamientoConsolas"/><Binding Path="Consolas.Count"/></MultiBinding></ItemsControl.Height>
      <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
      <ItemsControl.ItemTemplate><DataTemplate><vistas:ConsolaNativa MinHeight="280" Margin="0,0,0,12" Enviar="Consola_Enviar" Cerrar="Consola_Cerrar"/></DataTemplate></ItemsControl.ItemTemplate>
     </ItemsControl>

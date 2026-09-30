@@ -91,6 +91,50 @@ public sealed class PruebasVistaNativa
         }).Task.Unwrap();
     }
 
+    [Theory]
+    [InlineData(1280, 720, 1, 96)]
+    [InlineData(960, 600, 1, 96)]
+    [InlineData(1280, 720, 2, 96)]
+    [InlineData(960, 600, 5, 96)]
+    [InlineData(1280, 720, 1, 144)]
+    public async Task SalidaAbundanteNoDesplazaEntradaFueraDelAreaVisible(int ancho, int alto, int cantidad, int dpi)
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado();
+            using var vista = new ClienteNativo();
+            await vista.InicializarAsync(cliente);
+            for (var i = 0; i < cantidad; i++) await vista.Modelo!.EjecutarAsync(ClienteNativoSimulado.Script);
+            Dibujar(vista, ancho, alto, dpi, "entrada-antes-" + cantidad);
+            var desplazamiento = (ScrollViewer)vista.FindName("DesplazamientoConsolas");
+            var alturaInicial = Descendientes<ConsolaNativa>(vista).First().ActualHeight;
+            foreach (var modelo in vista.Modelo!.Consolas)
+                for (var i = 0; i < 200; i++) modelo.Agregar(new EventoCliente("info", "salida continua " + i + "\n", null, false));
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            Dibujar(vista, ancho, alto, dpi, "entrada-despues-" + cantidad);
+            var consolas = Descendientes<ConsolaNativa>(vista).ToArray();
+            Assert.Equal(cantidad, consolas.Length);
+            Assert.InRange(consolas[0].ActualHeight, alturaInicial - 1, alturaInicial + 1);
+            foreach (var consola in consolas)
+            {
+                var entrada = (TextBox)consola.FindName("Entrada");
+                var salida = (RichTextBox)consola.FindName("Salida");
+                // Cada consola conserva una salida acotada y su entrada en el mismo bloque.
+                var posicion = entrada.TransformToAncestor(consola).Transform(new Point());
+                Assert.True(posicion.Y + entrada.ActualHeight <= consola.ActualHeight);
+                Assert.InRange(consola.ActualHeight, 280, desplazamiento.ViewportHeight);
+                Assert.True(salida.ExtentHeight > salida.ViewportHeight);
+                desplazamiento.ScrollToVerticalOffset(consola.TransformToAncestor(desplazamiento).Transform(new Point()).Y + desplazamiento.VerticalOffset);
+                vista.UpdateLayout();
+                var visible = entrada.TransformToAncestor(desplazamiento).Transform(new Point());
+                Assert.InRange(visible.Y, 0, desplazamiento.ViewportHeight - entrada.ActualHeight);
+            }
+            Dibujar(vista, 960, 600, dpi, "entrada-redimensionada-" + cantidad);
+            Assert.InRange(consolas[0].ActualHeight, 280, desplazamiento.ViewportHeight);
+        }).Task.Unwrap();
+    }
+
     private static void Dibujar(FrameworkElement vista, int ancho, int alto, int dpi, string nombre)
     {
         vista.Width = ancho;

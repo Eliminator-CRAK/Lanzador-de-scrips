@@ -1,12 +1,12 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Uso del cliente LanzadorScripts 2.0.0. -->
+<!-- Descripcion: Uso del cliente LanzadorScripts 2.0.1. -->
 
 # Manual de usuarios
 
 ## Elegir version
 
-- Instalada: ejecutar `LanzadorScripts-2.0.0-x64.msi`. Conserva sus archivos instalados; los datos de sesion son temporales.
-- Portable: ejecutar `LanzadorScripts_Portable-2.0.0-x64.exe`. Elimina sus datos locales al cerrar.
+- Instalada: ejecutar `LanzadorScripts-2.0.1-x64.msi`. Conserva sus archivos instalados; los datos de sesion son temporales.
+- Portable: ejecutar `LanzadorScripts_Portable-2.0.1-x64.exe`. Elimina sus datos locales al cerrar.
 
 Ambas variantes necesitan conexion de dominio con el servidor central y acceso de lectura a la carpeta compartida de scripts.
 
