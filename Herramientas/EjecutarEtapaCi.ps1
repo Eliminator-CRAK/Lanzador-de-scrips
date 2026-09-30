@@ -9,6 +9,7 @@ param(
         'PrepararPowerShell',
         'VerificarCpp',
         'Publicar',
+        'PublicarValidacionNativa',
         'VerificarArtefacto')]
     [string]$Etapa
 )
@@ -81,6 +82,31 @@ function Preparar-PowerShell {
 function Verificar-Cpp {
     # Comprueba Professional 2026, C++ e Installer Projects en el runner corporativo.
     & "$PSScriptRoot\PrepararVisualStudioInstalador.ps1"
+}
+
+function Publicar-ValidacionNativa {
+    # Valida binarios autocontenidos sin generar instaladores ni cargar claves de firma.
+    $proyectos = @(
+        @{ Proyecto = 'LanzadorScripts.csproj'; Carpeta = 'Cliente'; Ejecutable = 'LanzadorScripts.exe' },
+        @{ Proyecto = 'Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj'; Carpeta = 'Servicio'; Ejecutable = 'LanzadorScripts.Servidor.Servicio.exe' },
+        @{ Proyecto = 'Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj'; Carpeta = 'Administracion'; Ejecutable = 'LanzadorScripts.Servidor.exe' }
+    )
+    foreach ($proyecto in $proyectos) {
+        $destino = Join-Path $raizRepositorio ('obj/PublicacionCi/' + $proyecto.Carpeta)
+        & dotnet publish $proyecto.Proyecto -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=false -p:IncludeInstalledUpdater=false -o $destino
+        if ($LASTEXITCODE -ne 0) {
+            throw "No se pudo publicar la validacion de $($proyecto.Carpeta)."
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $destino $proyecto.Ejecutable) -PathType Leaf)) {
+            throw "Falta el ejecutable de $($proyecto.Carpeta)."
+        }
+        $navegadores = @(Get-ChildItem -LiteralPath $destino -Recurse -File |
+            Where-Object { $_.Name -match '(?i)(webview2|msedgewebview|evergreen)' })
+        if ($navegadores.Count -ne 0) {
+            throw 'La publicacion WPF contiene componentes de navegador.'
+        }
+    }
 }
 
 function Confiar-CertificadoFirmaCi {
@@ -380,6 +406,7 @@ try {
         'PrepararPowerShell' { Preparar-PowerShell }
         'VerificarCpp' { Verificar-Cpp }
         'Publicar' { Publicar-Aplicacion }
+        'PublicarValidacionNativa' { Publicar-ValidacionNativa }
         'VerificarArtefacto' { Verificar-Artefacto }
     }
 }

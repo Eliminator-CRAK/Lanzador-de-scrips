@@ -171,24 +171,6 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PublicacionIncluyeEvergreenOfflineSinInstaladorDotnet()
-    {
-        var raiz = ObtenerRaizProyecto();
-        var proyecto = File.ReadAllText(Path.Combine(raiz, "LanzadorScripts.csproj"));
-        var publicacion = File.ReadAllText(Path.Combine(raiz, "Herramientas", "PublicarPortable.ps1"));
-
-        Assert.Contains("MicrosoftEdgeWebView2RuntimeInstallerX64.exe", proyecto, StringComparison.Ordinal);
-        Assert.Contains("PrepararWebView2Evergreen.ps1", publicacion, StringComparison.Ordinal);
-        Assert.DoesNotContain("dotnet-runtime-", publicacion, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("InicializarArtefactos", publicacion, StringComparison.Ordinal);
-        Assert.DoesNotContain("artefactos.key", publicacion, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("CompilarMsi.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("$versionAplicacion.NombreMsi", publicacion, StringComparison.Ordinal);
-        Assert.DoesNotContain("Join-Path $salidaCompleta 'permisos.json'", publicacion, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(raiz, "Servicios", "ServicioInstalacionWebView2.cs")));
-    }
-
-    [Fact]
     public void PerfilAplicacionNormalizaUsuario()
     {
         Assert.Equal("aroperez", PerfilAplicacion.Normalizar("AROPEREZ"));
@@ -202,13 +184,10 @@ public sealed class PruebasLanzadorScripts
     [Fact]
     public void PanelAjustesNoDuplicaExecutionPolicyUnrestricted()
     {
-        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
-        var codigo = File.ReadAllText(rutaVentana);
-
-        Assert.DoesNotContain("ls-aplicar-unrestricted", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("ls-execution-policy-estado", codigo, StringComparison.Ordinal);
-        Assert.Contains("idBotonExecutionPolicyPrincipal", codigo, StringComparison.Ordinal);
-        Assert.Contains("Set Unrestricted", codigo, StringComparison.Ordinal);
+        var vista = System.Xml.Linq.XDocument.Load(Path.Combine(ObtenerRaizProyecto(), "Vistas", "ClienteNativo.xaml"));
+        Assert.Single(vista.Descendants(), e => (string?)e.Attribute("Click") == "ExecutionPolicy_Click");
+        var motor = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServidorLocalWeb.Nativo.cs"));
+        Assert.Contains("ExigirAdministradorNativoAsync", motor, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -234,33 +213,21 @@ public sealed class PruebasLanzadorScripts
     [Fact]
     public void PanelAjustesPublicaCatalogoUnificado()
     {
-        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
-        var codigo = File.ReadAllText(rutaVentana);
-
-        Assert.Contains("Publicar catálogo central", codigo, StringComparison.Ordinal);
-        Assert.Contains("autorizar sus hashes en la base central", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("Cifrando y firmando catalogo", codigo, StringComparison.Ordinal);
-        Assert.Contains("/api/catalogo-scripts", codigo, StringComparison.Ordinal);
-        Assert.Contains("data-ls-catalogo-checkbox", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("/api/hashes-batch", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("/api/firmas-powershell", codigo, StringComparison.Ordinal);
-        Assert.Contains("Servidor central", codigo, StringComparison.Ordinal);
-        Assert.Contains(
-            "Nombre DNS o equipo del servidor y puerto del servicio LanzadorScripts",
-            codigo,
-            StringComparison.Ordinal);
+        var vista = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "Vistas", "ClienteNativo.xaml"));
+        var modelo = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "ModelosVista", "ClienteNativoModelo.cs"));
+        Assert.Contains("PublicarCatalogo_Click", vista, StringComparison.Ordinal);
+        Assert.Contains("DataGridCheckBoxColumn", vista, StringComparison.Ordinal);
+        Assert.Contains("_cliente.PublicarCatalogoAsync", modelo, StringComparison.Ordinal);
+        Assert.Contains("Servidor central", vista, StringComparison.Ordinal);
     }
 
     [Fact]
     public void InterfazNavegaScriptsPorCarpetas()
     {
-        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
-        var codigo = File.ReadAllText(rutaVentana);
-
-        Assert.Contains("ls-carpeta-scripts-activa", codigo, StringComparison.Ordinal);
-        Assert.Contains("/api/scripts", codigo, StringComparison.Ordinal);
-        Assert.Contains("Abrir carpeta", codigo, StringComparison.Ordinal);
-        Assert.Contains("aplicarVistaCarpetasScripts", codigo, StringComparison.Ordinal);
+        var modelo = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "ModelosVista", "ClienteNativoModelo.cs"));
+        Assert.Contains("AbrirCarpetaAsync", modelo, StringComparison.Ordinal);
+        Assert.Contains("SubirCarpetaAsync", modelo, StringComparison.Ordinal);
+        Assert.Contains("_cliente.ListarScriptsAsync", modelo, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -273,26 +240,6 @@ public sealed class PruebasLanzadorScripts
         Assert.Contains("\"-File\"", codigo, StringComparison.Ordinal);
         Assert.Contains("\"-NonInteractive\"", codigo, StringComparison.Ordinal);
         Assert.Contains("RequiereAdaptadorInteractivo", codigo, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InterfazNoIncluyeInicioDeWindows()
-    {
-        var rutaVentana = Path.Combine(ObtenerRaizProyecto(), "VentanaPrincipal.xaml.cs");
-        var codigo = File.ReadAllText(rutaVentana);
-        var rutaAssets = Path.Combine(ObtenerRaizProyecto(), "ClienteWeb", "assets");
-        var bundles = Directory.GetFiles(rutaAssets, "*.js");
-
-        Assert.DoesNotContain("ObtenerInicioAutomaticoGestionado", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("inicioAutomatico", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("ls-inicio-automatico", codigo, StringComparison.Ordinal);
-        Assert.NotEmpty(bundles);
-        foreach (var bundle in bundles)
-        {
-            var codigoCliente = File.ReadAllText(bundle);
-            Assert.DoesNotContain("inicioAutomaticoWindows", codigoCliente, StringComparison.Ordinal);
-            Assert.DoesNotContain("Abrir automáticamente al iniciar Windows", codigoCliente, StringComparison.Ordinal);
-        }
     }
 
     [Fact]
@@ -326,59 +273,6 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void PerfilWebView2PrincipalUsaLocalAppDataDelUsuario()
-    {
-        var raizLocalAppData = Path.Combine(ServicioSesionCliente.RutaActual, "WebView2", "Sesiones");
-        var raizProgramData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        var raizWindows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-
-        Assert.Equal(raizLocalAppData, RutasAplicacion.RutaRaizWebView2Usuario, ignoreCase: true);
-        Assert.DoesNotContain(raizProgramData, RutasAplicacion.RutaRaizWebView2Usuario, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(raizWindows, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(ServicioSesionCliente.RutaActual, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void WebView2EntregaAEdgeUnPerfilFinalConAclPreparada()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var raiz = Path.Combine(entorno.Raiz, "sesiones");
-        var rutaPerfil = ServicioArranqueWebView2.CrearPerfilSesionSeguro(raiz);
-        var rutaArranque = Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioArranqueWebView2.cs");
-        var codigo = File.ReadAllText(rutaArranque);
-
-        Assert.StartsWith(raiz, rutaPerfil, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith("Sesion-", Path.GetFileName(rutaPerfil), StringComparison.Ordinal);
-        Assert.True(Directory.Exists(rutaPerfil));
-        Assert.Contains("CrearPerfilSesionSeguro(RutasAplicacion.RutaRaizWebView2Usuario)", codigo, StringComparison.Ordinal);
-        Assert.Contains("PrepararPerfilWebView2(rutaPerfil)", codigo, StringComparison.Ordinal);
-        Assert.Contains("CoreWebView2Environment.CreateAsync(runtimeFijo, rutaPerfil)", codigo, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void DatosYWebView2QuedanAisladosEnLaSesionEfimera()
-    {
-        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var rutasDatos = new[]
-        {
-            RutasAplicacion.RutaConfiguracionUsuario,
-            RutasAplicacion.RutaLogsUsuario,
-            RutasAplicacion.RutaTokensUsuario,
-            RutasAplicacion.RutaStaging
-        };
-
-        Assert.All(rutasDatos, ruta => Assert.StartsWith(ServicioSesionCliente.RutaActual, ruta, StringComparison.OrdinalIgnoreCase));
-        Assert.StartsWith(localAppData, RutasAplicacion.RutaRaizWebView2Usuario, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(localAppData, RutasAplicacion.RutaRaizWebView2RecuperacionLocal, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(programFiles, RutasAplicacion.RutaRuntimesWebView2, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(programData, RutasAplicacion.RutaStagingActualizaciones, StringComparison.OrdinalIgnoreCase);
-        Assert.All(rutasDatos, ruta => Assert.DoesNotContain(RutasAplicacion.RaizAppDataLegada, ruta, StringComparison.OrdinalIgnoreCase));
-        Assert.All(rutasDatos, ruta => Assert.Contains("SesionesCliente", ruta, StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void DirectorioPrivadoSoloConcedeModificacionAlUsuarioActual()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -398,43 +292,6 @@ public sealed class PruebasLanzadorScripts
             && regla.FileSystemRights.HasFlag(FileSystemRights.Modify));
         Assert.DoesNotContain(reglas, regla =>
             string.Equals(regla.IdentityReference.Value, "S-1-5-32-545", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void DirectorioWebView2ConservaHerenciaYConcedeEscrituraAlPerfil()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var carpeta = Path.Combine(entorno.Raiz, "webview2");
-        ServicioDirectoriosAplicacion.PrepararDirectorioWebView2(carpeta);
-        var perfil = Path.Combine(carpeta, $"Sesion-{Guid.NewGuid():N}");
-        ServicioDirectoriosAplicacion.PrepararPerfilWebView2(perfil);
-
-        var reglasRaiz = new DirectoryInfo(carpeta)
-            .GetAccessControl(AccessControlSections.Access)
-            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
-            .OfType<FileSystemAccessRule>()
-            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
-            .ToList();
-        var seguridadRaiz = new DirectoryInfo(carpeta)
-            .GetAccessControl(AccessControlSections.Access);
-        var reglasPerfil = new DirectoryInfo(perfil)
-            .GetAccessControl(AccessControlSections.Access)
-            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
-            .OfType<FileSystemAccessRule>()
-            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
-            .ToList();
-        var seguridadPerfil = new DirectoryInfo(perfil)
-            .GetAccessControl(AccessControlSections.Access);
-        var usuario = WindowsIdentity.GetCurrent().User?.Value;
-
-        Assert.Contains(reglasPerfil, regla =>
-            string.Equals(regla.IdentityReference.Value, usuario, StringComparison.Ordinal)
-            && regla.FileSystemRights.HasFlag(FileSystemRights.Modify));
-        Assert.Contains(reglasRaiz, regla =>
-            string.Equals(regla.IdentityReference.Value, usuario, StringComparison.Ordinal)
-            && regla.FileSystemRights.HasFlag(FileSystemRights.Modify));
-        Assert.False(seguridadRaiz.AreAccessRulesProtected);
-        Assert.False(seguridadPerfil.AreAccessRulesProtected);
     }
 
     [Fact]
@@ -466,152 +323,6 @@ public sealed class PruebasLanzadorScripts
 
         Assert.False(string.IsNullOrWhiteSpace(token.Valor));
         Assert.True(servicio.Validar(token.UsuarioWindows, token.Valor));
-    }
-
-    [Fact]
-    public void WebView2UsaEvergreenCompartidoEnAmbasDistribuciones()
-    {
-        var rutaArranque = Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioArranqueWebView2.cs");
-        var codigo = File.ReadAllText(rutaArranque);
-
-        Assert.Contains("ServicioWebView2Evergreen.AsegurarAsync", codigo, StringComparison.Ordinal);
-        Assert.Contains("webview2.runtime.sistema", codigo, StringComparison.Ordinal);
-        Assert.DoesNotContain("ServicioRuntimeWebView2Embebido", codigo, StringComparison.Ordinal);
-        Assert.Contains("ResolverRuntimeFijoPortable", codigo, StringComparison.Ordinal);
-        Assert.Contains("Runtimes", RutasAplicacion.RutaRuntimesWebView2, StringComparison.Ordinal);
-        Assert.Contains("msedgewebview2.exe", codigo, StringComparison.Ordinal);
-        Assert.StartsWith(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            RutasAplicacion.RutaRuntimesWebView2,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("PrepararAlternativo", codigo, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RuntimeEmbebidoExtraeYReutilizaSiHashCoincide()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var zip = CrearZipRuntimeWebView2();
-        var servicio = CrearServicioRuntimeSeguro(
-            zip,
-            Path.Combine(entorno.Raiz, "Runtime"),
-            Path.Combine(entorno.Raiz, "RuntimeEsperado"));
-
-        var primerResultado = servicio.Preparar();
-        var segundoResultado = servicio.Preparar();
-
-        Assert.True(primerResultado.Exito, primerResultado.Mensaje);
-        Assert.True(primerResultado.ExtraidoAhora);
-        Assert.True(File.Exists(Path.Combine(primerResultado.RutaRuntime!, "msedgewebview2.exe")));
-        Assert.True(segundoResultado.Exito, segundoResultado.Mensaje);
-        Assert.False(segundoResultado.ExtraidoAhora);
-        Assert.Equal(primerResultado.RutaRuntime, segundoResultado.RutaRuntime);
-    }
-
-    [Fact]
-    public void RuntimeEmbebidoReextraeSiLaCopiaLocalFueManipulada()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var zip = CrearZipRuntimeWebView2();
-        var servicio = CrearServicioRuntimeSeguro(
-            zip,
-            Path.Combine(entorno.Raiz, "Runtime"),
-            Path.Combine(entorno.Raiz, "RuntimeEsperado"));
-        var primerResultado = servicio.Preparar();
-        Assert.True(primerResultado.Exito, primerResultado.Mensaje);
-        var recurso = Path.Combine(primerResultado.RutaRuntime!, "resources.pak");
-        File.WriteAllBytes(recurso, [9, 9, 9, 9]);
-
-        var segundoResultado = servicio.Preparar();
-
-        Assert.True(segundoResultado.Exito, segundoResultado.Mensaje);
-        Assert.True(segundoResultado.ExtraidoAhora);
-        Assert.Equal(new byte[] { 5, 6, 7, 8 }, File.ReadAllBytes(recurso));
-    }
-
-    [Fact]
-    public void RuntimeEmbebidoUsaSiguienteRutaSiPrimeraNoEsEscribible()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var rutaBloqueada = Path.Combine(entorno.Raiz, "bloqueada");
-        File.WriteAllText(rutaBloqueada, "no es carpeta");
-        var rutaFallback = Path.Combine(entorno.Raiz, "fallback");
-        var servicio = new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(CrearZipRuntimeWebView2()),
-            [rutaBloqueada, rutaFallback]);
-
-        var resultado = servicio.Preparar();
-
-        Assert.True(resultado.Exito, resultado.Mensaje);
-        Assert.StartsWith(rutaFallback, resultado.RutaRuntime!, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task RuntimeEmbebidoSerializaDosExtraccionesSimultaneas()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var raiz = Path.Combine(entorno.Raiz, "compartida");
-        var zip = CrearZipRuntimeWebView2();
-        var servicio = new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(zip, writable: false),
-            [raiz]);
-
-        var resultados = await Task.WhenAll(
-            Task.Run(servicio.Preparar),
-            Task.Run(servicio.Preparar));
-
-        Assert.All(resultados, resultado => Assert.True(resultado.Exito, resultado.Mensaje));
-        Assert.Equal(resultados[0].RutaRuntime, resultados[1].RutaRuntime);
-        Assert.Equal(new byte[] { 5, 6, 7, 8 }, File.ReadAllBytes(Path.Combine(resultados[0].RutaRuntime!, "resources.pak")));
-    }
-
-    [Fact]
-    public void RuntimeEmbebidoConcedeLecturaYEjecucionAAppContainer()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var carpeta = Path.Combine(entorno.Raiz, "acl-runtime");
-        Directory.CreateDirectory(carpeta);
-        var ejecutable = Path.Combine(carpeta, "msedgewebview2.exe");
-        File.WriteAllBytes(ejecutable, [1, 2, 3]);
-
-        ServicioDirectoriosAplicacion.PrepararDirectorioRuntime(carpeta);
-
-        var reglasCarpeta = new DirectoryInfo(carpeta)
-            .GetAccessControl(AccessControlSections.Access)
-            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
-            .OfType<FileSystemAccessRule>()
-            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
-            .ToList();
-        var reglasEjecutable = new FileInfo(ejecutable)
-            .GetAccessControl(AccessControlSections.Access)
-            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
-            .OfType<FileSystemAccessRule>()
-            .Where(regla => regla.AccessControlType == AccessControlType.Allow)
-            .ToList();
-        foreach (var sid in new[] { "S-1-15-2-1", "S-1-15-2-2" })
-        {
-            Assert.Contains(reglasCarpeta, regla =>
-                string.Equals(regla.IdentityReference.Value, sid, StringComparison.Ordinal)
-                && regla.FileSystemRights.HasFlag(FileSystemRights.ReadAndExecute));
-            Assert.Contains(reglasEjecutable, regla =>
-                string.Equals(regla.IdentityReference.Value, sid, StringComparison.Ordinal)
-                && regla.FileSystemRights.HasFlag(FileSystemRights.ReadAndExecute));
-        }
-    }
-
-    [Fact]
-    public void RuntimeEmbebidoRechazaZipCorruptoOIncompleto()
-    {
-        using var entorno = EntornoPruebas.Crear();
-        var corrupto = new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(Encoding.UTF8.GetBytes("no es zip")),
-            [Path.Combine(entorno.Raiz, "corrupto")]);
-        var incompleto = new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(CrearZipRuntimeWebView2(incluirEjecutable: false)),
-            [Path.Combine(entorno.Raiz, "incompleto")]);
-
-        Assert.False(corrupto.Preparar().Exito);
-        Assert.False(incompleto.Preparar().Exito);
     }
 
     [Fact]
@@ -711,20 +422,6 @@ public sealed class PruebasLanzadorScripts
     public void LectorPermisosObsoletoNoFormaParteDelBackend()
     {
         Assert.False(File.Exists(Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioPermisos.cs")));
-    }
-
-    [Fact]
-    public void GitignoreExcluyePerfilesLocalesYConfiguracionesMcp()
-    {
-        var raiz = ObtenerRaizProyecto();
-        var gitignore = File.ReadAllText(Path.Combine(raiz, ".gitignore"));
-
-        Assert.Contains("bin/", gitignore, StringComparison.Ordinal);
-        Assert.Contains("obj/", gitignore, StringComparison.Ordinal);
-        Assert.Contains("**/EBWebView/", gitignore, StringComparison.Ordinal);
-        Assert.Contains("*.WebView2/", gitignore, StringComparison.Ordinal);
-        Assert.Contains("[[]mcp_servers.*[]].txt", gitignore, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(raiz, "[mcp_servers.stitch].txt")));
     }
 
     [Fact]
@@ -1410,24 +1107,6 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void BundleAdaptadoConservaConsolasYRetiraRutasLocales()
-    {
-        var raiz = ObtenerRaizProyecto();
-        var original = File.ReadAllText(Path.Combine(raiz, "ClienteWeb", "assets", "index-DgdNDMM1.js"));
-        var adaptado = AdaptadorNavegacionCliente.Aplicar(original);
-        Assert.Contains("lanzador:carpeta", adaptado);
-        Assert.Contains("AbortController", adaptado);
-        Assert.DoesNotContain("Rutas de Configuración", adaptado);
-        Assert.DoesNotContain("/api/configuracion-app\",{method:\"POST\"", adaptado);
-        Assert.Throws<InvalidDataException>(() => AdaptadorNavegacionCliente.Aplicar("otro bundle"));
-        Directory.CreateDirectory(Path.Combine(raiz, "obj", "ValidacionCliente"));
-        File.WriteAllText(Path.Combine(raiz, "obj", "ValidacionCliente", "cliente.js"), adaptado);
-        var mejoras = typeof(VentanaPrincipal).GetMethod("ObtenerMejorasInterfazScripts",
-            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-        File.WriteAllText(Path.Combine(raiz, "obj", "ValidacionCliente", "mejoras.js"), (string)mejoras.Invoke(null, null)!);
-    }
-
-    [Fact]
     public void ConfiguracionPredeterminadaNoLeeNiEscribeElArchivoLocal()
     {
         var servicio = new ServicioConfiguracion();
@@ -1587,47 +1266,6 @@ public sealed class PruebasLanzadorScripts
         }
 
         return eventos;
-    }
-
-    private static ServicioRuntimeWebView2Embebido CrearServicioRuntimeSeguro(
-        byte[] zip,
-        string raizRuntime,
-        string carpetaEsperada)
-    {
-        // Prepara las huellas esperadas de un runtime pequeno de pruebas.
-        Directory.CreateDirectory(carpetaEsperada);
-        using (var memoria = new MemoryStream(zip))
-        {
-            ZipFile.ExtractToDirectory(memoria, carpetaEsperada);
-        }
-
-        return new ServicioRuntimeWebView2Embebido(
-            () => new MemoryStream(zip),
-            [raizRuntime],
-            Convert.ToHexString(SHA256.HashData(zip)),
-            ServicioRuntimeWebView2Embebido.CalcularHashContenidoRuntime(carpetaEsperada),
-            Convert.ToHexString(SHA256.HashData(new byte[] { 1, 2, 3, 4 })),
-            null);
-    }
-
-    private static byte[] CrearZipRuntimeWebView2(bool incluirEjecutable = true)
-    {
-        using var memoria = new MemoryStream();
-        using (var zip = new ZipArchive(memoria, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            if (incluirEjecutable)
-            {
-                var ejecutable = zip.CreateEntry("runtime/msedgewebview2.exe");
-                using var flujo = ejecutable.Open();
-                flujo.Write([1, 2, 3, 4]);
-            }
-
-            var recurso = zip.CreateEntry("runtime/resources.pak");
-            using var flujoRecurso = recurso.Open();
-            flujoRecurso.Write([5, 6, 7, 8]);
-        }
-
-        return memoria.ToArray();
     }
 
     private static JsonObject CrearPermisosBase()

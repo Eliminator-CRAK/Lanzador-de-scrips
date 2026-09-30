@@ -10,30 +10,6 @@ namespace LanzadorScripts.Pruebas;
 public sealed class PruebasDiagnosticoArranque
 {
     [Fact]
-    public async Task RuntimeSePreparaFueraDelHiloLlamador()
-    {
-        var hiloLlamador = 0;
-        var hiloPreparacion = 0;
-        Task<ResultadoRuntimeWebView2Embebido>? preparacion = null;
-        var hilo = new Thread(() =>
-        {
-            hiloLlamador = Environment.CurrentManagedThreadId;
-            preparacion = ServicioArranqueWebView2.PrepararRuntimeEnSegundoPlanoAsync(() =>
-            {
-                hiloPreparacion = Environment.CurrentManagedThreadId;
-                return ResultadoRuntimeWebView2Embebido.NoDisponible("Prueba sin recurso.");
-            });
-        });
-
-        hilo.Start();
-        Assert.True(hilo.Join(TimeSpan.FromSeconds(5)));
-        var resultado = await Assert.IsType<Task<ResultadoRuntimeWebView2Embebido>>(preparacion);
-
-        Assert.False(resultado.Exito);
-        Assert.NotEqual(hiloLlamador, hiloPreparacion);
-    }
-
-    [Fact]
     public void AvisosDiferencianBackendPermisosYScripts()
     {
         var avisoPermisos = ServidorLocalWeb.CrearAvisoConexion(permisosInaccesibles: true, scriptsInaccesibles: false);

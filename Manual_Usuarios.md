@@ -1,27 +1,28 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Uso del cliente LanzadorScripts 1.9.0. -->
+<!-- Descripcion: Uso del cliente LanzadorScripts 2.0.0. -->
 
 # Manual de usuarios
 
 ## Elegir version
 
-- Instalada: ejecutar `LanzadorScripts-1.9.0-x64.msi`. Conserva configuracion y runtimes.
-- Portable: ejecutar `LanzadorScripts_Portable-1.9.0-x64.exe`. Elimina sus datos locales al cerrar.
+- Instalada: ejecutar `LanzadorScripts-2.0.0-x64.msi`. Conserva sus archivos instalados; los datos de sesion son temporales.
+- Portable: ejecutar `LanzadorScripts_Portable-2.0.0-x64.exe`. Elimina sus datos locales al cerrar.
 
 Ambas variantes necesitan conexion de dominio con el servidor central y acceso de lectura a la carpeta compartida de scripts.
 
 ## Primer inicio
 
-Si el administrador entrega `LanzadorScripts-Cliente.lanzadorconfig`, abrirlo o importarlo desde la aplicacion. El paquete configura el servidor, el puerto y la ruta compartida; no instala claves ni certificados privados.
+El cliente obtiene la configuracion del servidor central. No importa archivos locales de configuracion. Ambos clientes son WPF nativos y no necesitan WebView2.
 
 La aplicacion usa automaticamente la cuenta de Windows iniciada. Si la cuenta no figura en la base central, los scripts aparecen bloqueados.
 
 ## Ejecutar scripts
 
 1. Buscar el script por nombre.
-2. Pulsar **Ejecutar script**.
+2. Pulsar el icono de ejecutar del script.
 3. Revisar la salida en la consola de la aplicacion.
-4. Cerrar la consola solo cuando la ejecucion haya terminado o se desee cancelarla.
+4. Escribir respuestas en el campo inferior y pulsar Enter; una respuesta vacia continua una pausa. Tambien funciona con scripts elevados autorizados.
+5. Cerrar la consola solo cuando la ejecucion haya terminado o se desee cancelarla.
 
 Antes de iniciar, el cliente valida permisos y SHA-256 contra el servidor y confirma el evento de auditoria. Si el servidor o la auditoria no responden, la ejecucion se bloquea.
 
@@ -49,4 +50,4 @@ Los administradores pueden pulsar `Ctrl+Shift+M` para consultar la auditoria cen
 - **No se pudo confirmar la auditoria**: el servicio central no pudo guardar el evento y bloquea la ejecucion por seguridad.
 - **Ruta de scripts no disponible**: comprobar permisos de lectura sobre la carpeta compartida.
 
-La version 1.9.0 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.
+La version 2.0.0 no necesita `artefactos.key`, `permisos.json`, `catalogo-scripts.json` ni el certificado privado usado por versiones anteriores.

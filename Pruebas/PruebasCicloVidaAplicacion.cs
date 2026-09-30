@@ -73,7 +73,7 @@ public sealed class PruebasCicloVidaAplicacion
         var recursos = File.ReadAllText(ObtenerRutaProyecto("Aplicacion.xaml"));
 
         Assert.Contains("MostrarAuditoria();", ventana, StringComparison.Ordinal);
-        Assert.Contains("postMessage('mostrarAuditoria')", ventana, StringComparison.Ordinal);
+        Assert.Contains("VistaCliente.SolicitarAuditoria", ventana, StringComparison.Ordinal);
         Assert.Contains("new VentanaAuditoria", ventana, StringComparison.Ordinal);
         Assert.DoesNotContain("ls-diagnostico-panel", ventana, StringComparison.Ordinal);
         Assert.DoesNotContain("alternarDiagnostico", ventana, StringComparison.Ordinal);
@@ -163,15 +163,6 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("ConcurrentDictionary<string, TokenAdmin>", tokens, StringComparison.Ordinal);
         Assert.DoesNotContain("File.Write", tokens, StringComparison.Ordinal);
         Assert.DoesNotContain("RutaTokensUsuario", tokens, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void WebView2ConservaSoloElRuntimeActual()
-    {
-        var servicio = File.ReadAllText(
-            ObtenerRutaProyecto("Servicios", "ServicioRuntimeWebView2Embebido.cs"));
-
-        Assert.Contains("MaximoVersionesConservadas = 1", servicio, StringComparison.Ordinal);
     }
 
     [Fact]

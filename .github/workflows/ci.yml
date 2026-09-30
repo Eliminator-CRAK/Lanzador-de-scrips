@@ -1,5 +1,5 @@
 # (Autor: Alex Roman)
-# Descripcion: CI de build, pruebas y publicacion verificable.
+# Descripcion: Compila y prueba WPF en Windows alojado sin certificados privados.
 
 name: LanzadorScripts CI
 
@@ -14,28 +14,31 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: windows-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-test-publish:
-    runs-on: [self-hosted, Windows, X64, vs-professional-2026]
-    timeout-minutes: 120
+  build-test-windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
 
       - name: Verify .NET SDK
         shell: powershell
         run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarDotnet
-
-      - name: Setup PowerShell 7.6
-        shell: powershell
-        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa PrepararPowerShell
 
       - name: Restore
         shell: powershell
@@ -52,7 +55,7 @@ jobs:
           dotnet build .\Servidor\LanzadorScripts.Servidor.Administracion\LanzadorScripts.Servidor.Administracion.csproj -c Release --no-restore
 
       - name: Test
-        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore
+        run: dotnet test .\Pruebas\LanzadorScripts.Pruebas.csproj -c Release --no-restore --logger trx --results-directory obj\ResultadosCi
 
       - name: Audit NuGet packages
         shell: powershell
@@ -61,29 +64,18 @@ jobs:
           dotnet list .\Servidor\LanzadorScripts.Servidor.Servicio\LanzadorScripts.Servidor.Servicio.csproj package --vulnerable --include-transitive --no-restore
           dotnet list .\Servidor\LanzadorScripts.Servidor.Administracion\LanzadorScripts.Servidor.Administracion.csproj package --vulnerable --include-transitive --no-restore
 
-      - name: Verify Visual C++ x64
-        shell: powershell
-        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarCpp
-
-      - name: Publish x64
+      - name: Verify self-contained native application
         shell: pwsh
-        env:
-          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
-          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_BUILD: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
-        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa Publicar
+        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa PublicarValidacionNativa
 
-      - name: Verify artifact
-        shell: pwsh
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_BUILD: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
-        run: ./Herramientas/EjecutarEtapaCi.ps1 -Etapa VerificarArtefacto
-
-      - name: Publish signed deliverables to GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./Herramientas/PublicarReleaseGitHub.ps1
+      # Los MSI y EXE distribuibles se crean y firman en el equipo de publicacion.
+      - name: Save test results and WPF screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verificacion-wpf-${{ github.sha }}
+          path: |
+            obj/ResultadosCi/*.trx
+            Pruebas/bin/Release/net10.0-windows/VerificacionVisual/*.png
+          if-no-files-found: error
+          retention-days: 14

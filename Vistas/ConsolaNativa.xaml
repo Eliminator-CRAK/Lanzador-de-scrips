@@ -1,0 +1,21 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Salida seleccionable y entrada nativa independiente para cada ejecucion. -->
+<UserControl x:Class="LanzadorScripts.Vistas.ConsolaNativa" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" DataContextChanged="Modelo_Cambiado" Unloaded="Vista_Descargada" Loaded="Vista_Cargada">
+ <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1" CornerRadius="8">
+  <Grid><Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition/><RowDefinition Height="42"/></Grid.RowDefinitions>
+   <Grid Margin="12,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
+    <TextBlock Text="{Binding Titulo}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" VerticalAlignment="Center"/>
+    <TextBlock Grid.Column="1" Text="{Binding NombreScript}" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding NombreScript}" Margin="10,0"/>
+    <Button Grid.Column="2" Click="Cerrar_Click" Padding="6" ToolTip="Cerrar o detener consola" AutomationProperties.Name="Cerrar o detener consola"><Path Data="{StaticResource IconoCerrar}" Style="{StaticResource EstiloIcono}" Width="12" Height="12"/></Button>
+   </Grid>
+   <RichTextBox Grid.Row="1" x:Name="Salida" IsReadOnly="True" IsReadOnlyCaretVisible="True" Background="{StaticResource TerminalBrush}" Foreground="{StaticResource TerminalTextBrush}" BorderThickness="0" FontFamily="Consolas" FontSize="12" Padding="12,8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Salida del script" IsUndoEnabled="False"/>
+   <Grid Grid.Row="2" Margin="12,4"><Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition/><ColumnDefinition Width="32"/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
+    <TextBlock Text="$" Foreground="{StaticResource SuccessBrush}" FontFamily="Consolas" VerticalAlignment="Center"/>
+    <TextBox Grid.Column="1" x:Name="Entrada" Text="{Binding Entrada, UpdateSourceTrigger=PropertyChanged}" MaxLength="8192" IsEnabled="{Binding Activa}" AcceptsReturn="False" FontFamily="Consolas" Background="Transparent" BorderThickness="0" Padding="4" PreviewKeyDown="Entrada_Tecla" AutomationProperties.Name="Respuesta al script"/>
+    <PasswordBox Grid.Column="1" x:Name="EntradaOculta" MaxLength="8192" IsEnabled="{Binding Activa}" Visibility="Collapsed" FontFamily="Consolas" Background="Transparent" Foreground="{StaticResource TextBrush}" BorderThickness="0" Padding="4" PasswordChanged="EntradaOculta_Cambiada" PreviewKeyDown="Entrada_Tecla" AutomationProperties.Name="Respuesta protegida al script"/>
+    <Button Grid.Column="2" Click="Ocultar_Click" IsEnabled="{Binding Activa}" Padding="7" ToolTip="Mostrar u ocultar respuesta" AutomationProperties.Name="Mostrar u ocultar respuesta"><TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets"/></Button>
+    <Button Grid.Column="3" Click="Enviar_Click" IsEnabled="{Binding Activa}" Padding="7" ToolTip="Enviar respuesta" AutomationProperties.Name="Enviar respuesta"><Path Data="{StaticResource IconoEnviar}" Style="{StaticResource EstiloIcono}" Width="16" Height="16"/></Button>
+   </Grid>
+  </Grid>
+ </Border>
+</UserControl>

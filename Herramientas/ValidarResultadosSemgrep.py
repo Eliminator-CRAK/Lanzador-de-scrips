@@ -30,45 +30,17 @@ class ExcepcionErrorSemgrep:
     motivo: str
 
 
-# Esta excepcion corresponde a codigo de Framer Motion que ya usa Map y Set.
-EXCEPCIONES = (
-    ExcepcionSemgrep(
-        regla=(
-            "javascript.lang.security.audit.prototype-pollution."
-            "prototype-pollution-loop.prototype-pollution-loop"
-        ),
-        ruta="ClienteWeb/assets/index-DgdNDMM1.js",
-        linea=127,
-        sha256="73DCFB7D6840DB589A107D7D4FE8712BB066C816D17062C2E10803C845A658B1",
-        motivo=(
-            "Falso positivo de baja confianza en AnimatePresence de Framer Motion; "
-            "el codigo detectado usa Map y Set."
-        ),
-    ),
-)
+# La interfaz nativa no requiere excepciones de hallazgos.
+EXCEPCIONES: tuple[ExcepcionSemgrep, ...] = ()
 
 # Estas excepciones identifican limitaciones conocidas del parser por huella completa.
 EXCEPCIONES_ERRORES = (
-    ExcepcionErrorSemgrep(
-        ruta="VentanaPrincipal.xaml.cs",
-        tipo="Syntax error",
-        lineas=(1,),
-        sha256="CD0E093578DEF3B1CC837D89D6B86DB0FFF4F410E9F12F50E20D6E67DFFA4A1B",
-        motivo="El parser C# de Semgrep no admite los literales raw con JavaScript embebido.",
-    ),
     ExcepcionErrorSemgrep(
         ruta="Servicios/ServicioFirmaAuthenticode.cs",
         tipo="Syntax error",
         lineas=(1,),
         sha256="F65A3E68D23CF2FF0C8C182ADF2B9339A9A4FBAB15FEF193ACAA17F16621FBBC",
         motivo="El parser C# de Semgrep no admite los literales raw interpolados.",
-    ),
-    ExcepcionErrorSemgrep(
-        ruta="ClienteWeb/assets/index-DgdNDMM1.js",
-        tipo="PartialParsing",
-        lineas=(119, 119),
-        sha256="73DCFB7D6840DB589A107D7D4FE8712BB066C816D17062C2E10803C845A658B1",
-        motivo="El parser JavaScript omite dos expresiones del bundle minificado.",
     ),
 )
 

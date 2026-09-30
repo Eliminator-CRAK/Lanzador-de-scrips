@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace LanzadorScripts.Servicios;
 
@@ -53,91 +54,86 @@ public sealed class ServicioBrokerElevado
     }
 
     public async IAsyncEnumerable<EventoBrokerElevado> EjecutarAsync(
-        ScriptInterno script,
-        bool permitirExecutionPolicyBypass,
-        [EnumeratorCancellation] CancellationToken cancelacion)
+        ScriptInterno script, bool permitirExecutionPolicyBypass,
+        [EnumeratorCancellation] CancellationToken cancelacion, ChannelReader<string>? entradas = null)
     {
+        // No solicita elevacion para una ejecucion cancelada antes del arranque.
+        cancelacion.ThrowIfCancellationRequested();
         if (!EstaDisponible())
         {
             yield return EventoBrokerElevado.ErrorFinal("Broker elevado no disponible en este equipo.", null);
             yield break;
         }
-
         var nombrePipe = $"LanzadorScriptsBroker_{Guid.NewGuid():N}";
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         await using var pipe = CrearServidorPipe(nombrePipe);
         using var procesoBroker = IniciarBroker(nombrePipe, token);
-
+        // Evita un BOM sincronico que puede bloquear ambos extremos antes de la primera lectura.
+        await using var escritor = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        using var lector = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+        using var bloqueoEnvio = new SemaphoreSlim(1, 1);
+        using var vidaEntradas = CancellationTokenSource.CreateLinkedTokenSource(cancelacion);
+        var tareaEntradas = Task.CompletedTask;
         try
         {
-            await pipe.WaitForConnectionAsync(cancelacion);
-            await using var escritorFlujo = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true };
-            using var lector = new StreamReader(pipe, Encoding.UTF8);
-            var comando = new ComandoBrokerElevado(
-                "ejecutar",
-                token,
-                script.Id,
-                script.Nombre,
-                script.Tipo,
-                script.RutaValidada.RaizAutorizada,
-                script.RutaCompleta,
-                permitirExecutionPolicyBypass);
-
-            await escritorFlujo.WriteLineAsync(JsonSerializer.Serialize(comando, OpcionesJson));
-            using var registroCancelacion = cancelacion.Register(() =>
-            {
-                try
-                {
-                    var cancelacionBroker = new ComandoBrokerElevado(
-                        "cancelar",
-                        token,
-                        string.Empty,
-                        string.Empty,
-                        string.Empty,
-                        string.Empty,
-                        string.Empty,
-                        false);
-                    escritorFlujo.WriteLine(JsonSerializer.Serialize(cancelacionBroker, OpcionesJson));
-                }
-                catch
-                {
-                }
-            });
-
+            using var conexion = CancellationTokenSource.CreateLinkedTokenSource(cancelacion);
+            conexion.CancelAfter(TimeSpan.FromSeconds(20));
+            await pipe.WaitForConnectionAsync(conexion.Token);
+            await EnviarComandoAsync(escritor, bloqueoEnvio, new ComandoBrokerElevado(
+                "ejecutar", token, script.Id, script.Nombre, script.Tipo,
+                script.RutaValidada.RaizAutorizada, script.RutaCompleta, permitirExecutionPolicyBypass), cancelacion);
+            if (entradas is not null)
+                tareaEntradas = EnviarEntradasBrokerAsync(entradas, escritor, bloqueoEnvio, token, vidaEntradas.Token);
             while (!cancelacion.IsCancellationRequested)
             {
-                var linea = await lector.ReadLineAsync(cancelacion);
-                if (linea is null)
-                {
-                    break;
-                }
-
+                var linea = await LeerLineaLimitadaAsync(lector, cancelacion);
+                if (linea is null) break;
                 var evento = JsonSerializer.Deserialize<EventoBrokerElevado>(linea, OpcionesJson);
-                if (evento is null)
-                {
-                    continue;
-                }
-
+                if (evento is null) continue;
                 yield return evento;
-                if (evento.Finalizado)
-                {
-                    break;
-                }
+                if (evento.Finalizado) break;
             }
         }
         finally
         {
-            try
-            {
-                if (!procesoBroker.HasExited)
-                {
-                    procesoBroker.Kill(entireProcessTree: true);
-                }
-            }
-            catch
-            {
-            }
+            vidaEntradas.Cancel();
+            try { await tareaEntradas; }
+            catch (OperationCanceledException) { }
+            catch (IOException) { }
+            catch (ObjectDisposedException) { }
+            try { if (!procesoBroker.HasExited) procesoBroker.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
         }
+    }
+
+    private static async Task EnviarEntradasBrokerAsync(ChannelReader<string> entradas, StreamWriter escritor, SemaphoreSlim bloqueo, string token, CancellationToken cancelacion)
+    {
+        // El pipe transporta respuestas al stdin del script ya autorizado, nunca comandos nuevos.
+        await foreach (var texto in entradas.ReadAllAsync(cancelacion))
+            await EnviarComandoAsync(escritor, bloqueo,
+                new ComandoBrokerElevado("entrada", token, "", "", "", "", "", false, texto), cancelacion);
+    }
+
+    private static async Task EnviarComandoAsync(StreamWriter escritor, SemaphoreSlim bloqueo, ComandoBrokerElevado comando, CancellationToken cancelacion)
+    {
+        await bloqueo.WaitAsync(cancelacion);
+        try { await escritor.WriteLineAsync(JsonSerializer.Serialize(comando, OpcionesJson).AsMemory(), cancelacion); }
+        finally { bloqueo.Release(); }
+    }
+
+    internal static async Task<string?> LeerLineaLimitadaAsync(StreamReader lector, CancellationToken cancelacion)
+    {
+        // Limita el mensaje completo, incluidos escapes JSON y salida del proceso.
+        var linea = new StringBuilder();
+        var caracter = new char[1];
+        while (await lector.ReadAsync(caracter.AsMemory(), cancelacion) > 0)
+        {
+            if (caracter[0] == '\n') return linea.ToString().TrimEnd('\r');
+            if (linea.Length >= 131072) throw new InvalidDataException("Mensaje de broker demasiado grande.");
+            linea.Append(caracter[0]);
+        }
+        return linea.Length == 0 ? null : linea.ToString();
     }
 
     private static async Task<int> EjecutarBrokerAsync(string nombrePipe, string tokenEsperado)
@@ -149,10 +145,10 @@ public sealed class ServicioBrokerElevado
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
         await pipe.ConnectAsync(15000);
-        await using var escritorFlujo = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true };
-        using var lector = new StreamReader(pipe, Encoding.UTF8);
+        await using var escritorFlujo = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        using var lector = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
         using var bloqueoEnvio = new SemaphoreSlim(1, 1);
-        var primeraLinea = await lector.ReadLineAsync();
+        var primeraLinea = await LeerLineaLimitadaAsync(lector, CancellationToken.None);
         if (primeraLinea is null)
         {
             return 4;
@@ -187,11 +183,12 @@ public sealed class ServicioBrokerElevado
         var script = validacion.Script!;
         using var proceso = CrearProceso(script, comando.PermitirExecutionPolicyBypass);
         using var cancelacionProceso = new CancellationTokenSource();
-        var lectorComandos = EscucharCancelacionAsync(lector, tokenEsperado, proceso, cancelacionProceso.Token);
+        var lectorComandos = Task.CompletedTask;
 
         try
         {
             proceso.Start();
+            lectorComandos = EscucharComandosAsync(lector, tokenEsperado, proceso, cancelacionProceso);
             var salida = LeerFlujoAsync(proceso.StandardOutput, escritorFlujo, bloqueoEnvio, "info", null, cancelacionProceso.Token);
             var error = LeerFlujoAsync(proceso.StandardError, escritorFlujo, bloqueoEnvio, "error", "#F44747", cancelacionProceso.Token);
             await proceso.WaitForExitAsync(cancelacionProceso.Token);
@@ -278,41 +275,8 @@ public sealed class ServicioBrokerElevado
 
     private static Process CrearProceso(ScriptInterno script, bool permitirExecutionPolicyBypass)
     {
-        var inicio = new ProcessStartInfo
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = true,
-            StandardOutputEncoding = Encoding.Default,
-            StandardErrorEncoding = Encoding.Default,
-            WorkingDirectory = Path.GetDirectoryName(script.RutaCompleta) ?? Environment.CurrentDirectory
-        };
-
-        if (script.Tipo == "powershell")
-        {
-            inicio.FileName = ObtenerRutaPowerShell();
-            inicio.ArgumentList.Add("-NoLogo");
-            inicio.ArgumentList.Add("-NoProfile");
-            if (permitirExecutionPolicyBypass)
-            {
-                inicio.ArgumentList.Add("-ExecutionPolicy");
-                inicio.ArgumentList.Add("Bypass");
-            }
-
-            inicio.ArgumentList.Add("-Command");
-            inicio.ArgumentList.Add(CrearComandoPowerShell(script.RutaCompleta));
-        }
-        else
-        {
-            inicio.FileName = ObtenerRutaCmd();
-            inicio.ArgumentList.Add("/d");
-            inicio.ArgumentList.Add("/c");
-            inicio.ArgumentList.Add(script.RutaCompleta);
-        }
-
-        return new Process { StartInfo = inicio, EnableRaisingEvents = true };
+        // Comparte el adaptador de Read-Host, Pause y parametros con la ejecucion normal.
+        return GestorEjecucionesWeb.CrearProceso(script, permitirExecutionPolicyBypass);
     }
 
     private static async Task LeerFlujoAsync(StreamReader lector, StreamWriter escritor, SemaphoreSlim bloqueoEnvio, string tipo, string? color, CancellationToken cancelacion)
@@ -325,28 +289,47 @@ public sealed class ServicioBrokerElevado
         }
     }
 
-    private static async Task EscucharCancelacionAsync(StreamReader lector, string tokenEsperado, Process proceso, CancellationToken cancelacion)
+    private static async Task EscucharComandosAsync(StreamReader lector, string tokenEsperado, Process proceso, CancellationTokenSource vida)
     {
+        var cancelacion = vida.Token;
+        try
+        {
         while (!cancelacion.IsCancellationRequested)
         {
-            var linea = await lector.ReadLineAsync(cancelacion);
+            var linea = await LeerLineaLimitadaAsync(lector, cancelacion);
             if (linea is null)
             {
                 return;
             }
 
             var comando = JsonSerializer.Deserialize<ComandoBrokerElevado>(linea, OpcionesJson);
-            if (comando is null
-                || !string.Equals(comando.Tipo, "cancelar", StringComparison.OrdinalIgnoreCase)
-                || !CompararTextoSeguro(comando.Token, tokenEsperado))
+            if (comando is null || !CompararTextoSeguro(comando.Token, tokenEsperado))
             {
                 continue;
             }
 
-            if (!proceso.HasExited)
+            if (proceso.HasExited) return;
+            if (string.Equals(comando.Tipo, "entrada", StringComparison.OrdinalIgnoreCase))
+            {
+                var texto = comando.Texto ?? "";
+                if (texto.Length > 8192 || texto.Contains('\r') || texto.Contains('\n') || texto.Contains('\0'))
+                    throw new InvalidDataException("Respuesta del broker no valida.");
+                await proceso.StandardInput.WriteLineAsync(texto.AsMemory(), cancelacion);
+                await proceso.StandardInput.FlushAsync(cancelacion);
+            }
+            else if (string.Equals(comando.Tipo, "cancelar", StringComparison.OrdinalIgnoreCase))
             {
                 proceso.Kill(entireProcessTree: true);
             }
+        }
+        }
+        finally
+        {
+            // Una conexion perdida o un mensaje invalido detiene tambien el proceso hijo.
+            vida.Cancel();
+            try { if (!proceso.HasExited) proceso.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
         }
     }
 
@@ -436,4 +419,5 @@ public sealed record ComandoBrokerElevado(
     string TipoScript,
     string RaizAutorizada,
     string RutaCompleta,
-    bool PermitirExecutionPolicyBypass);
+    bool PermitirExecutionPolicyBypass,
+    string? Texto = null);

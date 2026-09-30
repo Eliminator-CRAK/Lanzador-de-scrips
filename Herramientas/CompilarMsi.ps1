@@ -9,8 +9,6 @@ param(
     [ValidatePattern('^https?://')]
     [string]$TimestampServer = 'http://timestamp.digicert.com',
 
-    [string]$RutaRuntimeWebView2 = '',
-
     [switch]$DesarrolloSinFirma
 )
 
@@ -60,35 +58,12 @@ foreach ($archivo in @(
     }
 }
 
-$evergreen = & (Join-Path $PSScriptRoot 'PrepararWebView2Evergreen.ps1')
-if ([string]::IsNullOrWhiteSpace($RutaRuntimeWebView2)) {
-    $RutaRuntimeWebView2 = Split-Path -Parent $evergreen.Ruta
-}
-
-$runtime = [System.IO.Path]::GetFullPath($RutaRuntimeWebView2)
-if (-not [System.IO.File]::Exists((Join-Path $runtime 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe'))) {
-    throw "No se encontro el instalador Evergreen de WebView2: $runtime"
-}
-if ((Get-FileHash -LiteralPath (Join-Path $runtime 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe') -Algorithm SHA256).Hash -ne $evergreen.Sha256) {
-    throw 'El instalador WebView2 del MSI no coincide con el paquete oficial verificado.'
-}
-if (([System.IO.DirectoryInfo]::new($runtime).Attributes -band
-        [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
-    @(Get-ChildItem -LiteralPath $runtime -Recurse -Force |
-        Where-Object {
-            ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
-        }).Count -gt 0) {
-    throw 'El instalador de WebView2 no puede contener puntos de reanalisis.'
-}
-
 $raizTemporal = [System.IO.Path]::GetFullPath(
     [System.IO.Path]::GetTempPath()).TrimEnd('\')
-$runtimeMsi = [System.IO.Path]::GetFullPath((Join-Path $raizTemporal (
-    'LanzadorScripts-Msi-WebView2-' + [System.Guid]::NewGuid().ToString('N'))))
 $validacionMsi = [System.IO.Path]::GetFullPath((Join-Path $raizTemporal (
     'LanzadorScripts-Msi-Validacion-' + [System.Guid]::NewGuid().ToString('N'))))
 $prefijoTemporal = $raizTemporal + '\'
-foreach ($rutaTemporal in @($runtimeMsi, $validacionMsi)) {
+foreach ($rutaTemporal in @($validacionMsi)) {
     if (-not $rutaTemporal.StartsWith(
             $prefijoTemporal,
             [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -198,24 +173,14 @@ $entornoAnterior = @{
     LANZADOR_GIT_REVISION = $env:LANZADOR_GIT_REVISION
     LANZADOR_SIGNING_THUMBPRINT = $env:LANZADOR_SIGNING_THUMBPRINT
     LANZADOR_TIMESTAMP_SERVER = $env:LANZADOR_TIMESTAMP_SERVER
-    InstalledWebView2RuntimeSource = $env:InstalledWebView2RuntimeSource
     InstalledUpdaterSource = $env:InstalledUpdaterSource
 }
 
 try {
-    [System.IO.Directory]::CreateDirectory($runtimeMsi) | Out-Null
-    Get-ChildItem -LiteralPath $runtime -Force | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination $runtimeMsi -Recurse -Force
-    }
-    if (-not [System.IO.File]::Exists((Join-Path $runtimeMsi 'MicrosoftEdgeWebView2RuntimeInstallerX64.exe'))) {
-        throw 'No se pudo preparar la copia corta del runtime WebView2 para el MSI.'
-    }
-
     $env:LANZADOR_PRODUCT_VERSION = $versionAplicacion.Producto
     $env:LANZADOR_GIT_REVISION = $revisionGit
     $env:LANZADOR_SIGNING_THUMBPRINT = if ($DesarrolloSinFirma) { '' } else { $CertThumbprint }
     $env:LANZADOR_TIMESTAMP_SERVER = $TimestampServer
-    $env:InstalledWebView2RuntimeSource = $runtimeMsi
     $env:InstalledUpdaterSource = $actualizadorExe
     if ([System.IO.File]::Exists($msi)) {
         [System.IO.File]::Delete($msi)
@@ -234,14 +199,6 @@ finally {
             [System.EnvironmentVariableTarget]::Process)
     }
 
-    if ([System.IO.Directory]::Exists($runtimeMsi)) {
-        try {
-            [System.IO.Directory]::Delete($runtimeMsi, $true)
-        }
-        catch {
-            Write-Warning "No se pudo limpiar el runtime MSI temporal: $($_.Exception.Message)"
-        }
-    }
 }
 
 $actualizadorInstalado = Join-Path $publicacion 'LanzadorScripts.Actualizador.exe'
@@ -391,15 +348,10 @@ try {
         throw "La imagen administrativa no contiene el actualizador nativo $($versionAplicacion.Producto)."
     }
 
-    $loadersExtraidos = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'WebView2Loader.dll')
-    if ($loadersExtraidos.Count -ne 1 -or
-        $loadersExtraidos[0].DirectoryName -ne $validacionMsi) {
-        throw 'La imagen administrativa no contiene una unica WebView2Loader.dll en su raiz.'
-    }
-
-    $documentacionExtraida = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File -Filter 'Microsoft.Web.WebView2*.xml')
-    if ($documentacionExtraida.Count -ne 0) {
-        throw 'La imagen administrativa contiene documentacion WebView2 innecesaria.'
+    $navegadoresExtraidos = @(Get-ChildItem -LiteralPath $validacionMsi -Recurse -File |
+        Where-Object { $_.Name -match 'WebView2|msedgewebview|Evergreen' })
+    if ($navegadoresExtraidos.Count -ne 0) {
+        throw 'La imagen administrativa WPF no puede contener componentes de navegador.'
     }
 
     if (-not $DesarrolloSinFirma) {

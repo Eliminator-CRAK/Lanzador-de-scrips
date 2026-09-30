@@ -18,7 +18,7 @@ Los componentes se distinguen mediante `service.name`:
 - `LanzadorScripts.Consola`: consola administrativa.
 - `LanzadorScripts.Servidor`: servicio Windows central.
 
-Se exportan duraciones y resultados de arranque, WebView2, peticiones del backend,
+Se exportan duraciones y resultados de arranque, operaciones del cliente nativo,
 operaciones del servicio, conexiones y ejecuciones. Las metricas incluyen
 `lanzador.operaciones`, `lanzador.operacion.duracion`, `lanzador.proceso.memoria`
 y `lanzador.gc.memoria`. Los logs remotos contienen exclusivamente el nombre

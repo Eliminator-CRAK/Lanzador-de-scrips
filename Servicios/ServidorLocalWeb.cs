@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Servidor local que entrega el cliente web y la API de ejecucion.
+// Descripcion: Motor de permisos y ejecucion con un adaptador HTTP reservado para pruebas.
 
 using System.Diagnostics;
 using System.IO;
@@ -19,7 +19,7 @@ using LanzadorScripts.Monitorizacion;
 
 namespace LanzadorScripts.Servicios;
 
-public sealed class ServidorLocalWeb : IDisposable
+public sealed partial class ServidorLocalWeb : IDisposable
 {
     private const string NombreCookieSesion = "LanzadorScriptsSesion";
     private const int LongitudMaximaDetalleErrorBackend = 360;
@@ -27,10 +27,6 @@ public sealed class ServidorLocalWeb : IDisposable
     internal const string MensajeCarpetaPermisosNoDisponible = "La carpeta remota de permisos no esta disponible.";
     internal const string MensajeCarpetaScriptsNoDisponible = "La carpeta remota de scripts no esta disponible.";
 
-    private static readonly Lazy<IReadOnlyDictionary<string, string>> IndiceRecursosCliente = new(CrearIndiceRecursosCliente);
-    private static readonly Regex EtiquetaVersionCliente = new(
-        "children:\"v[0-9]+[.][0-9]+[.][0-9]+(?:[.][0-9]+)?\"",
-        RegexOptions.CultureInvariant);
 
     private static readonly JsonSerializerOptions OpcionesJson = new()
     {
@@ -156,14 +152,6 @@ public sealed class ServidorLocalWeb : IDisposable
     {
         // Expone solo los datos necesarios para confirmar el cierre.
         return _gestorEjecuciones.ObtenerEjecucionesActivas();
-    }
-
-    public static ServidorLocalWeb Iniciar()
-    {
-        var servidor = new ServidorLocalWeb(ReservarPuertoLibre());
-        servidor._escuchador.Start();
-        _ = servidor.EscucharAsync();
-        return servidor;
     }
 
     internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion)
@@ -412,8 +400,7 @@ public sealed class ServidorLocalWeb : IDisposable
                     scripts = configuracion.RutaScripts,
                     permisos = diagnosticoPermisos.Ruta,
                     logs = configuracion.RutaLogs,
-                    auditoria = diagnosticoAuditoria.RutaSanitizada,
-                    perfilWebView2 = RutasAplicacion.RutaRaizWebView2Usuario
+                    auditoria = diagnosticoAuditoria.RutaSanitizada
                 },
                 permisos = new
                 {
@@ -430,11 +417,7 @@ public sealed class ServidorLocalWeb : IDisposable
                         ? diagnosticoAuditoria.Mensaje
                         : _servicioAuditoria.UltimoError
                 },
-                webView2 = new
-                {
-                    perfil = RutasAplicacion.RutaRaizWebView2Usuario,
-                    runtimeInstalado = new ServicioDisponibilidadWebView2().Comprobar().Exito
-                },
+                interfaz = "WPF nativo",
                 ejecuciones = new
                 {
                     activas = _gestorEjecuciones.RecuentoActivas
@@ -1212,82 +1195,10 @@ public sealed class ServidorLocalWeb : IDisposable
 
     private async Task EntregarClienteAsync(HttpListenerContext contexto, string ruta)
     {
-        var recurso = ruta == "/" ? "index.html" : Uri.UnescapeDataString(ruta.TrimStart('/'));
-
-        if (recurso.Contains("..", StringComparison.Ordinal))
-        {
-            contexto.Response.StatusCode = 400;
-            return;
-        }
-
-        await using var flujo = AbrirRecursoCliente(recurso);
-
-        if (flujo is null)
-        {
-            contexto.Response.StatusCode = 404;
-            return;
-        }
-
-        contexto.Response.ContentType = ObtenerTipoContenido(recurso);
-        contexto.Response.StatusCode = 200;
+        // El adaptador de pruebas conserva la cookie sin servir una interfaz web.
+        if (ruta != "/") { contexto.Response.StatusCode = 404; return; }
         EstablecerCookieSesion(contexto.Response);
-
-        if (recurso.StartsWith("assets/index-", StringComparison.OrdinalIgnoreCase)
-            && recurso.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
-        {
-            // Sincroniza la version visible con la version real del ejecutable.
-            using var lector = new StreamReader(flujo, Encoding.UTF8, true, 4096, leaveOpen: true);
-            var contenido = await lector.ReadToEndAsync();
-            var versionado = AplicarVersionVisualCliente(
-                AdaptadorNavegacionCliente.Aplicar(contenido),
-                Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0));
-            var datos = Encoding.UTF8.GetBytes(versionado);
-            contexto.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
-            contexto.Response.ContentLength64 = datos.Length;
-            await contexto.Response.OutputStream.WriteAsync(datos);
-            return;
-        }
-
-        await flujo.CopyToAsync(contexto.Response.OutputStream);
-    }
-
-    internal static string AplicarVersionVisualCliente(string contenido, Version version)
-    {
-        // Sustituye la etiqueta fija del cliente por la version del ensamblado.
-        var compilacion = Math.Max(version.Build, 0);
-        var versionVisual = $"{version.Major}.{version.Minor}.{compilacion}";
-        return EtiquetaVersionCliente.Replace(contenido, $"children:\"v{versionVisual}\"", 1);
-    }
-
-    private static Stream? AbrirRecursoCliente(string recurso)
-    {
-        // Abre un recurso embebido del cliente web.
-        var clave = NormalizarRecursoCliente("ClienteWeb/" + recurso);
-        if (!IndiceRecursosCliente.Value.TryGetValue(clave, out var nombreRecurso))
-        {
-            return null;
-        }
-
-        return Assembly.GetExecutingAssembly().GetManifestResourceStream(nombreRecurso);
-    }
-
-    private static IReadOnlyDictionary<string, string> CrearIndiceRecursosCliente()
-    {
-        // Crea el indice de recursos embebidos del cliente web.
-        return Assembly.GetExecutingAssembly()
-            .GetManifestResourceNames()
-            .Where(nombre => nombre.StartsWith("ClienteWeb", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(NormalizarRecursoCliente, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(grupo => grupo.Key, grupo => grupo.First(), StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizarRecursoCliente(string recurso)
-    {
-        // Normaliza separadores de rutas y recursos.
-        return recurso
-            .Replace('\\', '/')
-            .Replace('.', '/')
-            .TrimStart('/');
+        await EscribirJsonAsync(contexto, 200, new { interfaz = "WPF nativo" });
     }
 
     private UsuarioCliente ObtenerUsuarioActual()
