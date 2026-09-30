@@ -38,10 +38,11 @@ public partial class VentanaPrincipal : Window
         "LanzadorScripts.CerrarMantenimiento.v1");
 
     private readonly ServicioLogInicio _servicioLogInicio = new();
-    private readonly bool _esPortable = RutasAplicacion.Distribucion.EsPortable;
+    private readonly bool _esPortable;
+    private readonly bool _integracionesSistema;
     private readonly ServicioActualizacionesCliente? _servicioActualizaciones;
     private readonly ServicioIconoBandeja? _servicioIconoBandeja;
-    private ServicioClienteNativo? _servidorLocalIntegrado;
+    private IClienteNativo? _servidorLocalIntegrado;
     private VentanaAuditoria? _ventanaAuditoria;
     private WindowState _estadoAntesOcultar = WindowState.Normal;
     private bool _inicioProgramado;
@@ -53,8 +54,16 @@ public partial class VentanaPrincipal : Window
     private bool _actualizacionEnCurso;
     private int _recursosLiberados;
 
-    public VentanaPrincipal()
+    public VentanaPrincipal() : this(null, true) { }
+
+    // Permite verificar la ventana real con un cliente aislado, sin bandeja ni conexiones externas.
+    internal VentanaPrincipal(IClienteNativo cliente) : this(cliente, false) { }
+
+    private VentanaPrincipal(IClienteNativo? cliente, bool integracionesSistema)
     {
+        _integracionesSistema = integracionesSistema;
+        _esPortable = !integracionesSistema || RutasAplicacion.Distribucion.EsPortable;
+        _servidorLocalIntegrado = cliente;
         InitializeComponent();
         VistaCliente.SolicitarAuditoria += (_, _) => MostrarAuditoria();
         if (!_esPortable)
@@ -95,6 +104,13 @@ public partial class VentanaPrincipal : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        if (!_integracionesSistema)
+        {
+            // El cierre de una prueba solo libera su cliente inyectado.
+            _cierreDefinitivo = true;
+            base.OnClosing(e);
+            return;
+        }
         // La portable finaliza; la instalada permanece disponible en la bandeja.
         if (!_cierreDefinitivo)
         {
@@ -124,10 +140,11 @@ public partial class VentanaPrincipal : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        _ = ServicioIdentidadBarraTareas.ConfigurarVentana(
-            new WindowInteropHelper(this).Handle,
-            RutasAplicacion.Distribucion,
-            ServicioEjecutableAplicacion.ResolverRutaRelanzable());
+        if (_integracionesSistema)
+            _ = ServicioIdentidadBarraTareas.ConfigurarVentana(
+                new WindowInteropHelper(this).Handle,
+                RutasAplicacion.Distribucion,
+                ServicioEjecutableAplicacion.ResolverRutaRelanzable());
         AplicarEstiloNativoVentana();
         InstalarRedimensionNativo();
     }
@@ -147,13 +164,15 @@ public partial class VentanaPrincipal : Window
             PanelArranque.Visibility = Visibility.Collapsed;
             PanelArranque.IsHitTestVisible = false;
             IniciarComprobacionActualizacion();
-            await _servicioLogInicio.RegistrarAsync("cliente.wpf_listo", "Cliente WPF nativo preparado.");
+            if (_integracionesSistema)
+                await _servicioLogInicio.RegistrarAsync("cliente.wpf_listo", "Cliente WPF nativo preparado.");
         }
         catch (Exception ex)
         {
             TextoArranque.Text = ServicioRedaccionSecretos.Sanitizar(ex.Message);
             BotonReintentarArranque.Visibility = Visibility.Visible;
-            await _servicioLogInicio.RegistrarExcepcionAsync("cliente.arranque_error", "cliente_nativo", string.Empty, ex);
+            if (_integracionesSistema)
+                await _servicioLogInicio.RegistrarExcepcionAsync("cliente.arranque_error", "cliente_nativo", string.Empty, ex);
         }
         finally { _cargaClienteEnCurso = false; }
     }

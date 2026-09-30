@@ -314,6 +314,62 @@ public sealed class PruebasClienteNativo
         Assert.Empty(cliente.Entradas);
     }
 
+    [Fact]
+    public async Task DetenerTodasConservaConsolasYNoCancelaUnaFinalizada()
+    {
+        using var cliente = new ClienteNativoSimulado();
+        using var modelo = new ClienteNativoModelo(cliente);
+        await modelo.InicializarAsync();
+        for (var i = 0; i < 3; i++) await modelo.EjecutarAsync(ClienteNativoSimulado.Script);
+        var consolas = modelo.Consolas.ToArray();
+        foreach (var consola in consolas) consola.Agregar(new EventoCliente("info", "resultado conservado", null, false));
+        consolas[2].Finalizar();
+        await modelo.DetenerTodasAsync();
+        Assert.Equal(consolas.Take(2).Select(c => c.EjecucionId), cliente.Canceladas);
+        Assert.Equal(consolas, modelo.Consolas);
+        Assert.All(consolas, c => Assert.Contains(c.Eventos, e => e.Mensaje == "resultado conservado"));
+    }
+
+    [Fact]
+    public async Task LimpiarFinalizadasNoDetieneEjecucionesActivas()
+    {
+        using var cliente = new ClienteNativoSimulado();
+        using var modelo = new ClienteNativoModelo(cliente);
+        await modelo.EjecutarAsync(ClienteNativoSimulado.Script);
+        await modelo.EjecutarAsync(ClienteNativoSimulado.Script);
+        var activa = modelo.Consolas[0];
+        modelo.Consolas[1].Finalizar();
+        modelo.LimpiarFinalizadas();
+        Assert.Same(activa, modelo.Consolas.Single());
+        Assert.True(activa.Activa);
+        Assert.Empty(cliente.Canceladas);
+        activa.Finalizar();
+        modelo.LimpiarFinalizadas();
+        Assert.Null(modelo.Consolas.Single().Script);
+    }
+
+    [Fact]
+    public async Task ContadoresYBotonesSeActualizanAlTerminarUnaConsola()
+    {
+        using var cliente = new ClienteNativoSimulado();
+        using var modelo = new ClienteNativoModelo(cliente);
+        var cambios = new List<string?>();
+        modelo.PropertyChanged += (_, e) => cambios.Add(e.PropertyName);
+        await modelo.InicializarAsync();
+        Assert.Equal(5, modelo.Limite);
+        Assert.False(modelo.PuedeDetenerTodas);
+        await modelo.EjecutarAsync(ClienteNativoSimulado.Script);
+        Assert.Equal(1, modelo.Activas);
+        Assert.True(modelo.PuedeDetenerTodas);
+        cambios.Clear();
+        modelo.Consolas.Single().Finalizar();
+        Assert.Equal(0, modelo.Activas);
+        Assert.False(modelo.PuedeDetenerTodas);
+        Assert.True(modelo.PuedeLimpiarFinalizadas);
+        Assert.Contains(nameof(modelo.Activas), cambios);
+        Assert.Contains(nameof(modelo.PuedeLimpiarFinalizadas), cambios);
+    }
+
     private static ServicioClienteNativo CrearCliente(EntornoPruebas entorno) => new(ServidorLocalWeb.CrearMotorNativoParaPruebas(entorno.CrearConfiguracion(), entorno.Artefactos));
 
     private static void Autorizar(EntornoPruebas entorno, string rol = "admin")
@@ -333,6 +389,7 @@ internal sealed class ClienteNativoSimulado : IClienteNativo
     private readonly Channel<EventoCliente> _eventos = Channel.CreateUnbounded<EventoCliente>();
     public static ElementoScriptNativo Script { get; } = new("prueba.ps1", "Prueba interactiva.ps1", "powershell", false, "", false, "");
     public List<string> Entradas { get; } = [];
+    public List<Guid> Canceladas { get; } = [];
     public Task<SesionClienteNativa> ObtenerSesionAsync(CancellationToken cancelacion = default) => Task.FromResult(new SesionClienteNativa(new UsuarioCliente("DOMINIO\\usuario", "admin", 5, true), "", "\\\\servidor\\scripts", false));
     public Task<IReadOnlyList<ElementoScriptNativo>> ListarScriptsAsync(string carpeta, string buscar, CancellationToken cancelacion = default) => Task.FromResult<IReadOnlyList<ElementoScriptNativo>>([Script]);
     public Task<PermisosClienteNativo> ObtenerPermisosAsync(CancellationToken cancelacion = default) => Task.FromResult(new PermisosClienteNativo([new UsuarioPermisoNativo("1", "usuario", "admin", 5, [])], [], [], false));
@@ -345,7 +402,7 @@ internal sealed class ClienteNativoSimulado : IClienteNativo
     public Task<DiagnosticoEjecucionScript> DiagnosticarAsync(string scriptId, CancellationToken cancelacion = default) => throw new NotSupportedException();
     public Task<ResultadoOperacionNativa<Guid>> IniciarAsync(string scriptId, CancellationToken cancelacion = default) => Task.FromResult(new ResultadoOperacionNativa<Guid>(true, Guid.NewGuid(), ""));
     public Task EnviarEntradaAsync(Guid ejecucionId, string texto) { Entradas.Add(texto); return Task.CompletedTask; }
-    public Task CancelarAsync(Guid ejecucionId) { _eventos.Writer.TryWrite(new EventoCliente("fin", "", null, true)); return Task.CompletedTask; }
+    public Task CancelarAsync(Guid ejecucionId) { Canceladas.Add(ejecucionId); _eventos.Writer.TryWrite(new EventoCliente("fin", "", null, true)); return Task.CompletedTask; }
     public IAsyncEnumerable<EventoCliente> ObservarAsync(Guid ejecucionId, CancellationToken cancelacion = default) => _eventos.Reader.ReadAllAsync(cancelacion);
     public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas() => [];
     public void Dispose() => _eventos.Writer.TryComplete();

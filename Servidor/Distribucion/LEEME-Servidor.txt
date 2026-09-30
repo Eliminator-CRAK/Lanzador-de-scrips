@@ -1,5 +1,5 @@
 (Autor: Alex Roman)
-Descripcion: Puesta en marcha de LanzadorScripts Servidor 2.0.1.
+Descripcion: Puesta en marcha de LanzadorScripts Servidor 2.0.2.
 
 INSTALACION INTERACTIVA
 1. Extraiga el ZIP en el servidor MAD002MICROPRU.
@@ -7,7 +7,7 @@ INSTALACION INTERACTIVA
 3. Pulse Instalar. La aplicacion copiara los binarios a C:\Program Files\LanzadorScriptsServidor.
 4. Inicie el servicio y compruebe que Resumen indica Kerberos remoto preparado.
 5. Abra Actualizaciones y compruebe la carpeta y el recurso UNC.
-6. Abra Clientes y configure la ruta UNC de scripts y el limite global. Los clientes 2.0.1 la consultan autenticados.
+6. Abra Clientes y configure la ruta UNC de scripts y el limite global. Los clientes 2.0.2 la consultan autenticados.
 
 La cuenta elevada que instala o inicia el servicio sera el primer administrador. La base, la clave y la configuracion se crean automaticamente. El archivo de configuracion no contiene una lista de administradores.
 
@@ -33,7 +33,7 @@ La base y la clave deben copiarse juntas para una restauracion en el mismo servi
 CLIENTES
 Los clientes 1.10.0 no necesitan archivos de configuracion: el destino inicial es MAD002MICROPRU.mad.ae.aena.es:47831 y la configuracion comun se guarda cifrada en la base. Sin servidor no se permiten nuevas ejecuciones. La auditoria se confirma antes de ejecutar; un resultado final pendiente se reintenta en memoria, no se guarda la salida de consola.
 Actualice primero el servidor y despues los clientes. El servicio registra automaticamente LanzadorScripts/<servidor> en Active Directory y no permite sustituir Kerberos por NTLM.
-Ambos clientes 2.0.1 usan WPF nativo. No instalan ni necesitan WebView2. La consola acepta respuestas por Enter, incluidos scripts elevados autorizados, y mantiene accesible la entrada con salida abundante.
+Ambos clientes 2.0.2 usan WPF nativo. No instalan ni necesitan WebView2. La consola acepta respuestas por Enter, incluidos scripts elevados autorizados, y mantiene accesible la entrada con salida abundante.
 
 ACTUALIZACION Y ROLLBACK
 Respalde base y clave antes de actualizar. Los permisos, catalogo y auditoria se conservan. Para volver a un servidor anterior a 1.10.0 restaure tambien esa copia: su comprobador de integridad no conoce la configuracion global nueva.

@@ -71,6 +71,11 @@
               Grid.Row="0"
               Background="#111827"
               MouseLeftButtonDown="BarraTitulo_MouseLeftButtonDown">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="240" />
+            </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Center"
@@ -97,14 +102,16 @@
                         AutomationProperties.Name="Maximizar o restaurar ventana" />
             </StackPanel>
 
-            <TextBlock Text="Lanzador de Scripts"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       Foreground="#6B7280"
-                       FontSize="11"
-                       FontWeight="SemiBold" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" IsHitTestVisible="False">
+                <Image x:Name="IconoBarraTitulo" Source="/LanzadorScripts;component/Recursos/IconoLanzador.png"
+                       Width="18" Height="18" Margin="0,0,8,0" />
+                <TextBlock Text="Lanzador de Scripts" Foreground="#9CA3AF" FontSize="11"
+                           FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
 
             <Button x:Name="BotonActualizarAplicacion"
+                    Grid.Column="2"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
                     Height="28"
@@ -116,6 +123,7 @@
                     Visibility="Collapsed"
                     Click="BotonActualizarAplicacion_Click"
                     ToolTip="Descargar e instalar la versión disponible"
+                    AutomationProperties.Name="Actualizar aplicacion"
                     WindowChrome.IsHitTestVisibleInChrome="True">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" />

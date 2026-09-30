@@ -3,6 +3,7 @@
 
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -20,6 +21,56 @@ namespace LanzadorScripts.Pruebas;
 public sealed class PruebasVistaNativa
 {
     private static readonly Task<Dispatcher> HiloVisual = CrearHiloVisual();
+
+    [Theory]
+    [InlineData(1280, 820, 96)]
+    [InlineData(1000, 680, 96)]
+    [InlineData(1280, 820, 144)]
+    public async Task VentanaRealConservaBarraIconoYControlesNativos(int ancho, int alto, int dpi)
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado();
+            var ventana = new VentanaPrincipal(cliente) { Width = ancho, Height = alto, Left = -5000, Top = -5000, ShowInTaskbar = false, ShowActivated = false };
+            try
+            {
+                ventana.Show();
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                var vista = (ClienteNativo)ventana.FindName("VistaCliente");
+                Assert.NotNull(vista.Modelo);
+                Assert.Equal(Visibility.Collapsed, ((FrameworkElement)ventana.FindName("PanelArranque")).Visibility);
+                Assert.Equal(WindowStyle.None, ventana.WindowStyle);
+                Assert.NotNull(ventana.Icon);
+                var icono = (Image)ventana.FindName("IconoBarraTitulo");
+                Assert.True(icono.Source.Width > 0);
+                foreach (var nombre in new[] { "BotonCerrar", "BotonMinimizar", "BotonMaximizar" })
+                    Assert.True(((Button)ventana.FindName(nombre)).IsVisible);
+                var detener = (Button)vista.FindName("BotonDetenerTodas");
+                var limpiar = (Button)vista.FindName("BotonLimpiarFinalizadas");
+                Assert.False(detener.IsEnabled);
+                Assert.True(((Button)vista.FindName("BotonAuditoria")).IsVisible);
+                await vista.Modelo!.EjecutarAsync(ClienteNativoSimulado.Script);
+                await vista.Modelo.EjecutarAsync(ClienteNativoSimulado.Script);
+                Assert.True(detener.IsEnabled);
+                Assert.False(limpiar.IsEnabled);
+                foreach (var consola in vista.Modelo.Consolas)
+                    for (var i = 0; i < 60; i++) consola.Agregar(new EventoCliente("info", "Salida de la consola " + i + "\n", null, false));
+                await Dispatcher.Yield(DispatcherPriority.Background);
+                Dibujar(ventana, ancho, alto, dpi, "ventana-completa");
+                var barra = (FrameworkElement)ventana.FindName("BarraTitulo");
+                Assert.InRange(barra.ActualHeight, 39, 41);
+                var saludo = (TextBlock)vista.FindName("SaludoUsuario");
+                Assert.True(saludo.ActualWidth > 150);
+                Assert.Equal(ancho >= 1280 ? 2 : 1, Descendientes<UniformGrid>(vista).Single().Columns);
+                vista.Modelo.Consolas[0].Finalizar();
+                await Dispatcher.Yield(DispatcherPriority.DataBind);
+                Assert.True(limpiar.IsEnabled);
+                Assert.True(detener.IsEnabled);
+            }
+            finally { ventana.Close(); }
+        }).Task.Unwrap();
+    }
 
     [Theory]
     [InlineData(1280, 720, 96)]
