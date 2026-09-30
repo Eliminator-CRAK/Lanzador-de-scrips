@@ -62,7 +62,9 @@ public sealed class PruebasVistaNativa
                 Assert.InRange(barra.ActualHeight, 39, 41);
                 var saludo = (TextBlock)vista.FindName("SaludoUsuario");
                 Assert.True(saludo.ActualWidth > 150);
-                Assert.Equal(ancho >= 1280 ? 2 : 1, Descendientes<UniformGrid>(vista).Single().Columns);
+                // Windows puede limitar la ventana a la pantalla del ejecutor de CI.
+                var area = (ScrollViewer)vista.FindName("DesplazamientoConsolas");
+                Assert.Equal(area.ActualWidth >= 800 ? 2 : 1, Descendientes<UniformGrid>(vista).Single().Columns);
                 vista.Modelo.Consolas[0].Finalizar();
                 await Dispatcher.Yield(DispatcherPriority.DataBind);
                 Assert.True(limpiar.IsEnabled);
@@ -159,6 +161,7 @@ public sealed class PruebasVistaNativa
             for (var i = 0; i < cantidad; i++) await vista.Modelo!.EjecutarAsync(ClienteNativoSimulado.Script);
             Dibujar(vista, ancho, alto, dpi, "entrada-antes-" + cantidad);
             var desplazamiento = (ScrollViewer)vista.FindName("DesplazamientoConsolas");
+            Assert.Equal(cantidad > 1 && ancho >= 1280 ? 2 : 1, Descendientes<UniformGrid>(vista).Single().Columns);
             var alturaInicial = Descendientes<ConsolaNativa>(vista).First().ActualHeight;
             foreach (var modelo in vista.Modelo!.Consolas)
                 for (var i = 0; i < 200; i++) modelo.Agregar(new EventoCliente("info", "salida continua " + i + "\n", null, false));
@@ -182,6 +185,7 @@ public sealed class PruebasVistaNativa
                 Assert.InRange(visible.Y, 0, desplazamiento.ViewportHeight - entrada.ActualHeight);
             }
             Dibujar(vista, 960, 600, dpi, "entrada-redimensionada-" + cantidad);
+            Assert.Equal(1, Descendientes<UniformGrid>(vista).Single().Columns);
             Assert.InRange(consolas[0].ActualHeight, 280, desplazamiento.ViewportHeight);
         }).Task.Unwrap();
     }
