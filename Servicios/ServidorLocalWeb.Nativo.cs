@@ -45,7 +45,8 @@ public sealed partial class ServidorLocalWeb
     private async Task<DiagnosticoPermisos> ExigirAdministradorNativoAsync(CancellationToken cancelacion)
     {
         await PrepararOperacionNativaAsync(cancelacion);
-        var permisos = await ObtenerDiagnosticoAjustesAsync();
+        // Las operaciones administrativas no reutilizan permisos de una consulta anterior.
+        var permisos = ObtenerDiagnosticoPermisos();
         var usuario = ObtenerUsuarioActual(permisos);
         if (!permisos.EstaDisponible || !usuario.EstaAutorizado || usuario.Rol != "admin")
             throw new UnauthorizedAccessException("Solo administradores autorizados pueden realizar esta operacion.");

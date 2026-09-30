@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Gestiona ejecuciones de scripts solicitadas por el cliente web.
+// Descripcion: Gestiona ejecuciones, respuestas y cancelaciones del cliente nativo.
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
@@ -122,36 +122,19 @@ public sealed class GestorEjecucionesWeb : IDisposable
             return;
         }
 
-        ejecucion.Cancelada = true;
+        // La cancelacion se conserva aunque el proceso todavia no haya arrancado.
+        ejecucion.Cancelacion.Cancel();
         await _servicioAuditoria.RegistrarEventoSeguridadAsync(
             "ejecucion.cancelacion",
             ejecucion.Usuario.NombreUsuario,
             ejecucion.Script.Id,
             "solicitado",
             "Cancelacion solicitada por el usuario.");
-        try
-        {
-            if (ejecucion.CancelarBroker is not null)
-            {
-                _ = ejecucion.CancelarBroker();
-                return;
-            }
-
-            if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
-            {
-                ejecucion.Proceso.Kill(entireProcessTree: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            var mensaje = SanitizarMensaje(ejecucion.Script, ex.Message);
-            ejecucion.AgregarEvento("error", $"> Error al cancelar: {mensaje}", "#F44747");
-        }
     }
 
     public Task EnviarEntradaAsync(Guid id, string texto)
     {
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada)
+        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada || ejecucion.Cancelada)
             throw new InvalidOperationException("La ejecucion no admite mas respuestas.");
         if (texto.Length > MaximoCaracteresEntrada || texto.Contains('\r') || texto.Contains('\n') || texto.Contains('\0'))
             throw new ArgumentException("La respuesta debe ser una linea de hasta 8192 caracteres.");
@@ -253,20 +236,11 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
 
         var espera = tiempoMaximo < TimeSpan.Zero ? TimeSpan.Zero : tiempoMaximo;
-        var cancelacionesBroker = new List<Task>();
         foreach (var ejecucion in _ejecuciones.Values)
         {
             try
             {
-                if (ejecucion.CancelarBroker is not null)
-                {
-                    cancelacionesBroker.Add(ejecucion.CancelarBroker());
-                }
-
-                if (ejecucion.Proceso is not null && !ejecucion.Proceso.HasExited)
-                {
-                    ejecucion.Proceso.Kill(entireProcessTree: true);
-                }
+                if (!ejecucion.Finalizada) ejecucion.Cancelacion.Cancel();
             }
             catch
             {
@@ -277,7 +251,6 @@ public sealed class GestorEjecucionesWeb : IDisposable
             .Select(ejecucion => ejecucion.TareaEjecucion)
             .Where(tarea => tarea is not null)
             .Cast<Task>()
-            .Concat(cancelacionesBroker)
             .ToArray();
         try
         {
@@ -305,6 +278,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
         try
         {
+            ejecucion.Cancelacion.Token.ThrowIfCancellationRequested();
             // La salida permanece en la consola en memoria; el servidor recibe solo auditoria.
             await using var log = new StreamWriter(Stream.Null, Encoding.UTF8)
             {
@@ -327,6 +301,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
             }
 
             await EscribirIntegridadValidadaAsync(log, diagnostico);
+            ejecucion.Cancelacion.Token.ThrowIfCancellationRequested();
             using var scriptPreparado = CrearCopiaTemporalValidada(ejecucion);
             ejecucion.RutaScriptPreparado = scriptPreparado.Script.RutaCompleta;
 
@@ -345,6 +320,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
             }
 
             await EscribirIntegridadStagingAsync(log, scriptPreparado.Script, diagnosticoPreparado);
+            ejecucion.Cancelacion.Token.ThrowIfCancellationRequested();
             if (!ProcesoActualElevado() && ServicioSeguridadScripts.RequiereBrokerElevado(ejecucion.Script, ejecucion.Permisos))
             {
                 var resultadoBroker = await EjecutarConBrokerAsync(ejecucion, scriptPreparado.Script, log);
@@ -356,11 +332,13 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
             using var proceso = CrearProceso(scriptPreparado.Script, ejecucion.PermitirExecutionPolicyBypass);
             ejecucion.Proceso = proceso;
+            ejecucion.Cancelacion.Token.ThrowIfCancellationRequested();
             proceso.Start();
 
             var salida = LeerFlujoAsync(proceso.StandardOutput, ejecucion, log, "info", null);
             var error = LeerFlujoAsync(proceso.StandardError, ejecucion, log, "error", "#F44747");
-            using var tiempoMaximo = new CancellationTokenSource(TiempoMaximoEjecucion);
+            using var tiempoMaximo = CancellationTokenSource.CreateLinkedTokenSource(ejecucion.Cancelacion.Token);
+            tiempoMaximo.CancelAfter(TiempoMaximoEjecucion);
             using var cancelacionEntrada = new CancellationTokenSource();
             var entrada = EscribirEntradasProcesoAsync(ejecucion, proceso, cancelacionEntrada.Token);
             try
@@ -369,8 +347,10 @@ public sealed class GestorEjecucionesWeb : IDisposable
             }
             catch (OperationCanceledException)
             {
-                resultadoAuditoria = "timeout";
-                detalleAuditoria = $"Tiempo maximo de ejecucion superado: {TiempoMaximoEjecucion.TotalMinutes:0} minutos.";
+                resultadoAuditoria = ejecucion.Cancelada ? "cancelado" : "timeout";
+                detalleAuditoria = ejecucion.Cancelada
+                    ? "Cancelada por el usuario."
+                    : $"Tiempo maximo de ejecucion superado: {TiempoMaximoEjecucion.TotalMinutes:0} minutos.";
                 ejecucion.AgregarEvento("error", $"> {detalleAuditoria}", "#F44747", finalizado: true);
                 await log.WriteLineAsync(detalleAuditoria);
                 try
@@ -419,6 +399,12 @@ public sealed class GestorEjecucionesWeb : IDisposable
             await log.WriteLineAsync($"Fin UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
             await log.WriteLineAsync($"Codigo de salida: {proceso.ExitCode}");
         }
+        catch (OperationCanceledException) when (ejecucion.Cancelada)
+        {
+            resultadoAuditoria = "cancelado";
+            detalleAuditoria = "Cancelada por el usuario.";
+            ejecucion.AgregarEvento("error", "> Ejecucion cancelada por el usuario.", "#F44747", finalizado: true);
+        }
         catch (Exception ex)
         {
             detalleAuditoria = SanitizarMensaje(ejecucion.Script, ex.Message);
@@ -440,7 +426,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
                 ejecucion.AgregarEvento(
                     "error",
                     "> El resultado queda pendiente de confirmar en la auditoria remota. Se bloquearan nuevas ejecuciones.",
-                    "#F44747");
+                    "#F44747", finalizado: true);
             }
 
             ejecucion.MarcarFinalizada();
@@ -465,12 +451,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
     {
         await log.WriteLineAsync("Ejecucion elevada: broker minimo solicitado por allowlist.");
         ejecucion.AgregarEvento("info", "> Solicitando broker elevado para script autorizado...", "#9CDCFE");
-        using var tiempoMaximo = new CancellationTokenSource(TiempoMaximoEjecucion);
-        ejecucion.CancelarBroker = () =>
-        {
-            tiempoMaximo.Cancel();
-            return Task.CompletedTask;
-        };
+        using var tiempoMaximo = CancellationTokenSource.CreateLinkedTokenSource(ejecucion.Cancelacion.Token);
+        tiempoMaximo.CancelAfter(TiempoMaximoEjecucion);
 
         var resultado = new ResultadoEjecucionBroker("error", null, "Broker elevado sin resultado final.");
         try
@@ -504,7 +486,6 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
         finally
         {
-            ejecucion.CancelarBroker = null;
             await log.WriteLineAsync();
             await log.WriteLineAsync($"Fin broker UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
         }
@@ -1053,6 +1034,7 @@ function global:Get-Credential {
         private readonly List<EventoCliente> _eventos = [];
         private readonly SemaphoreSlim _senal = new(0);
         private readonly object _bloqueo = new();
+        private bool _salidaTruncada;
 
         public EjecucionWeb(
             ScriptInterno script,
@@ -1096,7 +1078,7 @@ function global:Get-Credential {
 
         public string? RutaScriptPreparado { get; set; }
 
-        public Func<Task>? CancelarBroker { get; set; }
+        public CancellationTokenSource Cancelacion { get; } = new();
         public Channel<string> Entradas { get; } = Channel.CreateBounded<string>(new BoundedChannelOptions(32)
         {
             SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait
@@ -1104,7 +1086,7 @@ function global:Get-Credential {
 
         public Task? TareaEjecucion { get; set; }
 
-        public bool Cancelada { get; set; }
+        public bool Cancelada => Cancelacion.IsCancellationRequested;
 
         public bool Finalizada { get; private set; }
 
@@ -1127,16 +1109,18 @@ function global:Get-Credential {
             {
                 if (_eventos.Count >= MaximoEventosPorEjecucion)
                 {
-                    if (finalizado)
+                    // Agrega posiciones nuevas para que los observadores no pierdan el resultado final.
+                    if (!_salidaTruncada)
                     {
-                        _eventos[^1] = new EventoCliente(tipo, mensaje, color, finalizado);
+                        _eventos.Add(new EventoCliente("error", "> Salida truncada por limite de eventos.", "#F44747"));
+                        _salidaTruncada = true;
+                        _senal.Release();
                     }
-                    else if (!_eventos.Any(evento => evento.Mensaje.Contains("limite de eventos", StringComparison.OrdinalIgnoreCase)))
+                    if (finalizado && _eventos.Count < MaximoEventosPorEjecucion + 3)
                     {
-                        _eventos[^1] = new EventoCliente("error", "> Salida truncada por limite de eventos.", "#F44747");
+                        _eventos.Add(new EventoCliente(tipo, mensaje, color, finalizado));
+                        _senal.Release();
                     }
-
-                    _senal.Release();
                     return;
                 }
 
@@ -1169,6 +1153,7 @@ function global:Get-Credential {
         public void Dispose()
         {
             Proceso?.Dispose();
+            Cancelacion.Dispose();
             _senal.Dispose();
         }
     }

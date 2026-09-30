@@ -57,6 +57,8 @@ public sealed class ServicioBrokerElevado
         ScriptInterno script, bool permitirExecutionPolicyBypass,
         [EnumeratorCancellation] CancellationToken cancelacion, ChannelReader<string>? entradas = null)
     {
+        // No solicita elevacion para una ejecucion cancelada antes del arranque.
+        cancelacion.ThrowIfCancellationRequested();
         if (!EstaDisponible())
         {
             yield return EventoBrokerElevado.ErrorFinal("Broker elevado no disponible en este equipo.", null);

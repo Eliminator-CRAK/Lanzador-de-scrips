@@ -1,5 +1,5 @@
 // (Autor: Alex Roman)
-// Descripcion: Servidor local que entrega el cliente web y la API de ejecucion.
+// Descripcion: Motor de permisos y ejecucion con un adaptador HTTP reservado para pruebas.
 
 using System.Diagnostics;
 using System.IO;

@@ -53,6 +53,18 @@ public sealed class PruebasClienteNativo
     }
 
     [Fact]
+    public async Task RevocarAdministradorBloqueaCambiosSinEsperarAlCache()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        using var cliente = CrearCliente(entorno);
+        Assert.True((await cliente.ObtenerSesionAsync()).Usuario.Rol == "admin");
+        Autorizar(entorno, "nominal");
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => cliente.CambiarModoDesarrolloAsync(true));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => cliente.ObtenerPermisosAsync());
+    }
+
+    [Fact]
     public async Task BusquedaRecorreSoloCarpetasAutorizadas()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -129,6 +141,64 @@ public sealed class PruebasClienteNativo
         var salida = new StringBuilder();
         await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token)) salida.Append(evento.Mensaje);
         Assert.Contains("PARAMETRO=prueba", salida.ToString());
+    }
+
+    [Fact]
+    public void SalidaTruncadaConservaResultadoFinalEnPosicionNueva()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var tipo = typeof(GestorEjecucionesWeb).GetNestedType("EjecucionWeb", BindingFlags.NonPublic)!;
+        var script = new ServicioValidacionScripts().ValidarRutaConocida(
+            entorno.Raiz, Path.Combine(entorno.Raiz, "ok.ps1"), "ok.ps1", "ok.ps1", "powershell").Script!;
+        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear([script], [script.Id], entorno.ConjuntoId);
+        using var ejecucion = (IDisposable)Activator.CreateInstance(tipo, script, "", new UsuarioCliente("prueba", "admin", 5, true),
+            true, new JsonObject(), catalogo, false, new string('A', 64))!;
+        var agregar = tipo.GetMethod("AgregarEvento")!;
+        for (var indice = 0; indice < 5001; indice++) agregar.Invoke(ejecucion, ["info", "salida", null, false]);
+        var total = (int)tipo.GetProperty("TotalEventos")!.GetValue(ejecucion)!;
+        agregar.Invoke(ejecucion, ["exito", "RESULTADO_FINAL", null, true]);
+        agregar.Invoke(ejecucion, ["error", "AUDITORIA_PENDIENTE", null, true]);
+        var nuevos = (IReadOnlyList<EventoCliente>)tipo.GetMethod("ObtenerEventosDesde")!.Invoke(ejecucion, [total])!;
+        Assert.Equal(new[] { "RESULTADO_FINAL", "AUDITORIA_PENDIENTE" }, nuevos.Select(e => e.Mensaje));
+        Assert.True((int)tipo.GetProperty("TotalEventos")!.GetValue(ejecucion)! <= 5003);
+    }
+
+    [Fact]
+    public async Task CancelacionTempranaFinalizaSinEsperarAlScript()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        File.WriteAllText(Path.Combine(entorno.Raiz, "cancelar.ps1"),
+            "# (Autor: Alex Roman)\n# Descripcion: Verifica la cancelacion durante el arranque.\nStart-Sleep -Seconds 30; Write-Output 'NO_DEBE_TERMINAR'");
+        entorno.GuardarCatalogo(["cancelar.ps1"]);
+        using var cliente = CrearCliente(entorno);
+        for (var intento = 0; intento < 3; intento++)
+        {
+            var inicio = await cliente.IniciarAsync("cancelar.ps1");
+            Assert.True(inicio.Exito, inicio.Mensaje);
+            await cliente.CancelarAsync(inicio.Datos);
+            using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var salida = new StringBuilder();
+            await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token)) salida.Append(evento.Mensaje);
+            Assert.Contains("Cancelada por el usuario", salida.ToString(), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("NO_DEBE_TERMINAR", salida.ToString());
+            Assert.Empty(cliente.ObtenerEjecucionesActivas());
+        }
+    }
+
+    [Fact]
+    public async Task BrokerCanceladoNoSolicitaElevacion()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var validacion = new ServicioValidacionScripts().ValidarRutaConocida(
+            entorno.Raiz, Path.Combine(entorno.Raiz, "ok.ps1"), "ok.ps1", "ok.ps1", "powershell");
+        Assert.True(validacion.EsValido);
+        using var cancelacion = new CancellationTokenSource();
+        cancelacion.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in new ServicioBrokerElevado().EjecutarAsync(validacion.Script!, true, cancelacion.Token)) { }
+        });
     }
 
     [Fact]
