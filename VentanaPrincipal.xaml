@@ -1,9 +1,9 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Contenedor WPF del cliente web original. -->
+<!-- Descripcion: Ventana del cliente WPF nativo. -->
 <Window x:Class="LanzadorScripts.VentanaPrincipal"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:vistas="clr-namespace:LanzadorScripts.Vistas"
         Title="Lanzador de Scripts"
         Width="1280"
         Height="820"
@@ -125,8 +125,8 @@
         </Grid>
 
         <Grid Grid.Row="1">
-            <wv2:WebView2 x:Name="VistaCliente"
-                          AutomationProperties.Name="Cliente web del lanzador de scripts" />
+            <vistas:ClienteNativo x:Name="VistaCliente"
+                                  AutomationProperties.Name="Cliente nativo del lanzador de scripts" />
             <Border x:Name="PanelArranque"
                     Background="#0F1115"
                     Padding="32"
@@ -140,7 +140,7 @@
                                FontWeight="SemiBold"
                                TextAlignment="Center" />
                     <TextBlock x:Name="TextoArranque"
-                               Text="Inicializando WebView2 y servidor local..."
+                               Text="Consultando configuracion y permisos..."
                                Foreground="#9CA3AF"
                                FontSize="13"
                                Margin="0,14,0,0"
@@ -164,7 +164,7 @@
                             Margin="0,18,0,0"
                             Visibility="Collapsed"
                             Click="BotonReintentarArranque_Click"
-                            AutomationProperties.Name="Reintentar arranque del cliente web" />
+                            AutomationProperties.Name="Reintentar conexion del cliente" />
                 </StackPanel>
             </Border>
             <Border x:Name="PanelCierre"
@@ -180,7 +180,7 @@
                                FontSize="22"
                                FontWeight="SemiBold"
                                TextAlignment="Center" />
-                    <TextBlock Text="Deteniendo scripts, backend local y WebView2..."
+                    <TextBlock Text="Deteniendo scripts y confirmando auditoria..."
                                Foreground="#9CA3AF"
                                FontSize="13"
                                Margin="0,14,0,0"

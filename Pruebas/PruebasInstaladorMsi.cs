@@ -52,18 +52,15 @@ public sealed class PruebasInstaladorMsi
 
         Assert.Contains("<SelfContained>true</SelfContained>", perfil, StringComparison.Ordinal);
         Assert.Contains("<PublishSingleFile>false</PublishSingleFile>", perfil, StringComparison.Ordinal);
-        Assert.Contains("<EmbedWebView2Runtime>false</EmbedWebView2Runtime>", perfil, StringComparison.Ordinal);
-        Assert.Contains("<IncludeInstalledWebView2Runtime>true</IncludeInstalledWebView2Runtime>", perfil, StringComparison.Ordinal);
+        Assert.DoesNotContain("WebView2", perfil, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("<IncludeInstalledUpdater>true</IncludeInstalledUpdater>", perfil, StringComparison.Ordinal);
         Assert.Contains("<IncludeSourceRevisionInInformationalVersion>false", perfil, StringComparison.Ordinal);
         Assert.Contains("$(LANZADOR_PRODUCT_VERSION)+$(LANZADOR_GIT_REVISION).installed", perfil, StringComparison.Ordinal);
 
         var proyecto = File.ReadAllText(ObtenerRutaProyecto("LanzadorScripts.csproj"));
-        Assert.Contains("runtimes\\win-x64\\native\\WebView2Loader.dll", proyecto, StringComparison.Ordinal);
-        Assert.Contains("'$(IncludeInstalledWebView2Runtime)' == 'true'", proyecto, StringComparison.Ordinal);
         Assert.Contains("'$(IncludeInstalledUpdater)' == 'true'", proyecto, StringComparison.Ordinal);
+        Assert.DoesNotContain("WebView2", proyecto, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("LanzadorScripts.Actualizador.exe", proyecto, StringComparison.Ordinal);
-        Assert.Contains("<ResolvedFileToPublish Remove=\"@(ResolvedFileToPublish)\"", proyecto, StringComparison.Ordinal);
         Assert.Contains("BeforeTargets=\"PublishItemsOutputGroup\"", proyecto, StringComparison.Ordinal);
         Assert.Contains("EjecutablePublishItems", proyecto, StringComparison.Ordinal);
     }
@@ -75,6 +72,8 @@ public sealed class PruebasInstaladorMsi
             "Herramientas",
             "ConfigurarMsi.ps1"));
 
+        Assert.DoesNotContain("LS_WebView2", configuracion, StringComparison.Ordinal);
+        Assert.Contains("El MSI WPF no puede contener componentes de navegador", configuracion, StringComparison.Ordinal);
         Assert.Contains("LS_CheckClose", configuracion, StringComparison.Ordinal);
         Assert.Contains("--comprobar-cierre [UILevel]", configuracion, StringComparison.Ordinal);
         Assert.Contains("NOT PATCH AND ACTION <> \"ADMIN\"', 1450", configuracion, StringComparison.Ordinal);
@@ -88,7 +87,6 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains(".lanzadorconfig", configuracion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScriptsMenuFolder", configuracion, StringComparison.Ordinal);
         Assert.Contains("componentes asociados a directorios inexistentes", configuracion, StringComparison.Ordinal);
-        Assert.Contains("una unica WebView2Loader.dll", configuracion, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -108,6 +106,8 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("$versionExtension = '3.0.0'", preparacion, StringComparison.Ordinal);
         Assert.Contains("36D2D52176DD7B2FA8D03E80652ACB063498CA3990E101C5CE2350446826541F", preparacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.VisualStudio.Product.Professional", compilacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("PrepararWebView2Evergreen", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("InstalledWebView2RuntimeSource", compilacion, StringComparison.Ordinal);
         Assert.Contains("Microsoft.VisualStudio.Product.Professional", publicacion, StringComparison.Ordinal);
         Assert.Contains("[18.0,19.0)", preparacion, StringComparison.Ordinal);
         Assert.Contains("'/a'", compilacion, StringComparison.Ordinal);
@@ -115,16 +115,13 @@ public sealed class PruebasInstaladorMsi
         Assert.Contains("$codigoMsiOtraInstalacionEnCurso = 1618", compilacion, StringComparison.Ordinal);
         Assert.Contains("$intentosExtraccionMsi = 12", compilacion, StringComparison.Ordinal);
         Assert.Contains("Start-Sleep -Seconds $esperaExtraccionMsiSegundos", compilacion, StringComparison.Ordinal);
-        Assert.Contains("LanzadorScripts-Msi-WebView2-", compilacion, StringComparison.Ordinal);
         Assert.Contains("LanzadorScripts-Msi-Validacion-", compilacion, StringComparison.Ordinal);
         Assert.Contains("[System.IO.Directory]::Delete($validacionMsi, $true)", compilacion, StringComparison.Ordinal);
         Assert.Contains("[void]$vista.Execute()", compilacion, StringComparison.Ordinal);
         Assert.Contains("FinalReleaseComObject($fila)", compilacion, StringComparison.Ordinal);
         Assert.Contains("FinalReleaseComObject($vista)", compilacion, StringComparison.Ordinal);
         Assert.Contains("FileAttributes]::ReparsePoint", compilacion, StringComparison.Ordinal);
-        Assert.Contains("$env:InstalledWebView2RuntimeSource = $runtimeMsi", compilacion, StringComparison.Ordinal);
         Assert.Contains("$env:LANZADOR_PRODUCT_VERSION = $versionAplicacion.Producto", compilacion, StringComparison.Ordinal);
-        Assert.Contains("[System.IO.Directory]::Delete($runtimeMsi, $true)", compilacion, StringComparison.Ordinal);
         Assert.Contains("El ejecutable incluido en el MSI no conserva una firma Authenticode valida", compilacion, StringComparison.Ordinal);
         Assert.DoesNotContain("Product.Community", preparacion, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Product.Community", compilacion, StringComparison.OrdinalIgnoreCase);

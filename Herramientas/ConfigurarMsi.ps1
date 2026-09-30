@@ -405,12 +405,10 @@ try {
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Migrate16', 3074, 'LanzadorInstallerHelper', '--migrar-1.6')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Cleanup', 3074, 'LanzadorInstallerHelper', '--limpiar-desinstalacion')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Launch', 210, $appFile, $null)
-    Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_WebView2', 3090, $appFile, '--preparar-webview2')
 
     Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_CheckClose', 'NOT PATCH AND ACTION <> "ADMIN"', 1450)
     Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_Migrate16', 'NOT Installed AND NOT REMOVE~="ALL" AND NOT PATCH AND ACTION <> "ADMIN"', 1510)
     Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_Cleanup', 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND ACTION <> "ADMIN"', 3650)
-    Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_WebView2', 'NOT REMOVE~="ALL" AND ACTION <> "ADMIN"', 4100)
 
     Add-MsiRow -Installer $installer -Database $database -Table 'Directory' -Columns @('Directory', 'Directory_Parent', 'DefaultDir') -Values @('LanzadorScriptsMenuFolder', 'ProgramMenuFolder', 'LANZAD~1|LanzadorScripts')
 
@@ -499,18 +497,11 @@ try {
         throw "El MSI contiene componentes asociados a directorios inexistentes: $($orphanComponents.Component -join ', ')."
     }
 
-    $webViewLoaders = @($validationFiles | Where-Object {
-        (($_.FileName -split '\|')[-1]).Equals('WebView2Loader.dll', [System.StringComparison]::OrdinalIgnoreCase)
+    $navegadores = @($validationFiles | Where-Object {
+        (($_.FileName -split '\\|')[-1]) -match 'WebView2|msedgewebview|Evergreen'
     })
-    if ($webViewLoaders.Count -ne 1) {
-        throw 'El MSI debe contener una unica WebView2Loader.dll.'
-    }
-
-    $loaderComponent = @($validationComponents | Where-Object {
-        $_.Component -eq $webViewLoaders[0].Component
-    })
-    if ($loaderComponent.Count -ne 1 -or $loaderComponent.Directory -ne 'TARGETDIR') {
-        throw 'WebView2Loader.dll debe instalarse en la raiz de LanzadorScripts.'
+    if ($navegadores.Count -ne 0) {
+        throw 'El MSI WPF no puede contener componentes de navegador.'
     }
 
     $allUsers = $validationProperties | Where-Object Property -eq 'ALLUSERS'

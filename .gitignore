@@ -8,6 +8,7 @@ Pruebas/bin/
 Pruebas/obj/
 **/TestResults/
 __pycache__/
+.security-tools/
 Recursos/WebView2/
 publicacion/
 publicacion_*/

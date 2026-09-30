@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 1.9.0. -->
+<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 2.0.0. -->
 
 # Manual de administradores y desarrolladores
 
@@ -16,14 +16,14 @@ No se deben mezclar clientes 1.9.0 con los JSON operativos de 1.7.x. La fuente a
 ## Cliente instalado
 
 ```powershell
-msiexec /i LanzadorScripts-1.9.0-x64.msi
-msiexec /i LanzadorScripts-1.9.0-x64.msi /qn /norestart
-msiexec /i LanzadorScripts-1.9.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-1.9.0-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-1.9.0-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-2.0.0-x64.msi
+msiexec /i LanzadorScripts-2.0.0-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-2.0.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-2.0.0-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-2.0.0-x64.msi /qn /norestart
 ```
 
-La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. Las actualizaciones conservan configuracion. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
+La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. La configuracion es centralizada. La version 2.0.0 sustituye WebView2 por controles WPF nativos sin cambiar la base ni su clave. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
 
 ## Administracion central
 
@@ -100,10 +100,10 @@ pwsh -NoProfile -File .\Herramientas\PublicarPortable.ps1
 pwsh -NoProfile -File .\Herramientas\PublicarServidor.ps1
 ```
 
-El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certificado publico incluido permite comprobar el editor; `SHA256SUMS.txt` verifica integridad, pero no sustituye la confianza del certificado. Nunca se versionan o publican PFX, claves DPAPI, bases operativas, perfiles WebView2, `bin` u `obj`.
+El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certificado publico incluido permite comprobar el editor; `SHA256SUMS.txt` verifica integridad, pero no sustituye la confianza del certificado. Nunca se versionan o publican PFX, claves DPAPI, bases operativas, perfiles temporales, `bin` u `obj`.
 
 ## Flujo Git
 
 GitLab es el repositorio principal para ramas y merge requests. GitHub es una replica del mismo commit. Cada cambio debe superar pruebas, auditoria NuGet, Semgrep estricto, Gitleaks y revision CodeRabbit antes de fusionarse. No se utiliza Aikido.
 
-La release `v1.9.0` debe publicar bytes identicos en ambos proveedores y contener los clientes y el servidor 1.9.0, hashes, certificado publico y notas de despliegue.
+La release `v2.0.0` debe publicar bytes identicos en ambos proveedores y contener los clientes y el servidor 2.0.0, hashes, certificado publico y notas de despliegue.

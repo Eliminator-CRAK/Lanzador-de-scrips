@@ -59,20 +59,4 @@ public static class RutasAplicacion
         RutaActualizacionesCliente,
         "Staging");
 
-    public static string RutaRaizWebView2Usuario => Distribucion.EsPortable
-        ? Path.Combine(Distribucion.RaizPortable!, "WebView2", "Sesiones")
-        : Path.Combine(ServicioSesionCliente.RutaActual, "WebView2", "Sesiones");
-
-    public static string RutaRaizWebView2RecuperacionLocal => Distribucion.EsPortable
-        ? Path.Combine(Distribucion.RaizPortable!, "WebView2-Recuperacion", "Sesiones")
-        : Path.Combine(ServicioSesionCliente.RutaActual, "WebView2-Recuperacion", "Sesiones");
-
-    public static string RutaRuntimesWebView2 => Distribucion.EsPortable
-        ? Path.Combine(Distribucion.RaizEjecucionPortable!, "Runtimes", "WebView2")
-        : Path.Combine(
-            RaizProgramFiles,
-            "Runtimes",
-            "WebView2");
-
-    public static string RutaRuntimeWebView2Portable => RutaRuntimesWebView2;
 }

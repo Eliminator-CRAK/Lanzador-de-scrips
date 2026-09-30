@@ -27,8 +27,8 @@ $salidaStaging = Join-Path $raiz 'obj\PublicacionStaging'
 $salidaRuntimeStaging = Join-Path $raiz 'obj\PublicacionRuntime'
 $salidaLanzadorNativo = Join-Path $raiz 'obj\LanzadorNativoBuild'
 $salidaAnterior = Join-Path $raiz "obj\PublicacionAnterior-$PID"
-$tamanoMinimoExe = 209715200
-$tamanoMinimoMsi = 209715200
+$tamanoMinimoExe = 20MB
+$tamanoMinimoMsi = 20MB
 $scriptCompilarMsi = Join-Path $PSScriptRoot 'CompilarMsi.ps1'
 $arquitecturaPeX64 = 0x8664
 $raizCompleta = [System.IO.Path]::GetFullPath($raiz).TrimEnd(
@@ -303,8 +303,6 @@ function New-NativeLauncher {
     param(
         [string]$RutaPayload,
         [string]$HashPayload,
-        [string]$RutaRuntimeWebView2,
-        [string]$HashRuntimeWebView2,
         [string]$RutaSalida
     )
 
@@ -330,11 +328,6 @@ function New-NativeLauncher {
         $archivoHash,
         $HashPayload,
         [System.Text.Encoding]::ASCII)
-    $archivoHashWebView2 = Join-Path $lanzadorNativoCompleta 'webview2.sha256'
-    [System.IO.File]::WriteAllText(
-        $archivoHashWebView2,
-        $HashRuntimeWebView2,
-        [System.Text.Encoding]::ASCII)
 
     $partesVersion = $versionArchivoEsperada.Split('.')
     if ($partesVersion.Count -ne 4 -or
@@ -359,12 +352,6 @@ function New-NativeLauncher {
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__RUTA_HASH_PAYLOAD__',
         (ConvertTo-RcLiteral $archivoHash))
-    $contenidoRecursos = $contenidoRecursos.Replace(
-        '__RUTA_WEBVIEW2_RUNTIME__',
-        (ConvertTo-RcLiteral $RutaRuntimeWebView2))
-    $contenidoRecursos = $contenidoRecursos.Replace(
-        '__RUTA_HASH_WEBVIEW2_RUNTIME__',
-        (ConvertTo-RcLiteral $archivoHashWebView2))
     $contenidoRecursos = $contenidoRecursos.Replace(
         '__VERSION_ARCHIVO_COMAS__',
         ($partesVersion -join ','))
@@ -446,9 +433,7 @@ function Assert-NativeLauncherPayload {
     param(
         [string]$RutaLanzador,
         [string]$RutaPayload,
-        [string]$HashPayload,
-        [string]$RutaRuntimeWebView2,
-        [string]$HashRuntimeWebView2
+        [string]$HashPayload
     )
 
     # Comprueba que el EXE exterior contiene el runtime firmado esperado.
@@ -475,30 +460,7 @@ function Assert-NativeLauncherPayload {
         throw "El recurso .NET embebido esta corrupto. Esperado: $HashPayload. Detectado: $hashPayloadEmbebido."
     }
 
-    $tamanoWebView2 = [LanzadorScripts.Publicacion.RecursosNativos]::ObtenerTamano(
-        $RutaLanzador,
-        103)
-    if ($tamanoWebView2 -ne (Get-Item -LiteralPath $RutaRuntimeWebView2).Length) {
-        throw "El recurso WebView2 embebido tiene un tamano inesperado: $tamanoWebView2."
-    }
 
-    $hashWebView2Publicado = [LanzadorScripts.Publicacion.RecursosNativos]::LeerAscii(
-        $RutaLanzador,
-        104).Trim()
-    if (-not $hashWebView2Publicado.Equals(
-            $HashRuntimeWebView2,
-            [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "El lanzador nativo contiene un hash WebView2 inesperado: $hashWebView2Publicado."
-    }
-
-    $hashWebView2Embebido = [LanzadorScripts.Publicacion.RecursosNativos]::ObtenerSha256(
-        $RutaLanzador,
-        103)
-    if (-not $hashWebView2Embebido.Equals(
-            $HashRuntimeWebView2,
-            [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "El recurso WebView2 nativo esta corrupto. Esperado: $HashRuntimeWebView2. Detectado: $hashWebView2Embebido."
-    }
 }
 
 function Set-ExecutableSignature {
@@ -554,7 +516,7 @@ function Assert-PortableRuntimePayload {
         [string]$RutaCarpeta
     )
 
-    # Impide que el runtime WebView2 vuelva a duplicarse dentro del payload .NET.
+    # Valida que la portable contiene solo el payload WPF autocontenido.
     if (-not (Test-Path -LiteralPath $RutaPayload -PathType Leaf)) {
         throw "No se encontro el payload .NET portable: $RutaPayload"
     }
@@ -569,7 +531,7 @@ function Assert-PortableRuntimePayload {
 
     $tamanoMaximoPayload = 160MB
     if ($archivosRuntime[0].Length -gt $tamanoMaximoPayload) {
-        throw "El payload .NET portable supera 160 MB y puede contener WebView2 duplicado."
+        throw "El payload .NET portable supera el limite de 160 MB."
     }
 }
 
@@ -691,11 +653,6 @@ Invoke-NativeChecked -Descripcion 'dotnet restore' -Comando {
     dotnet restore (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj')
 }
 
-$evergreen = & (Join-Path $PSScriptRoot 'PrepararWebView2Evergreen.ps1')
-$runtimeWebView2Source = Split-Path -Parent $evergreen.Ruta
-$instaladorEvergreen = $evergreen.Ruta
-$hashInstaladorEvergreen = $evergreen.Sha256
-
 Write-Host 'Compilando aplicacion...'
 Invoke-NativeChecked -Descripcion 'dotnet build' -Comando {
     dotnet build $proyecto -c Release --no-restore
@@ -729,8 +686,6 @@ Invoke-NativeChecked -Descripcion 'dotnet publish' -Comando {
         -p:PublishSingleFile=true `
         -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:EnableCompressionInSingleFile=true `
-        -p:EmbedWebView2Runtime=false `
-        -p:IncludeInstalledWebView2Runtime=false `
         -p:PublishReadyToRun=true `
         -p:PublishTrimmed=false `
         -p:UseAppHost=true `
@@ -769,15 +724,11 @@ $exePortable = Join-Path $stagingCompleta $nombrePortableFinal
 New-NativeLauncher `
     -RutaPayload $runtimeExe `
     -HashPayload $hashRuntimeExe `
-    -RutaRuntimeWebView2 $instaladorEvergreen `
-    -HashRuntimeWebView2 $hashInstaladorEvergreen `
     -RutaSalida $exePortable
 Assert-NativeLauncherPayload `
     -RutaLanzador $exePortable `
     -RutaPayload $runtimeExe `
-    -HashPayload $hashRuntimeExe `
-    -RutaRuntimeWebView2 $instaladorEvergreen `
-    -HashRuntimeWebView2 $hashInstaladorEvergreen
+    -HashPayload $hashRuntimeExe
 
 if ($null -ne $certificadoFirma) {
     Write-Host 'Firmando el lanzador portable final...'
@@ -816,12 +767,10 @@ if ($null -ne $certificadoFirma) {
 
     & $scriptCompilarMsi `
         -CertThumbprint $certificadoFirma.Thumbprint `
-        -TimestampServer $TimestampServer `
-        -RutaRuntimeWebView2 $runtimeWebView2Source
+        -TimestampServer $TimestampServer
 }
 else {
     & $scriptCompilarMsi `
-        -RutaRuntimeWebView2 $runtimeWebView2Source `
         -DesarrolloSinFirma
 }
 

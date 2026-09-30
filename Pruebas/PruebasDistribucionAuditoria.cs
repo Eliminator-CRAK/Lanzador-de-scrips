@@ -96,11 +96,9 @@ public sealed class PruebasDistribucionAuditoria
             RutasAplicacion.RutaConfiguracionUsuario,
             RutasAplicacion.RutaLogsUsuario,
             RutasAplicacion.RutaTokensUsuario,
-            RutasAplicacion.RutaStaging,
-            RutasAplicacion.RutaRaizWebView2Usuario,
-            RutasAplicacion.RutaRaizWebView2RecuperacionLocal
+            RutasAplicacion.RutaStaging
         ];
-        var rutaRuntime = RutasAplicacion.RutaRuntimesWebView2;
+        var rutaRuntime = RutasAplicacion.Distribucion.RaizEjecucionPortable!;
 
         Assert.All(rutasDatos, ruta =>
             Assert.True(ServicioRutasSeguras.EstaDentroDeCarpeta(sesionDatos, ruta), ruta));
@@ -119,7 +117,7 @@ public sealed class PruebasDistribucionAuditoria
     public void LimpiezaConfinadaEliminaSoloLaSesionAutorizada()
     {
         using var temporal = CarpetaTemporal.Crear();
-        var raiz = Path.Combine(temporal.Ruta, "WebView2");
+        var raiz = Path.Combine(temporal.Ruta, "Sesiones");
         var sesion = Path.Combine(raiz, $"Sesion-{Guid.NewGuid():N}");
         var fuera = Path.Combine(temporal.Ruta, "Conservar");
         Directory.CreateDirectory(Path.Combine(sesion, "Datos"));
@@ -141,7 +139,7 @@ public sealed class PruebasDistribucionAuditoria
     public void LimpiezaConfinadaNoSigueEnlacesDeDirectorio()
     {
         using var temporal = CarpetaTemporal.Crear();
-        var raiz = Path.Combine(temporal.Ruta, "WebView2");
+        var raiz = Path.Combine(temporal.Ruta, "Sesiones");
         var sesion = Path.Combine(raiz, $"Sesion-{Guid.NewGuid():N}");
         var destino = Path.Combine(temporal.Ruta, "DestinoExterno");
         var enlace = Path.Combine(sesion, "EnlaceExterno");

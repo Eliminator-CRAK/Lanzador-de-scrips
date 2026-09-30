@@ -2,6 +2,8 @@
 // Descripcion: Gestiona ejecuciones de scripts solicitadas por el cliente web.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -147,40 +149,16 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    public async Task EnviarEntradaAsync(Guid id, string texto)
+    public Task EnviarEntradaAsync(Guid id, string texto)
     {
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion))
-        {
-            return;
-        }
-
-        if (ejecucion.CancelarBroker is not null)
-        {
-            ejecucion.AgregarEvento("error", "> Entrada interactiva no disponible para ejecuciones elevadas por broker.", "#F44747");
-            return;
-        }
-
-        if (ejecucion.Proceso is null)
-        {
-            return;
-        }
-
-        if (texto.Length > MaximoCaracteresEntrada)
-        {
-            ejecucion.AgregarEvento("error", "> Entrada rechazada por exceder el tamano maximo permitido.", "#F44747");
-            return;
-        }
-
-        try
-        {
-            await ejecucion.Proceso.StandardInput.WriteLineAsync(texto);
-            await ejecucion.Proceso.StandardInput.FlushAsync();
-        }
-        catch (Exception ex)
-        {
-            var mensaje = SanitizarMensaje(ejecucion.Script, ex.Message);
-            ejecucion.AgregarEvento("error", $"> Error al enviar entrada: {mensaje}", "#F44747");
-        }
+        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada)
+            throw new InvalidOperationException("La ejecucion no admite mas respuestas.");
+        if (texto.Length > MaximoCaracteresEntrada || texto.Contains('\r') || texto.Contains('\n') || texto.Contains('\0'))
+            throw new ArgumentException("La respuesta debe ser una linea de hasta 8192 caracteres.");
+        // Conserva respuestas recibidas mientras el proceso o el broker termina de arrancar.
+        if (!ejecucion.Entradas.Writer.TryWrite(texto))
+            throw new InvalidOperationException("La cola de respuestas esta llena o la ejecucion ha terminado.");
+        return Task.CompletedTask;
     }
 
     public async Task EnviarEventosAsync(Guid id, HttpListenerRequest peticion, HttpListenerResponse respuesta, CancellationToken cancelacion)
@@ -237,6 +215,28 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
         catch (ObjectDisposedException)
         {
+        }
+    }
+
+    public async IAsyncEnumerable<EventoCliente> ObservarEventosAsync(Guid id, [EnumeratorCancellation] CancellationToken cancelacion = default)
+    {
+        // Entrega las mismas salidas a WPF directamente, sin SSE ni servidor HTTP.
+        if (!_ejecuciones.TryGetValue(id, out var ejecucion)) throw new ArgumentException("Ejecucion no encontrada.");
+        var indice = 0;
+        while (!cancelacion.IsCancellationRequested)
+        {
+            foreach (var evento in ejecucion.ObtenerEventosDesde(indice))
+            {
+                indice++;
+                yield return evento;
+            }
+            if (ejecucion.Finalizada && indice >= ejecucion.TotalEventos)
+            {
+                // La finalizacion se notifica incluso cuando la salida fue truncada.
+                yield return new EventoCliente("fin", string.Empty, null, true);
+                yield break;
+            }
+            await ejecucion.EsperarEventoAsync(TimeSpan.FromSeconds(1), cancelacion);
         }
     }
 
@@ -361,6 +361,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
             var salida = LeerFlujoAsync(proceso.StandardOutput, ejecucion, log, "info", null);
             var error = LeerFlujoAsync(proceso.StandardError, ejecucion, log, "error", "#F44747");
             using var tiempoMaximo = new CancellationTokenSource(TiempoMaximoEjecucion);
+            using var cancelacionEntrada = new CancellationTokenSource();
+            var entrada = EscribirEntradasProcesoAsync(ejecucion, proceso, cancelacionEntrada.Token);
             try
             {
                 await proceso.WaitForExitAsync(tiempoMaximo.Token);
@@ -380,6 +382,12 @@ public sealed class GestorEjecucionesWeb : IDisposable
                 }
 
                 return;
+            }
+            finally
+            {
+                cancelacionEntrada.Cancel();
+                ejecucion.Entradas.Writer.TryComplete();
+                await entrada;
             }
 
             await Task.WhenAll(salida, error);
@@ -418,6 +426,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
         finally
         {
+            ejecucion.Entradas.Writer.TryComplete();
             var auditoria = await _servicioAuditoria.RegistrarFinEjecucionAsync(
                 ejecucion.Id,
                 ejecucion.Script,
@@ -466,7 +475,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         var resultado = new ResultadoEjecucionBroker("error", null, "Broker elevado sin resultado final.");
         try
         {
-            await foreach (var evento in _servicioBrokerElevado.EjecutarAsync(scriptPreparado, ejecucion.PermitirExecutionPolicyBypass, tiempoMaximo.Token))
+            await foreach (var evento in _servicioBrokerElevado.EjecutarAsync(scriptPreparado, ejecucion.PermitirExecutionPolicyBypass, tiempoMaximo.Token, ejecucion.Entradas.Reader))
             {
                 if (!string.IsNullOrWhiteSpace(evento.Mensaje))
                 {
@@ -617,7 +626,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    private static Process CrearProceso(ScriptInterno script, bool permitirExecutionPolicyBypass)
+    internal static Process CrearProceso(ScriptInterno script, bool permitirExecutionPolicyBypass)
     {
         var inicio = new ProcessStartInfo
         {
@@ -664,6 +673,24 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
 
         return new Process { StartInfo = inicio, EnableRaisingEvents = true };
+    }
+
+    private static async Task EscribirEntradasProcesoAsync(EjecucionWeb ejecucion, Process proceso, CancellationToken cancelacion)
+    {
+        try
+        {
+            await foreach (var texto in ejecucion.Entradas.Reader.ReadAllAsync(cancelacion))
+            {
+                await proceso.StandardInput.WriteLineAsync(texto.AsMemory(), cancelacion);
+                await proceso.StandardInput.FlushAsync(cancelacion);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            if (!cancelacion.IsCancellationRequested)
+                ejecucion.AgregarEvento("error", "> El proceso dejo de admitir respuestas.", "#F44747");
+        }
     }
 
     private static string ObtenerRutaPowerShell()
@@ -1070,6 +1097,10 @@ function global:Get-Credential {
         public string? RutaScriptPreparado { get; set; }
 
         public Func<Task>? CancelarBroker { get; set; }
+        public Channel<string> Entradas { get; } = Channel.CreateBounded<string>(new BoundedChannelOptions(32)
+        {
+            SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait
+        });
 
         public Task? TareaEjecucion { get; set; }
 

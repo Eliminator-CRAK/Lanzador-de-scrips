@@ -30,16 +30,6 @@ public partial class Aplicacion : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        if (e.Args.Length == 1 && e.Args[0] == "--preparar-webview2")
-        {
-            try
-            {
-                Task.Run(ServicioWebView2Evergreen.AsegurarAsync).GetAwaiter().GetResult();
-                Shutdown(0);
-            }
-            catch { Shutdown(1603); }
-            return;
-        }
         if (ServicioBrokerElevado.EsSolicitudBroker(e.Args))
         {
             Shutdown(ServicioBrokerElevado.EjecutarModoBroker(e.Args));
