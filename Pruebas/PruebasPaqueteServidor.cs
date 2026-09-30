@@ -154,6 +154,11 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("PublicarServidor.ps1", etapas, StringComparison.Ordinal);
         Assert.Contains("$versionAplicacion.NombreServidor", etapas, StringComparison.Ordinal);
         Assert.Contains("SHA256SUMS.txt no cubre", etapas, StringComparison.Ordinal);
+        Assert.Contains("runs-on: windows-2025", github, StringComparison.Ordinal);
+        Assert.Contains("-Etapa PublicarValidacionNativa", github, StringComparison.Ordinal);
+        Assert.Contains("--logger trx", github, StringComparison.Ordinal);
+        Assert.DoesNotContain("self-hosted", github, StringComparison.Ordinal);
+        Assert.DoesNotContain("WINDOWS_SIGNING_CERT", github, StringComparison.Ordinal);
     }
 
     [Fact]

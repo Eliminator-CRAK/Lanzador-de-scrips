@@ -128,4 +128,6 @@ Antes de publicar se ejecutan:
 
 No se utiliza Aikido. GitLab es el flujo principal de merge request y GitHub mantiene una replica exacta. Ambos `main` deben terminar en el mismo commit.
 
+GitHub ejecuta las pruebas WPF, las capturas y la publicacion de validacion en Windows alojado, sin certificados privados. GitLab compila los proyectos con destino Windows y ejecuta los analisis de seguridad; sus ejecutores Linux no ejecutan la interfaz WPF. La creacion, comprobacion y firma Authenticode de los instaladores se realiza en el equipo Windows de publicacion antes de subir los mismos archivos a ambos proveedores.
+
 Consulta [Manual_Servidor.md](Manual_Servidor.md), [Manual_Usuarios.md](Manual_Usuarios.md) y [Manual_Administradores_Desarrolladores.md](Manual_Administradores_Desarrolladores.md) para el procedimiento operativo.
