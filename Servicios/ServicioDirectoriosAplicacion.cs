@@ -28,17 +28,9 @@ public static class ServicioDirectoriosAplicacion
 
     public static void PrepararEstructuraAplicacion()
     {
-        if (RutasAplicacion.Distribucion.EsPortable)
-        {
-            // Aisla todos los datos dentro de la sesion temporal validada.
-            PrepararDirectorioPrivado(RutasAplicacion.Distribucion.RaizPortable!);
-            PrepararDatosUsuario();
-            return;
-        }
-
-        // Protege la raiz comun antes de crear los datos del usuario.
-        PrepararDirectorioBase(RutasAplicacion.RaizProgramData);
-        PrepararDirectorioBase(RutasAplicacion.RutaUsuarios);
+        // WebView2 hereda los permisos normales del perfil; solo Datos requiere ACL privada.
+        RechazarPuntosReanalisis(ServicioSesionCliente.RutaActual);
+        Directory.CreateDirectory(ServicioSesionCliente.RutaActual);
         PrepararDatosUsuario();
     }
 
@@ -154,7 +146,7 @@ public static class ServicioDirectoriosAplicacion
         foreach (var segmento in segmentos)
         {
             actual = Path.Combine(actual, segmento);
-            if (Directory.Exists(actual)
+            if ((Directory.Exists(actual) || File.Exists(actual))
                 && File.GetAttributes(actual).HasFlag(FileAttributes.ReparsePoint))
             {
                 throw new IOException($"La ruta local no puede contener puntos de reanalisis: {actual}");

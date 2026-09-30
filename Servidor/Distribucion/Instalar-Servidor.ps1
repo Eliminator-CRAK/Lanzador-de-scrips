@@ -165,8 +165,7 @@ function Assert-IntegridadPaquete {
             $servicioOrigen,
             $administracionOrigen,
             (Join-Path $raizPaquete 'Instalar-Servidor.ps1'),
-            (Join-Path $raizPaquete 'Desinstalar-Servidor.ps1'),
-            (Join-Path $raizPaquete 'Crear-ConfiguracionCliente.ps1'))) {
+            (Join-Path $raizPaquete 'Desinstalar-Servidor.ps1'))) {
         $firma = Get-AuthenticodeSignature -LiteralPath $rutaFirmada
         $huella = if ($null -eq $firma.SignerCertificate) {
             ''
@@ -226,7 +225,7 @@ if ($null -ne $servicioActual -and $servicioActual.Status -ne 'Stopped') {
 Assert-SinReparse -Ruta $destino
 Copy-ArchivoSeguro -Origen $servicioOrigen -Destino $servicioDestino
 Copy-ArchivoSeguro -Origen $administracionOrigen -Destino $administracionDestino
-foreach ($nombre in @('Desinstalar-Servidor.ps1', 'Crear-ConfiguracionCliente.ps1', 'LEEME-Servidor.txt')) {
+foreach ($nombre in @('Desinstalar-Servidor.ps1', 'LEEME-Servidor.txt')) {
     $origen = Join-Path $raizPaquete $nombre
     if ([System.IO.File]::Exists($origen)) {
         Copy-ArchivoSeguro -Origen $origen -Destino (Join-Path $destino $nombre)

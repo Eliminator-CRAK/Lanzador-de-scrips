@@ -26,9 +26,9 @@
     <AllowedReferenceRelatedFileExtensions></AllowedReferenceRelatedFileExtensions>
     <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
     <WebView2RuntimeZip>$(BaseIntermediateOutputPath)WebView2Runtime\WebView2Runtime.zip</WebView2RuntimeZip>
-    <EmbedWebView2Runtime Condition="'$(EmbedWebView2Runtime)' == ''">true</EmbedWebView2Runtime>
+    <EmbedWebView2Runtime Condition="'$(EmbedWebView2Runtime)' == ''">false</EmbedWebView2Runtime>
     <IncludeInstalledWebView2Runtime Condition="'$(IncludeInstalledWebView2Runtime)' == ''">false</IncludeInstalledWebView2Runtime>
-    <InstalledWebView2RuntimeSource Condition="'$(InstalledWebView2RuntimeSource)' == ''">$(MSBuildProjectDirectory)\Recursos\WebView2\FixedRuntime-150.0.4078.48-x64\Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64</InstalledWebView2RuntimeSource>
+    <InstalledWebView2RuntimeSource Condition="'$(InstalledWebView2RuntimeSource)' == ''">$(MSBuildProjectDirectory)\Recursos\WebView2\Evergreen</InstalledWebView2RuntimeSource>
     <LANZADOR_GIT_REVISION Condition="'$(LANZADOR_GIT_REVISION)' == ''">dev</LANZADOR_GIT_REVISION>
   </PropertyGroup>
 
@@ -105,9 +105,9 @@
     <ItemGroup>
       <ResolvedFileToPublish Remove="$(InstalledWebView2RuntimeSource)\**\*" />
       <RuntimeWebView2Instalado Remove="@(RuntimeWebView2Instalado)" />
-      <RuntimeWebView2Instalado Include="$(InstalledWebView2RuntimeSource)\**\*" />
+      <RuntimeWebView2Instalado Include="$(InstalledWebView2RuntimeSource)\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" />
       <ResolvedFileToPublish Include="@(RuntimeWebView2Instalado)">
-        <RelativePath>Runtimes\WebView2\Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64\%(RuntimeWebView2Instalado.RecursiveDir)%(RuntimeWebView2Instalado.Filename)%(RuntimeWebView2Instalado.Extension)</RelativePath>
+        <RelativePath>Prerrequisitos\%(RuntimeWebView2Instalado.Filename)%(RuntimeWebView2Instalado.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
         <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
       </ResolvedFileToPublish>
@@ -116,8 +116,8 @@
 
   <Target Name="ValidarRuntimeWebView2Instalado"
           BeforeTargets="ComputeFilesToPublish"
-          Condition="'$(IncludeInstalledWebView2Runtime)' == 'true' and !Exists('$(InstalledWebView2RuntimeSource)\msedgewebview2.exe')">
-    <Error Text="No se encontro WebView2 Fixed Runtime en $(InstalledWebView2RuntimeSource)." />
+          Condition="'$(IncludeInstalledWebView2Runtime)' == 'true' and !Exists('$(InstalledWebView2RuntimeSource)\MicrosoftEdgeWebView2RuntimeInstallerX64.exe')">
+    <Error Text="Ejecute Herramientas/PrepararWebView2Evergreen.ps1 antes de publicar el MSI." />
   </Target>
 
   <Target Name="ValidarActualizadorInstalado"

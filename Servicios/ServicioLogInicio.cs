@@ -11,6 +11,14 @@ public sealed class ServicioLogInicio
 {
     private static readonly SemaphoreSlim Bloqueo = new(1, 1);
     private static volatile string ultimoError = string.Empty;
+    private static bool _cerrado;
+
+    internal static void Cerrar()
+    {
+        Bloqueo.Wait();
+        try { _cerrado = true; }
+        finally { Bloqueo.Release(); }
+    }
 
     public static string UltimoError => ultimoError;
 
@@ -51,8 +59,6 @@ public sealed class ServicioLogInicio
     {
         try
         {
-            ServicioDirectoriosAplicacion.PrepararDatosUsuario();
-            Directory.CreateDirectory(RutasAplicacion.RutaLogsUsuario);
             var ruta = Path.Combine(RutasAplicacion.RutaLogsUsuario, $"arranque-{DateTime.UtcNow:yyyyMMdd}.jsonl");
             var entrada = new EntradaLogInicio(
                 ServicioRedaccionSecretos.Sanitizar(evento),
@@ -63,6 +69,9 @@ public sealed class ServicioLogInicio
             await Bloqueo.WaitAsync().ConfigureAwait(false);
             try
             {
+                if (_cerrado) return;
+                ServicioDirectoriosAplicacion.PrepararDatosUsuario();
+                Directory.CreateDirectory(RutasAplicacion.RutaLogsUsuario);
                 await File.AppendAllTextAsync(ruta, json + Environment.NewLine, Encoding.UTF8)
                     .ConfigureAwait(false);
             }

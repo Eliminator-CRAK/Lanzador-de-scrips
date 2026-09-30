@@ -1,19 +1,19 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 1.9.1
+# LanzadorScripts 1.10.0
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. El cliente y el servidor 1.9.1 administran permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz WPF con WebView2. El cliente y el servidor 1.10.0 administran configuracion global, permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
 
 La version 1.9.1 incorpora [monitorizacion tecnica en GitLab con OpenTelemetry](Documentacion/MonitorizacionGitLab.md), sin exportar datos personales, scripts ni auditorias. Se puede desactivar con `LANZADOR_MONITORIZACION_HABILITADA=false`.
 
 ## Entregables
 
-- `LanzadorScripts-1.9.1-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-1.9.1-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-1.9.1-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-1.10.0-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-1.10.0-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-1.10.0-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
-Los tres paquetes son autocontenidos para Windows x64 y no descargan .NET ni WebView2 durante la ejecucion.
+Los tres paquetes son autocontenidos para Windows x64. Los clientes incluyen el instalador oficial sin conexion de WebView2 Evergreen: reutilizan el runtime compartido compatible o lo instalan elevado. WebView2 permanece instalado, tambien al cerrar la portable. Su actualizacion posterior la administra Microsoft Edge Update o la politica corporativa.
 
 ## Arquitectura
 
@@ -47,16 +47,16 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Extraer `LanzadorScripts_Servidor-1.9.1-x64.zip` en `MAD002MICROPRU`.
+1. Respaldar la base y su clave y extraer `LanzadorScripts_Servidor-1.10.0-x64.zip` en `MAD002MICROPRU`.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
 3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado, que el resumen muestra `Kerberos remoto preparado` y que el firewall de dominio admite TCP 47831.
 4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.
 5. Revisar **Actualizaciones** y confirmar el recurso `LanzadorScriptsActualizaciones$`.
-6. Generar un `.lanzadorconfig` con `Crear-ConfiguracionCliente.ps1` y distribuirlo junto al MSI o la portable.
+6. En **Clientes**, revisar la ruta UNC de scripts y el limite global de ejecuciones simultaneas. Guardar antes de distribuir los clientes 1.10.0.
 
 La cuenta elevada que realiza la instalacion se registra como primer administrador. La identidad se entrega al servicio mediante un archivo DPAPI de un solo uso, se elimina tras crear o validar la base y no se guarda en `configuracion-servidor.json`.
 
-El archivo `.lanzadorconfig` solo contiene DNS, puerto y ruta de scripts. No contiene permisos, certificados privados ni secretos.
+Los clientes 1.10.0 no leen configuraciones locales ni importan `.lanzadorconfig`. La configuracion comun se guarda cifrada en la base del servidor. Los clientes anteriores siguen usando su formato anterior; la herramienta historica de generacion se conserva en el codigo, pero no se distribuye en el ZIP nuevo.
 
 ## Cliente
 
@@ -68,15 +68,21 @@ Puerto: 47831
 Scripts: \\MAD002MICROPRU.mad.ae.aena.es\R$\SCRIPS
 ```
 
-La cuenta de dominio debe estar activa en la base central y disponer de lectura sobre la carpeta compartida de scripts. La ejecucion queda bloqueada si no se confirman permisos, catalogo o el evento inicial de auditoria.
+La cuenta de dominio debe estar activa en la base central y disponer de lectura sobre la carpeta compartida de scripts. La ejecucion queda bloqueada si no se confirman configuracion, permisos, catalogo o el evento inicial de auditoria. No hay modo sin conexion. Una desconexion no cancela scripts ya iniciados: sus resultados se reintentan en memoria y bloquean nuevas ejecuciones hasta confirmarse. Al cerrar se espera hasta 30 segundos; un cierre forzado puede perder un resultado final, pero el inicio ya registrado permanece. La salida de consola no se guarda en disco ni se envia como auditoria.
+
+El buscador recorre todas las carpetas autorizadas, muestra la ruta relativa de cada coincidencia y vuelve a la carpeta anterior al vaciarlo. Cambiar de carpeta o refrescar no destruye las consolas abiertas.
 
 Los administradores pueden abrir la auditoria con `Ctrl+Shift+M`. La ventana permite filtrar por usuario, fecha, resultado y script. En la version instalada, el boton de cerrar mantiene el cliente en la bandeja y **Cerrar** en su menu finaliza la aplicacion.
 
 El MSI 1.9.0 se instala manualmente una vez. El cliente instalado consulta una sola vez al iniciar y, cuando el servidor publica una version posterior valida, muestra **Actualizar a X.Y.Z**. Ignorar el boton no bloquea la aplicacion ni guarda aplazamientos. La portable nunca consulta ni instala actualizaciones.
 
-Los MSI se publican copiandolos a `C:\ProgramData\LanzadorScriptsServidor\Actualizaciones`. El servicio selecciona la version valida mas alta y rechaza paquetes incompletos, enlazados, de otra arquitectura, producto, `UpgradeCode`, firma o certificado. Para retirar una version basta con renombrar o eliminar su MSI; las anteriores se conservan para rollback manual.
+En **Actualizaciones > Seleccionar MSI**, el administrador elige un archivo, revisa version, firma, tamano y SHA-256 y confirma la publicacion atomica. Una misma version no se sustituye por contenido distinto. Tambien se admite copiar MSI completos a `C:\ProgramData\LanzadorScriptsServidor\Actualizaciones`. El servicio selecciona la version valida mas alta y rechaza paquetes incompletos, enlazados, de otra arquitectura, producto, `UpgradeCode`, firma o certificado. Para retirar una version basta con renombrar o eliminar su MSI; las anteriores se conservan para rollback manual.
 
 La portable no crea icono de bandeja: el boton rojo cierra el proceso. Guarda sus datos bajo `%TEMP%\LanzadorScripts\Portable\<sesion>` y ejecuta sus binarios desde una sesion protegida bajo `C:\Program Files\LanzadorScriptsPortable\Sesiones`. Elimina ambas sesiones al terminar y limpia restos abandonados en el siguiente arranque.
+
+El cliente instalado conserva solo sus archivos instalados. Los datos propios de cada ejecucion se crean en `%LOCALAPPDATA%\LanzadorScripts\SesionesCliente\Sesion-<guid>` y se eliminan al cierre definitivo; un bloqueo permite recuperar sesiones abandonadas sin borrar una instancia activa. El staging de una actualizacion pendiente se limpia en el siguiente arranque. Windows, antivirus y WebView2 pueden generar registros propios que la aplicacion no debe borrar. No se eliminan exportaciones explicitas, datos remotos ni configuraciones historicas de versiones anteriores.
+
+Actualizar primero el servidor y despues los clientes. El servidor agrega un metadato cifrado sin cambiar los permisos ni el catalogo. Para volver a un servidor anterior, restaurar conjuntamente su copia previa de base y clave: su comprobador de integridad no conoce el nuevo metadato. No recrear la base ni borrar la clave durante la actualizacion.
 
 ## Compilacion
 

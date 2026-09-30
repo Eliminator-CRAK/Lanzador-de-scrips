@@ -405,10 +405,12 @@ try {
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Migrate16', 3074, 'LanzadorInstallerHelper', '--migrar-1.6')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Cleanup', 3074, 'LanzadorInstallerHelper', '--limpiar-desinstalacion')
     Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_Launch', 210, $appFile, $null)
+    Add-MsiRow -Installer $installer -Database $database -Table 'CustomAction' -Columns @('Action', 'Type', 'Source', 'Target') -Values @('LS_WebView2', 3090, $appFile, '--preparar-webview2')
 
     Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_CheckClose', 'NOT PATCH AND ACTION <> "ADMIN"', 1450)
     Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_Migrate16', 'NOT Installed AND NOT REMOVE~="ALL" AND NOT PATCH AND ACTION <> "ADMIN"', 1510)
     Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_Cleanup', 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND ACTION <> "ADMIN"', 3650)
+    Add-MsiRow -Installer $installer -Database $database -Table 'InstallExecuteSequence' -Columns @('Action', 'Condition', 'Sequence') -Values @('LS_WebView2', 'NOT REMOVE~="ALL" AND ACTION <> "ADMIN"', 4100)
 
     Add-MsiRow -Installer $installer -Database $database -Table 'Directory' -Columns @('Directory', 'Directory_Parent', 'DefaultDir') -Values @('LanzadorScriptsMenuFolder', 'ProgramMenuFolder', 'LANZAD~1|LanzadorScripts')
 

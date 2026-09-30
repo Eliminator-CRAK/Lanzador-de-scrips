@@ -6,7 +6,6 @@ param(
     [string]$CertPath = '',
     [securestring]$CertPassword,
     [string]$TimestampServer = 'http://timestamp.digicert.com',
-    [string]$RutaRuntimeWebView2Portable = '',
     [switch]$AllowUnsignedForDev
 )
 
@@ -16,7 +15,7 @@ $ProgressPreference = 'SilentlyContinue'
 if ($PSVersionTable.PSEdition -ne 'Core' -or
     $PSVersionTable.PSVersion.Major -ne 7 -or
     $PSVersionTable.PSVersion.Minor -ne 6) {
-    throw 'Ejecute esta publicacion con pwsh 7.6.x para generar el ZIP WebView2 reproducible.'
+    throw 'Ejecute esta publicacion con pwsh 7.6.x para mantener una publicacion reproducible.'
 }
 
 $raiz = Split-Path -Parent $PSScriptRoot
@@ -31,15 +30,6 @@ $salidaAnterior = Join-Path $raiz "obj\PublicacionAnterior-$PID"
 $tamanoMinimoExe = 209715200
 $tamanoMinimoMsi = 209715200
 $scriptCompilarMsi = Join-Path $PSScriptRoot 'CompilarMsi.ps1'
-$cacheWebView2 = Join-Path $raiz 'Recursos\WebView2'
-$runtimeZipIntermedio = Join-Path $raiz 'obj\WebView2Runtime\WebView2Runtime.zip'
-$versionWebView2Fijada = '150.0.4078.48'
-$nombreCabWebView2Fijado = "Microsoft.WebView2.FixedVersionRuntime.$versionWebView2Fijada.x64.cab"
-$urlCabWebView2Fijado = 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/60926d99-f201-46bb-91a0-d868dc06b275/Microsoft.WebView2.FixedVersionRuntime.150.0.4078.48.x64.cab'
-$hashCabWebView2Fijado = '9E347BA96D031E381D1041D1C20FD434D457875C422EEAC3F40EEE4A5E0AB5C0'
-$hashZipWebView2Fijado = '80C46993E2D5922EFDF6463ACDA737BA0525993D4D7757D377C38F50D8BB417B'
-$hashEjecutableWebView2Fijado = '30428A9075E5706B5E4A77E324B4331326566CDA027F49A8922089733C728859'
-$hashContenidoRuntimeFijado = '3345CEC7106D6A8EB3A5770DFF97DF36CB0750DF005331B54AB551CDF11E3DFB'
 $arquitecturaPeX64 = 0x8664
 $raizCompleta = [System.IO.Path]::GetFullPath($raiz).TrimEnd(
     [System.IO.Path]::DirectorySeparatorChar,
@@ -528,25 +518,6 @@ function Set-ExecutableSignature {
     }
 }
 
-function Assert-FileSha256 {
-    param(
-        [string]$Ruta,
-        [string]$HashEsperado,
-        [string]$Descripcion
-    )
-
-    if (-not (Test-Path -LiteralPath $Ruta -PathType Leaf)) {
-        throw "No se encontro $Descripcion`: $Ruta"
-    }
-
-    $hashActual = (Get-FileHash -LiteralPath $Ruta -Algorithm SHA256).Hash
-    if (-not $hashActual.Equals($HashEsperado, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "El SHA-256 de $Descripcion no coincide. Esperado: $HashEsperado. Detectado: $hashActual."
-    }
-
-    return $hashActual
-}
-
 function Get-PortableExecutableMachine {
     param(
         [string]$Ruta
@@ -575,268 +546,6 @@ function Get-PortableExecutableMachine {
         $lector.Dispose()
         $flujo.Dispose()
     }
-}
-
-function ConvertTo-WindowsExtendedPath {
-    param(
-        [string]$Ruta
-    )
-
-    # Permite que las API Win32 lean metadatos en rutas superiores a MAX_PATH.
-    $rutaCompleta = [System.IO.Path]::GetFullPath($Ruta)
-    if ($rutaCompleta.StartsWith('\\?\', [System.StringComparison]::Ordinal)) {
-        return $rutaCompleta
-    }
-    if ($rutaCompleta.StartsWith('\\', [System.StringComparison]::Ordinal)) {
-        return '\\?\UNC\' + $rutaCompleta.Substring(2)
-    }
-
-    return '\\?\' + $rutaCompleta
-}
-
-function Get-RuntimeContentHash {
-    param(
-        [string]$Ruta
-    )
-
-    # Calcula la huella de rutas, tamanos y contenido del runtime.
-    $raizRuntime = (Resolve-Path -LiteralPath $Ruta).Path.TrimEnd(
-        [System.IO.Path]::DirectorySeparatorChar,
-        [System.IO.Path]::AltDirectorySeparatorChar)
-    $rutas = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
-    $relativas = [System.Collections.Generic.List[string]]::new()
-    foreach ($archivo in [System.IO.Directory]::EnumerateFiles($raizRuntime, '*', [System.IO.SearchOption]::AllDirectories)) {
-        if ([System.IO.Path]::GetFileName($archivo) -eq '.lanzador-webview2.sha256') {
-            continue
-        }
-
-        $relativa = [System.IO.Path]::GetRelativePath($raizRuntime, $archivo).Replace('\', '/')
-        $rutas.Add($relativa, $archivo)
-        $relativas.Add($relativa)
-    }
-
-    $ordenadas = [string[]]$relativas.ToArray()
-    [System.Array]::Sort($ordenadas, [System.StringComparer]::Ordinal)
-    $integridad = [System.Security.Cryptography.IncrementalHash]::CreateHash(
-        [System.Security.Cryptography.HashAlgorithmName]::SHA256)
-    try {
-        foreach ($relativa in $ordenadas) {
-            $longitud = ([System.IO.FileInfo]$rutas[$relativa]).Length.ToString(
-                [System.Globalization.CultureInfo]::InvariantCulture)
-            foreach ($valor in @($relativa, $longitud)) {
-                $integridad.AppendData([System.Text.Encoding]::UTF8.GetBytes($valor + "`n"))
-            }
-
-            $flujo = [System.IO.File]::OpenRead($rutas[$relativa])
-            $sha256 = [System.Security.Cryptography.SHA256]::Create()
-            try {
-                $hashArchivo = [Convert]::ToHexString($sha256.ComputeHash($flujo))
-            } finally {
-                $sha256.Dispose()
-                $flujo.Dispose()
-            }
-
-            $integridad.AppendData([System.Text.Encoding]::UTF8.GetBytes($hashArchivo + "`n"))
-        }
-
-        return [Convert]::ToHexString($integridad.GetHashAndReset())
-    } finally {
-        $integridad.Dispose()
-    }
-}
-
-function Test-WebView2RuntimeFolder {
-    param(
-        [string]$Ruta
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Ruta) -or -not (Test-Path -LiteralPath $Ruta -PathType Container)) {
-        throw "No se encontro la carpeta de runtime WebView2: $Ruta"
-    }
-
-    $rutaCompleta = (Resolve-Path -LiteralPath $Ruta).Path
-    $ejecutablesWebView2 = @(Get-ChildItem -LiteralPath $rutaCompleta -Filter 'msedgewebview2.exe' -Recurse -File)
-    if ($ejecutablesWebView2.Count -ne 1) {
-        throw "La carpeta de runtime WebView2 no contiene msedgewebview2.exe: $rutaCompleta"
-    }
-
-    $ejecutableWebView2 = $ejecutablesWebView2[0]
-    Assert-FileSha256 `
-        -Ruta $ejecutableWebView2.FullName `
-        -HashEsperado $hashEjecutableWebView2Fijado `
-        -Descripcion 'msedgewebview2.exe' | Out-Null
-
-    $rutaVersion = ConvertTo-WindowsExtendedPath -Ruta $ejecutableWebView2.FullName
-    $informacionVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($rutaVersion)
-    $versionEjecutable = $informacionVersion.FileVersion
-    $versionProducto = $informacionVersion.ProductVersion
-    if ($versionEjecutable -ne $versionWebView2Fijada -or $versionProducto -ne $versionWebView2Fijada) {
-        throw "La version de msedgewebview2.exe no coincide. Esperada: $versionWebView2Fijada. Archivo: $versionEjecutable. Producto: $versionProducto."
-    }
-
-    $arquitecturaDetectada = Get-PortableExecutableMachine -Ruta $ejecutableWebView2.FullName
-    if ($arquitecturaDetectada -ne $arquitecturaPeX64) {
-        throw ('msedgewebview2.exe no es x64. PE esperado: 0x{0:X4}. Detectado: 0x{1:X4}.' -f $arquitecturaPeX64, $arquitecturaDetectada)
-    }
-
-    $firma = Get-AuthenticodeSignature -LiteralPath $ejecutableWebView2.FullName
-    if ($firma.Status -ne 'Valid') {
-        throw "La firma de msedgewebview2.exe no es valida: $($firma.Status)."
-    }
-
-    if ($null -eq $firma.SignerCertificate -or $firma.SignerCertificate.Subject -notlike '*Microsoft Corporation*') {
-        throw 'msedgewebview2.exe no esta firmado por Microsoft Corporation.'
-    }
-
-    return $rutaCompleta
-}
-
-function Expand-WebView2Cab {
-    param(
-        [string]$Cab,
-        [string]$Destino
-    )
-
-    if (Test-Path -LiteralPath $Destino) {
-        Remove-Item -LiteralPath $Destino -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Force -Path $Destino | Out-Null
-    $expand = Join-Path $env:SystemRoot 'System32\expand.exe'
-    & $expand -F:* $Cab $Destino | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "No se pudo expandir WebView2 Fixed Runtime. Codigo: $LASTEXITCODE"
-    }
-
-    return Test-WebView2RuntimeFolder -Ruta $Destino
-}
-
-function Get-WebView2RuntimeSource {
-    if (-not [string]::IsNullOrWhiteSpace($RutaRuntimeWebView2Portable)) {
-        return Test-WebView2RuntimeFolder -Ruta $RutaRuntimeWebView2Portable
-    }
-
-    New-Item -ItemType Directory -Force -Path $cacheWebView2 | Out-Null
-    $cab = Join-Path $cacheWebView2 $nombreCabWebView2Fijado
-    $cabValido = $false
-    if (Test-Path -LiteralPath $cab -PathType Leaf) {
-        try {
-            Assert-FileSha256 `
-                -Ruta $cab `
-                -HashEsperado $hashCabWebView2Fijado `
-                -Descripcion "CAB WebView2 $versionWebView2Fijada x64" | Out-Null
-            $cabValido = $true
-            Write-Host "Usando WebView2 Fixed Runtime en cache: $cab"
-        } catch {
-            Write-Warning "El CAB WebView2 en cache no es valido y se descargara de nuevo."
-        }
-    }
-
-    if (-not $cabValido) {
-        $cabTemporal = "$cab.$PID.tmp"
-        if (Test-Path -LiteralPath $cabTemporal) {
-            Remove-Item -LiteralPath $cabTemporal -Force
-        }
-
-        Write-Host "Descargando WebView2 Fixed Runtime $versionWebView2Fijada x64..."
-        try {
-            Invoke-WebRequest -Uri $urlCabWebView2Fijado -OutFile $cabTemporal -UseBasicParsing
-            Assert-FileSha256 `
-                -Ruta $cabTemporal `
-                -HashEsperado $hashCabWebView2Fijado `
-                -Descripcion "CAB WebView2 $versionWebView2Fijada x64 descargado" | Out-Null
-            Move-Item -LiteralPath $cabTemporal -Destination $cab -Force
-        } finally {
-            if (Test-Path -LiteralPath $cabTemporal) {
-                Remove-Item -LiteralPath $cabTemporal -Force
-            }
-        }
-    }
-
-    Assert-FileSha256 `
-        -Ruta $cab `
-        -HashEsperado $hashCabWebView2Fijado `
-        -Descripcion "CAB WebView2 $versionWebView2Fijada x64" | Out-Null
-
-    $carpetaExpandida = Join-Path $cacheWebView2 ("FixedRuntime-" + $versionWebView2Fijada + "-x64")
-    return Expand-WebView2Cab -Cab $cab -Destino $carpetaExpandida
-}
-
-function New-ReproducibleZip {
-    param(
-        [string]$Origen,
-        [string]$Destino
-    )
-
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-    $destinoPadre = Split-Path -Parent $Destino
-    New-Item -ItemType Directory -Force -Path $destinoPadre | Out-Null
-    if (Test-Path -LiteralPath $Destino) {
-        Remove-Item -LiteralPath $Destino -Force
-    }
-
-    $origenCompleto = (Resolve-Path -LiteralPath $Origen).Path.TrimEnd('\')
-    $uriOrigen = [Uri]($origenCompleto + '\')
-    $zip = [System.IO.Compression.ZipFile]::Open($Destino, [System.IO.Compression.ZipArchiveMode]::Create)
-    try {
-        Get-ChildItem -LiteralPath $origenCompleto -Recurse -File |
-            Sort-Object FullName |
-            ForEach-Object {
-                $relativo = [Uri]::UnescapeDataString($uriOrigen.MakeRelativeUri([Uri]$_.FullName).ToString())
-                $entrada = $zip.CreateEntry($relativo, [System.IO.Compression.CompressionLevel]::Optimal)
-                $entrada.LastWriteTime = [DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
-                $flujoEntrada = $entrada.Open()
-                try {
-                    $flujoOrigen = [System.IO.File]::OpenRead($_.FullName)
-                    try {
-                        $flujoOrigen.CopyTo($flujoEntrada)
-                    } finally {
-                        $flujoOrigen.Dispose()
-                    }
-                } finally {
-                    $flujoEntrada.Dispose()
-                }
-            }
-    } finally {
-        $zip.Dispose()
-    }
-
-    if (-not (Test-Path -LiteralPath $Destino -PathType Leaf)) {
-        throw "No se genero el ZIP embebido de WebView2: $Destino"
-    }
-}
-
-function Initialize-WebView2EmbeddedRuntime {
-    if (Test-Path -LiteralPath $runtimeZipIntermedio) {
-        Remove-Item -LiteralPath $runtimeZipIntermedio -Force
-    }
-
-    $origen = Get-WebView2RuntimeSource
-    $hashContenidoRuntime = Get-RuntimeContentHash -Ruta $origen
-    if (-not $hashContenidoRuntime.Equals($hashContenidoRuntimeFijado, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "El contenido extraido de WebView2 no coincide. Esperado: $hashContenidoRuntimeFijado. Detectado: $hashContenidoRuntime."
-    }
-
-    Write-Host 'Generando recurso embebido WebView2Runtime.zip...'
-    New-ReproducibleZip -Origen $origen -Destino $runtimeZipIntermedio
-    Assert-FileSha256 `
-        -Ruta $runtimeZipIntermedio `
-        -HashEsperado $hashZipWebView2Fijado `
-        -Descripcion 'ZIP embebido de WebView2' | Out-Null
-    Write-Host "WebView2 Runtime $versionWebView2Fijada x64 preparado. SHA-256 ZIP: $hashZipWebView2Fijado"
-    $ejecutableMsi = Get-ChildItem `
-        -LiteralPath $origen `
-        -Filter 'msedgewebview2.exe' `
-        -Recurse `
-        -File |
-        Select-Object -First 1
-    if ($null -eq $ejecutableMsi -or $null -eq $ejecutableMsi.Directory) {
-        throw 'No se pudo resolver la carpeta WebView2 que debe instalar el MSI.'
-    }
-
-    return $ejecutableMsi.Directory.FullName
 }
 
 function Assert-PortableRuntimePayload {
@@ -982,7 +691,10 @@ Invoke-NativeChecked -Descripcion 'dotnet restore' -Comando {
     dotnet restore (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj')
 }
 
-$runtimeWebView2Source = Initialize-WebView2EmbeddedRuntime
+$evergreen = & (Join-Path $PSScriptRoot 'PrepararWebView2Evergreen.ps1')
+$runtimeWebView2Source = Split-Path -Parent $evergreen.Ruta
+$instaladorEvergreen = $evergreen.Ruta
+$hashInstaladorEvergreen = $evergreen.Sha256
 
 Write-Host 'Compilando aplicacion...'
 Invoke-NativeChecked -Descripcion 'dotnet build' -Comando {
@@ -1057,15 +769,15 @@ $exePortable = Join-Path $stagingCompleta $nombrePortableFinal
 New-NativeLauncher `
     -RutaPayload $runtimeExe `
     -HashPayload $hashRuntimeExe `
-    -RutaRuntimeWebView2 $runtimeZipIntermedio `
-    -HashRuntimeWebView2 $hashZipWebView2Fijado `
+    -RutaRuntimeWebView2 $instaladorEvergreen `
+    -HashRuntimeWebView2 $hashInstaladorEvergreen `
     -RutaSalida $exePortable
 Assert-NativeLauncherPayload `
     -RutaLanzador $exePortable `
     -RutaPayload $runtimeExe `
     -HashPayload $hashRuntimeExe `
-    -RutaRuntimeWebView2 $runtimeZipIntermedio `
-    -HashRuntimeWebView2 $hashZipWebView2Fijado
+    -RutaRuntimeWebView2 $instaladorEvergreen `
+    -HashRuntimeWebView2 $hashInstaladorEvergreen
 
 if ($null -ne $certificadoFirma) {
     Write-Host 'Firmando el lanzador portable final...'

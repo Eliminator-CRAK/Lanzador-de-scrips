@@ -33,7 +33,7 @@ public sealed record ResultadoDisponibilidadWebView2(bool Exito, string Mensaje,
     public static ResultadoDisponibilidadWebView2 Error(string? runtimeFijo)
     {
         var mensaje = string.IsNullOrWhiteSpace(runtimeFijo)
-            ? "Microsoft Edge WebView2 Runtime no esta disponible. La aplicacion no instala componentes en el equipo."
+            ? "Microsoft Edge WebView2 Runtime no esta disponible. Revise la instalacion y las politicas del equipo."
             : $"El runtime portable de WebView2 no es valido o no se puede leer: {runtimeFijo}";
 
         return new ResultadoDisponibilidadWebView2(

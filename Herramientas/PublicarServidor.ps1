@@ -140,7 +140,6 @@ foreach ($archivo in @(
         $scriptFirma,
         (Join-Path $distribucion 'Instalar-Servidor.ps1'),
         (Join-Path $distribucion 'Desinstalar-Servidor.ps1'),
-        (Join-Path $distribucion 'Crear-ConfiguracionCliente.ps1'),
         (Join-Path $distribucion 'LEEME-Servidor.txt'))) {
     if (-not [System.IO.File]::Exists($archivo)) {
         throw "Falta un archivo necesario para publicar el servidor: $archivo"
@@ -179,7 +178,7 @@ $exeAdministracion = Join-Path $staging 'LanzadorScripts.Servidor.exe'
 [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($exeServicio)) | Out-Null
 [System.IO.File]::Copy($exeServicioOrigen, $exeServicio, $false)
 [System.IO.File]::Copy($exeAdministracionOrigen, $exeAdministracion, $false)
-foreach ($nombre in @('Instalar-Servidor.ps1', 'Desinstalar-Servidor.ps1', 'Crear-ConfiguracionCliente.ps1', 'LEEME-Servidor.txt')) {
+foreach ($nombre in @('Instalar-Servidor.ps1', 'Desinstalar-Servidor.ps1', 'LEEME-Servidor.txt')) {
     [System.IO.File]::Copy((Join-Path $distribucion $nombre), (Join-Path $staging $nombre), $false)
 }
 
@@ -189,8 +188,7 @@ if ($firmar) {
             $exeServicio,
             $exeAdministracion,
             (Join-Path $staging 'Instalar-Servidor.ps1'),
-            (Join-Path $staging 'Desinstalar-Servidor.ps1'),
-            (Join-Path $staging 'Crear-ConfiguracionCliente.ps1'))) {
+            (Join-Path $staging 'Desinstalar-Servidor.ps1'))) {
         & $scriptFirma -RutaArchivo $archivo -Thumbprint $CertThumbprint -TimestampServer $TimestampServer
         if ($LASTEXITCODE -ne 0) {
             throw "No se pudo firmar $archivo."

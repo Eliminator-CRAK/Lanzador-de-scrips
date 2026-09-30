@@ -10,6 +10,7 @@ public sealed class CatalogoActualizacionesServidor
     public const string NombreRecursoCompartido = "LanzadorScriptsActualizaciones$";
 
     private readonly string _carpeta;
+    private readonly PublicadorActualizacionesServidor? _publicador;
     private readonly Func<string, ResultadoValidacionPaqueteActualizacion> _validar;
     private readonly object _bloqueo = new();
     private readonly Dictionary<string, EntradaCache> _cache =
@@ -18,6 +19,7 @@ public sealed class CatalogoActualizacionesServidor
     public CatalogoActualizacionesServidor(RutasServidor rutas)
         : this(rutas.RutaActualizaciones, ValidadorPaqueteActualizacion.Validar)
     {
+        _publicador = new PublicadorActualizacionesServidor(rutas);
     }
 
     internal CatalogoActualizacionesServidor(
@@ -78,6 +80,16 @@ public sealed class CatalogoActualizacionesServidor
                 paquetes,
                 DateTimeOffset.UtcNow,
                 mensaje);
+        }
+    }
+
+    public ResultadoValidacionPaqueteActualizacion Publicar(PublicarActualizacionServidor solicitud)
+    {
+        lock (_bloqueo)
+        {
+            var resultado = (_publicador ?? throw new InvalidOperationException("Publicacion no configurada.")).Publicar(solicitud);
+            _cache.Clear();
+            return resultado;
         }
     }
 

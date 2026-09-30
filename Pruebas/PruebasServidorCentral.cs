@@ -17,6 +17,55 @@ namespace LanzadorScripts.Pruebas;
 public sealed class PruebasServidorCentral
 {
     [Fact]
+    public void ConfiguracionCentralSeCifraConservaRevisionYRechazaCambiosConcurrentes()
+    {
+        using var entorno = EntornoServidor.Crear();
+        var inicial = entorno.Repositorio.ObtenerConfiguracionGlobal();
+        Assert.Equal(1, inicial.Revision);
+        var guardada = entorno.Repositorio.GuardarConfiguracionGlobal(new(1, @"\\servidor\scripts\operaciones", 3));
+        Assert.Equal(2, guardada.Revision);
+        entorno.Repositorio.Inicializar();
+        Assert.Equal(guardada, entorno.Repositorio.ObtenerConfiguracionGlobal());
+        Assert.Throws<InvalidOperationException>(() => entorno.Repositorio.GuardarConfiguracionGlobal(new(1, @"\\otro\scripts", 2)));
+        Assert.True(entorno.Repositorio.ComprobarIntegridad().Integra);
+        using var conexion = new SqliteConnection($"Data Source={entorno.Rutas.RutaBaseDatos}");
+        conexion.Open();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = "SELECT Datos FROM Metadatos WHERE Clave='configuracion_cliente'";
+        Assert.DoesNotContain("operaciones", Encoding.UTF8.GetString((byte[])comando.ExecuteScalar()!));
+    }
+
+    [Fact]
+    public void ConfiguracionSoloSeConsultaPorUsuarioActivoYSeEditaPorAdministrador()
+    {
+        using var entorno = EntornoServidor.Crear();
+        var procesador = new ProcesadorSolicitudesServidor(entorno.Repositorio);
+        var consulta = new SolicitudServidor(1, Guid.NewGuid(), OperacionesServidor.ObtenerConfiguracion, TransporteProtocolo.CrearDatos(new { }));
+        entorno.Repositorio.GuardarPermisos(CrearPermisos());
+        Assert.False(procesador.Procesar(@"DOMINIO\ajeno", consulta).Exito);
+        Assert.True(procesador.Procesar(@"PCERA\alero", consulta).Exito);
+        Assert.True(procesador.Procesar(@"MAD00\aroperez_micro", consulta).Exito);
+        var cambio = consulta with { Operacion = OperacionesServidor.GuardarConfiguracion,
+            Datos = TransporteProtocolo.CrearDatos(new GuardarConfiguracionGlobalServidorCentral(1, @"\\servidor\scripts", 2)) };
+        Assert.False(procesador.Procesar(@"DOMINIO\ajeno", cambio).Exito);
+        Assert.False(procesador.Procesar(@"MAD00\aroperez_micro", cambio).Exito);
+        Assert.True(procesador.Procesar(@"PCERA\alero", cambio).Exito);
+        Assert.False(procesador.Procesar(@"PCERA\alero", cambio).Exito);
+    }
+
+    [Theory]
+    [InlineData(@"C:\scripts", 5)]
+    [InlineData(@"\\servidor\share\..\otro", 5)]
+    [InlineData(@"\\?\C:\scripts", 5)]
+    [InlineData(@"\\servidor\share\archivo:ads", 5)]
+    [InlineData(@"\\servidor\share", 0)]
+    [InlineData(@"\\servidor\share", 21)]
+    public void ConfiguracionCentralRechazaRutasYLimitesInvalidos(string ruta, int maximo)
+    {
+        Assert.Throws<InvalidDataException>(() => new ConfiguracionGlobalServidorCentral(1, ruta, maximo).Validar());
+    }
+
+    [Fact]
     public void ClientePriorizaElSpnPropioYConservaHostComoCompatibilidad()
     {
         var candidatos = AutenticacionServidorCentral.CrearSpnCandidatos(

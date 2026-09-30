@@ -26,9 +26,20 @@ public partial class Aplicacion : System.Windows.Application
     private string _nombrePipe = string.Empty;
     private readonly ServicioLogInicio _servicioLogInicio = new();
     private MonitorizacionAplicacion? _monitorizacion;
+    private ServicioSesionCliente? _sesionCliente;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Length == 1 && e.Args[0] == "--preparar-webview2")
+        {
+            try
+            {
+                Task.Run(ServicioWebView2Evergreen.AsegurarAsync).GetAwaiter().GetResult();
+                Shutdown(0);
+            }
+            catch { Shutdown(1603); }
+            return;
+        }
         if (ServicioBrokerElevado.EsSolicitudBroker(e.Args))
         {
             Shutdown(ServicioBrokerElevado.EjecutarModoBroker(e.Args));
@@ -102,6 +113,7 @@ public partial class Aplicacion : System.Windows.Application
         using var medicionInicio = _monitorizacion.Medir("aplicacion.inicio");
         try
         {
+            _sesionCliente = new ServicioSesionCliente();
             ServicioDirectoriosAplicacion.PrepararEstructuraAplicacion();
             ServicioActualizacionesCliente.LimpiarStagingAbandonado();
             _ = ServicioActualizacionesCliente.ReintentarLimpiezaStagingAbandonadoAsync();
@@ -148,6 +160,8 @@ public partial class Aplicacion : System.Windows.Application
 
         _mutex?.Dispose();
         _monitorizacion?.Dispose();
+        ServicioLogInicio.Cerrar();
+        _sesionCliente?.Dispose();
         base.OnExit(e);
     }
 

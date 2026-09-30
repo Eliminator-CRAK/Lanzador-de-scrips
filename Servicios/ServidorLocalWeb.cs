@@ -335,6 +335,30 @@ public sealed class ServidorLocalWeb : IDisposable
         var metodo = contexto.Request.HttpMethod.ToUpperInvariant();
         var partes = ruta.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
 
+        if (!_usarArtefactosLocales && (ruta.StartsWith("/api/configuracion-paquete/", StringComparison.OrdinalIgnoreCase)
+            || (metodo == "POST" && ruta.Equals("/api/configuracion-app", StringComparison.OrdinalIgnoreCase))))
+        {
+            await EscribirJsonAsync(contexto, 410, new { error = "La configuracion se administra exclusivamente desde el servidor." });
+            return;
+        }
+
+        // Las consolas activas siguen admitiendo eventos, entrada y cancelacion sin red.
+        if (!_usarArtefactosLocales && !ruta.StartsWith("/api/ejecuciones/", StringComparison.OrdinalIgnoreCase)
+            && !ruta.Equals("/api/salud", StringComparison.OrdinalIgnoreCase)
+            && !ruta.Equals("/api/diagnostico", StringComparison.OrdinalIgnoreCase)
+            && !ruta.StartsWith("/api/token-maestro/", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await _servicioConfiguracion.ActualizarDesdeServidorAsync();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException)
+            {
+                await EscribirJsonAsync(contexto, 503, new { error = ServicioRedaccionSecretos.Sanitizar(ex.Message) });
+                return;
+            }
+        }
+
         if (!_usarArtefactosLocales
             && ruta.StartsWith("/api/token-maestro/", StringComparison.OrdinalIgnoreCase))
         {
@@ -535,7 +559,13 @@ public sealed class ServidorLocalWeb : IDisposable
         if (metodo == "GET" && ruta.Equals("/api/scripts", StringComparison.OrdinalIgnoreCase))
         {
             var carpeta = contexto.Request.QueryString["carpeta"] ?? string.Empty;
-            await EscribirJsonAsync(contexto, 200, ObtenerScriptsParaCliente(carpeta));
+            var buscar = contexto.Request.QueryString["buscar"] ?? string.Empty;
+            if (buscar.Length > 200)
+            {
+                await EscribirJsonAsync(contexto, 400, new { error = "La busqueda no puede superar 200 caracteres." });
+                return;
+            }
+            await EscribirJsonAsync(contexto, 200, ObtenerScriptsParaCliente(carpeta, buscar));
             return;
         }
 
@@ -1209,7 +1239,7 @@ public sealed class ServidorLocalWeb : IDisposable
             using var lector = new StreamReader(flujo, Encoding.UTF8, true, 4096, leaveOpen: true);
             var contenido = await lector.ReadToEndAsync();
             var versionado = AplicarVersionVisualCliente(
-                contenido,
+                AdaptadorNavegacionCliente.Aplicar(contenido),
                 Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0));
             var datos = Encoding.UTF8.GetBytes(versionado);
             contexto.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
@@ -1308,6 +1338,8 @@ public sealed class ServidorLocalWeb : IDisposable
         var maximo = usuario is null
             ? LeerEntero(permisos, "maxScriptsSimultaneos", 5)
             : LeerEntero(usuario, "maxScriptsSimultaneos", 5);
+        if (!_usarArtefactosLocales)
+            maximo = Math.Min(maximo, CargarConfiguracion().MaximoEjecucionesParalelas);
         var carpetasPermitidas = usuario is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : LeerCarpetasPermitidas(usuario["carpetasPermitidas"] as JsonArray);
@@ -1985,7 +2017,7 @@ public sealed class ServidorLocalWeb : IDisposable
         return resultado;
     }
 
-    private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente(string carpetaSolicitada = "")
+    private IReadOnlyList<ScriptCliente> ObtenerScriptsParaCliente(string carpetaSolicitada = "", string buscar = "")
     {
         var carpetaActual = NormalizarCarpetaSolicitada(carpetaSolicitada);
         if (carpetaActual is null)
@@ -2000,10 +2032,7 @@ public sealed class ServidorLocalWeb : IDisposable
         var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo(diagnosticoPermisos);
         if (PermisosInaccesiblesSinDesbloqueo(diagnosticoPermisos))
         {
-            var mensajePermisos = ObtenerMensajePermisosNoDisponibles(diagnosticoPermisos);
-            return scripts
-                .Select(script => new ScriptCliente(script.Id, script.Nombre, script.Tipo, true, mensajePermisos))
-                .ToList();
+            return [];
         }
 
         if (!usuario.EstaAutorizado)
@@ -2016,7 +2045,8 @@ public sealed class ServidorLocalWeb : IDisposable
             .ToList();
         var resultado = new List<ScriptCliente>();
 
-        foreach (var carpeta in ObtenerCarpetasDirectas(scriptsVisibles, carpetaActual))
+        buscar = buscar.Trim();
+        foreach (var carpeta in buscar.Length == 0 ? ObtenerCarpetasDirectas(scriptsVisibles, carpetaActual) : [])
         {
             resultado.Add(new ScriptCliente(
                 $"carpeta:{carpeta}",
@@ -2028,7 +2058,9 @@ public sealed class ServidorLocalWeb : IDisposable
                 carpeta));
         }
 
-        foreach (var script in scriptsVisibles.Where(script => string.Equals(ObtenerCarpetaScript(script.Id), carpetaActual, StringComparison.OrdinalIgnoreCase)))
+        foreach (var script in scriptsVisibles.Where(script => buscar.Length > 0
+                     ? script.Nombre.Contains(buscar, StringComparison.OrdinalIgnoreCase)
+                     : string.Equals(ObtenerCarpetaScript(script.Id), carpetaActual, StringComparison.OrdinalIgnoreCase)))
         {
             var diagnosticoSeguridad = _servicioSeguridadScripts.Diagnosticar(
                 script,
@@ -2043,7 +2075,7 @@ public sealed class ServidorLocalWeb : IDisposable
                 !diagnosticoSeguridad.Permitido,
                 diagnosticoSeguridad.MotivoBloqueo,
                 false,
-                carpetaActual));
+                ObtenerCarpetaScript(script.Id)));
         }
 
         return resultado

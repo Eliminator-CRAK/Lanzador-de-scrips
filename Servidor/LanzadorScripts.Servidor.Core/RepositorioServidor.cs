@@ -132,6 +132,9 @@ public sealed class RepositorioServidor : IDisposable
             AsegurarMetadato(conexion, transaccion, "conjunto_id", CrearConjuntoId());
             AsegurarMetadato(conexion, transaccion, "revision_permisos", "1");
             AsegurarMetadato(conexion, transaccion, "revision_catalogo", "1");
+            AsegurarMetadato(conexion, transaccion, "configuracion_cliente",
+                JsonSerializer.Serialize(ConfiguracionGlobalServidorCentral.Predeterminada,
+                    TransporteProtocolo.OpcionesJson));
             AsegurarPermisosIniciales(conexion, transaccion, administradorInicial);
             if (!string.Equals(
                     LeerMetadato(conexion, "version_esquema", transaccion),
@@ -150,6 +153,52 @@ public sealed class RepositorioServidor : IDisposable
         {
             _escritura.Release();
         }
+    }
+
+    public ConfiguracionGlobalServidorCentral ObtenerConfiguracionGlobal()
+    {
+        ComprobarNoDesechado();
+        using var conexion = AbrirConexion();
+        return LeerConfiguracionGlobal(conexion);
+    }
+
+    public ConfiguracionGlobalServidorCentral GuardarConfiguracionGlobal(
+        GuardarConfiguracionGlobalServidorCentral cambio)
+    {
+        ComprobarNoDesechado();
+        var nueva = new ConfiguracionGlobalServidorCentral(
+            checked(cambio.RevisionEsperada + 1), cambio.RutaScripts, cambio.MaximoEjecucionesParalelas);
+        nueva.Validar();
+        _escritura.Wait();
+        try
+        {
+            using var conexion = AbrirConexion();
+            using var transaccion = conexion.BeginTransaction();
+            if (LeerConfiguracionGlobal(conexion, transaccion).Revision != cambio.RevisionEsperada)
+            {
+                throw new InvalidOperationException("Otro administrador cambio la configuracion. Actualice antes de guardar.");
+            }
+
+            Ejecutar(conexion, transaccion, OperacionSql.EliminarMetadato, ("$clave", "configuracion_cliente"));
+            EscribirMetadato(conexion, transaccion, "configuracion_cliente",
+                JsonSerializer.Serialize(nueva, TransporteProtocolo.OpcionesJson));
+            transaccion.Commit();
+            return nueva;
+        }
+        finally
+        {
+            _escritura.Release();
+        }
+    }
+
+    private ConfiguracionGlobalServidorCentral LeerConfiguracionGlobal(
+        SqliteConnection conexion, SqliteTransaction? transaccion = null)
+    {
+        var datos = JsonSerializer.Deserialize<ConfiguracionGlobalServidorCentral>(
+            LeerMetadato(conexion, "configuracion_cliente", transaccion), TransporteProtocolo.OpcionesJson)
+            ?? throw new InvalidDataException("Falta la configuracion central de los clientes.");
+        datos.Validar();
+        return datos;
     }
 
     public EstadoServidorCentral ObtenerEstado()
@@ -1197,7 +1246,8 @@ public sealed class RepositorioServidor : IDisposable
             "version_esquema",
             "conjunto_id",
             "revision_permisos",
-            "revision_catalogo"
+            "revision_catalogo",
+            "configuracion_cliente"
         };
         if (metadatos.Count != clavesEsperadas.Length
             || clavesEsperadas.Any(clave => !metadatos.ContainsKey(clave))
@@ -1209,6 +1259,7 @@ public sealed class RepositorioServidor : IDisposable
             throw new InvalidDataException("Los metadatos cifrados no son validos.");
         }
 
+        _ = LeerConfiguracionGlobal(conexion);
         _ = LeerFila<ConfiguracionPermisosDatos>(conexion, TablaPermisos, "actual");
         _ = LeerFila<CatalogoEstadoDatos>(conexion, TablaCatalogoEstado, "actual");
 

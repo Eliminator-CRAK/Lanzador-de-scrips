@@ -29,7 +29,7 @@ public sealed class PruebasPaqueteServidor
         Assert.Contains("LanzadorScripts-CodeSigning-Public.cer", publicacion, StringComparison.Ordinal);
         Assert.Contains("Instalar-Servidor.ps1", publicacion, StringComparison.Ordinal);
         Assert.Contains("Desinstalar-Servidor.ps1", publicacion, StringComparison.Ordinal);
-        Assert.Contains("Crear-ConfiguracionCliente.ps1", publicacion, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crear-ConfiguracionCliente.ps1", publicacion, StringComparison.Ordinal);
         Assert.DoesNotContain(".pfx", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("LanzadorScripts.db'", publicacion, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("base-datos.key.dpapi'", publicacion, StringComparison.OrdinalIgnoreCase);

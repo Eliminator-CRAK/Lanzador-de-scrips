@@ -55,6 +55,9 @@ public sealed class ProcesadorSolicitudesServidor
             return solicitud.Operacion switch
             {
                 OperacionesServidor.Salud => ProcesarSalud(cuenta, solicitud),
+                OperacionesServidor.ObtenerConfiguracion => ProcesarConfiguracion(cuenta, solicitud, guardar: false),
+                OperacionesServidor.PublicarActualizacion => ProcesarPublicacion(cuenta, solicitud),
+                OperacionesServidor.GuardarConfiguracion => ProcesarConfiguracion(cuenta, solicitud, guardar: true),
                 OperacionesServidor.ObtenerPermisos => ProcesarObtenerPermisos(cuenta, solicitud),
                 OperacionesServidor.GuardarPermisos => ProcesarGuardarPermisos(cuenta, solicitud),
                 OperacionesServidor.ObtenerCatalogo => ProcesarObtenerCatalogo(cuenta, solicitud),
@@ -104,6 +107,33 @@ public sealed class ProcesadorSolicitudesServidor
                 "error_interno",
                 "El servidor no pudo procesar la solicitud.");
         }
+    }
+
+    private RespuestaServidor ProcesarPublicacion(string cuenta, SolicitudServidor solicitud)
+    {
+        if (!_repositorio.EsAdministrador(cuenta)) return AccesoDenegado(solicitud.SolicitudId);
+        var paquete = (_catalogoActualizaciones ?? throw new InvalidOperationException("Publicacion no disponible."))
+            .Publicar(Deserializar<PublicarActualizacionServidor>(solicitud.Datos));
+        RegistrarAccionAdministrativa(cuenta, "administracion.actualizacion", "publicado", $"{paquete.NombreArchivo}; SHA256={paquete.Sha256}");
+        return Correcta(solicitud.SolicitudId, paquete);
+    }
+
+    private RespuestaServidor ProcesarConfiguracion(string cuenta, SolicitudServidor solicitud, bool guardar)
+    {
+        if (guardar ? !_repositorio.EsAdministrador(cuenta) : !_repositorio.EstaAutorizado(cuenta))
+        {
+            return AccesoDenegado(solicitud.SolicitudId);
+        }
+
+        var configuracion = guardar
+            ? _repositorio.GuardarConfiguracionGlobal(Deserializar<GuardarConfiguracionGlobalServidorCentral>(solicitud.Datos))
+            : _repositorio.ObtenerConfiguracionGlobal();
+        if (guardar)
+        {
+            RegistrarAccionAdministrativa(cuenta, "administracion.configuracion", "guardado", $"Revision {configuracion.Revision}");
+        }
+
+        return Correcta(solicitud.SolicitudId, configuracion);
     }
 
     private RespuestaServidor ProcesarSalud(string cuenta, SolicitudServidor solicitud)
