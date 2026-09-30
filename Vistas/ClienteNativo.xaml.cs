@@ -136,3 +136,17 @@ public sealed class InvertirBooleano : IValueConverter
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is not true;
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => value is not true;
 }
+
+public sealed class AlturaConsolasNativas : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        var viewport = values.Length > 0 && values[0] is double alto && double.IsFinite(alto) ? Math.Max(0, alto) : 0;
+        var cantidad = values.Length > 1 && values[1] is int total ? Math.Max(1, total) : 1;
+        // Reserva 280 pixeles de consola y 12 de separacion sin crecer con el texto.
+        return Math.Max(viewport, cantidad * 292.0);
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+        targetTypes.Select(_ => Binding.DoNothing).ToArray();
+}

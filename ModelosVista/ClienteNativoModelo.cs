@@ -40,7 +40,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public IReadOnlyList<string> Carpetas { get; private set; } = [];
     public IReadOnlyList<string> ScriptsAdmin { get; set; } = [];
     public IReadOnlyList<string> ScriptsElevados { get; set; } = [];
-    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.0");
+    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.1");
     public string Buscar { get => _buscar; set { if (Asignar(ref _buscar, value)) _ = RefrescarAsync(); } }
     public string Carpeta => string.IsNullOrEmpty(_carpeta) ? "Scripts" : "Scripts / " + _carpeta;
     public string Estado { get => _estado; private set => Asignar(ref _estado, value); }

@@ -1,5 +1,5 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 2.0.0. -->
+<!-- Descripcion: Administracion, desarrollo y publicacion de LanzadorScripts 2.0.1. -->
 
 # Manual de administradores y desarrolladores
 
@@ -16,11 +16,11 @@ No se deben mezclar clientes 1.9.0 con los JSON operativos de 1.7.x. La fuente a
 ## Cliente instalado
 
 ```powershell
-msiexec /i LanzadorScripts-2.0.0-x64.msi
-msiexec /i LanzadorScripts-2.0.0-x64.msi /qn /norestart
-msiexec /i LanzadorScripts-2.0.0-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
-msiexec /fa LanzadorScripts-2.0.0-x64.msi /qn /norestart
-msiexec /x LanzadorScripts-2.0.0-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-2.0.1-x64.msi
+msiexec /i LanzadorScripts-2.0.1-x64.msi /qn /norestart
+msiexec /i LanzadorScripts-2.0.1-x64.msi CREATE_DESKTOP_SHORTCUT=1 /qn /norestart
+msiexec /fa LanzadorScripts-2.0.1-x64.msi /qn /norestart
+msiexec /x LanzadorScripts-2.0.1-x64.msi /qn /norestart
 ```
 
 La instalacion es x64 y para todos los usuarios. Crea menu Inicio y asociacion `.lanzadorconfig`. La configuracion es centralizada. La version 2.0.0 sustituye WebView2 por controles WPF nativos sin cambiar la base ni su clave. La desinstalacion completa elimina solo rutas locales conocidas y nunca borra la base del servidor.
@@ -106,4 +106,4 @@ El certificado Authenticode firma MSI, EXE y scripts de distribucion. El certifi
 
 GitLab es el repositorio principal para ramas y merge requests. GitHub es una replica del mismo commit. Cada cambio debe superar pruebas, auditoria NuGet, Semgrep estricto, Gitleaks y revision CodeRabbit antes de fusionarse. No se utiliza Aikido.
 
-La release `v2.0.0` debe publicar bytes identicos en ambos proveedores y contener los clientes y el servidor 2.0.0, hashes, certificado publico y notas de despliegue.
+La release `v2.0.1` debe publicar bytes identicos en ambos proveedores y contener los clientes y el servidor 2.0.1, hashes, certificado publico y notas de despliegue.
