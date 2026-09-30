@@ -2,6 +2,7 @@
 // Descripcion: Mantiene navegacion, ajustes y consolas independientemente de la vista WPF.
 
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Reflection;
 using LanzadorScripts.Servicios;
 
@@ -30,6 +31,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public ClienteNativoModelo(IClienteNativo cliente)
     {
         _cliente = cliente;
+        Consolas.CollectionChanged += (_, _) => ActualizarResumen();
         Consolas.Add(CrearConsola());
     }
 
@@ -40,7 +42,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public IReadOnlyList<string> Carpetas { get; private set; } = [];
     public IReadOnlyList<string> ScriptsAdmin { get; set; } = [];
     public IReadOnlyList<string> ScriptsElevados { get; set; } = [];
-    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.1");
+    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.2");
     public string Buscar { get => _buscar; set { if (Asignar(ref _buscar, value)) _ = RefrescarAsync(); } }
     public string Carpeta => string.IsNullOrEmpty(_carpeta) ? "Scripts" : "Scripts / " + _carpeta;
     public string Estado { get => _estado; private set => Asignar(ref _estado, value); }
@@ -52,6 +54,9 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public bool PermitirBypass { get => _bypass; set => Asignar(ref _bypass, value); }
     public bool ModoDesarrollo { get => _desarrollo; private set => Asignar(ref _desarrollo, value); }
     public int Activas => Consolas.Count(c => c.Activa);
+    public int Limite => _limite;
+    public bool PuedeDetenerTodas => Activas > 0;
+    public bool PuedeLimpiarFinalizadas => Consolas.Any(c => c.Script is not null && !c.Activa);
     public string Resumen => $"Ejecutando: {Activas}   Max: {_limite}";
 
     public async Task InicializarAsync()
@@ -60,10 +65,11 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         Usuario = sesion.Usuario.NombreUsuario;
         Administrador = sesion.Usuario.EstaAutorizado && sesion.Usuario.Rol == "admin";
         _limite = sesion.Usuario.MaxScriptsSimultaneos;
+        Notificar(nameof(Limite));
         RutaScripts = sesion.RutaScripts;
         ModoDesarrollo = sesion.ModoDesarrolloFirmas;
         Estado = sesion.Usuario.EstaAutorizado ? sesion.AvisoConexion : sesion.Usuario.MotivoBloqueo;
-        Notificar(nameof(Resumen));
+        ActualizarResumen();
         await RefrescarAsync();
     }
 
@@ -127,7 +133,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
             var consola = Consolas.FirstOrDefault(c => c.Script is null) ?? CrearConsola();
             if (!Consolas.Contains(consola)) Consolas.Add(consola);
             consola.Iniciar(script, inicio.Datos);
-            Notificar(nameof(Resumen));
+            ActualizarResumen();
             _ = ObservarAsync(consola);
         }
         catch (OperationCanceledException) { }
@@ -135,7 +141,17 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         finally { _iniciando = false; }
     }
 
-    private ConsolaNativaModelo CrearConsola() => new(++_numeroConsola);
+    private ConsolaNativaModelo CrearConsola()
+    {
+        var consola = new ConsolaNativaModelo(++_numeroConsola);
+        consola.PropertyChanged += Consola_Cambiada;
+        return consola;
+    }
+
+    private void Consola_Cambiada(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ConsolaNativaModelo.Activa)) ActualizarResumen();
+    }
 
     private async Task ObservarAsync(ConsolaNativaModelo consola)
     {
@@ -153,7 +169,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         {
             consola.Finalizar();
             if (!_desechado && consola.CerrarAlFinalizar) RetirarConsola(consola);
-            Notificar(nameof(Resumen));
+            ActualizarResumen();
         }
     }
 
@@ -184,11 +200,12 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         // La consola permanece hasta recibir el fin real del proceso cancelado.
         if (consola.Activa) return;
         RetirarConsola(consola);
-        Notificar(nameof(Resumen));
+        ActualizarResumen();
     }
 
     private void RetirarConsola(ConsolaNativaModelo consola)
     {
+        consola.PropertyChanged -= Consola_Cambiada;
         Consolas.Remove(consola);
         if (Consolas.Count == 0) Consolas.Add(CrearConsola());
     }
@@ -200,8 +217,31 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
             consola.CerrarAlFinalizar = true;
             await _cliente.CancelarAsync(consola.EjecucionId);
         }
-        foreach (var consola in Consolas.Where(c => !c.Activa).ToArray()) Consolas.Remove(consola);
+        foreach (var consola in Consolas.Where(c => !c.Activa).ToArray()) RetirarConsola(consola);
         if (Consolas.Count == 0) Consolas.Add(CrearConsola());
+    }
+
+    public async Task DetenerTodasAsync()
+    {
+        // Detiene las ejecuciones conservando su salida y su resultado final.
+        foreach (var consola in Consolas.Where(c => c.Activa).ToArray())
+            await _cliente.CancelarAsync(consola.EjecucionId);
+    }
+
+    public void LimpiarFinalizadas()
+    {
+        // Retira solo consolas terminadas y mantiene las ejecuciones activas.
+        foreach (var consola in Consolas.Where(c => !c.Activa && c.Script is not null).ToArray())
+            RetirarConsola(consola);
+        if (Consolas.Count == 0) Consolas.Add(CrearConsola());
+    }
+
+    private void ActualizarResumen()
+    {
+        Notificar(nameof(Activas));
+        Notificar(nameof(Resumen));
+        Notificar(nameof(PuedeDetenerTodas));
+        Notificar(nameof(PuedeLimpiarFinalizadas));
     }
 
     public async Task AbrirAjustesAsync()
@@ -261,7 +301,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     {
         if (_desechado) return;
         _desechado = true;
-        foreach (var consola in Consolas) consola.Entrada = "";
+        foreach (var consola in Consolas) { consola.Entrada = ""; consola.PropertyChanged -= Consola_Cambiada; }
         _vida.Cancel();
         _busqueda?.Cancel();
         _vida.Dispose();

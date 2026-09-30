@@ -37,6 +37,7 @@ public partial class ClienteNativo : UserControl, IDisposable
     }
 
     private async void Refrescar_Click(object sender, RoutedEventArgs e) { if (Modelo is not null) await OperarAsync(Modelo.InicializarAsync); }
+    private void VaciarBusqueda_Click(object sender, RoutedEventArgs e) { if (Modelo is not null) Modelo.Buscar = ""; BuscadorScripts.Focus(); }
     private async void Subir_Click(object sender, RoutedEventArgs e) { if (Modelo is not null) await OperarAsync(Modelo.SubirCarpetaAsync); }
     private async void Ejecutar_Click(object sender, RoutedEventArgs e)
     {
@@ -56,11 +57,12 @@ public partial class ClienteNativo : UserControl, IDisposable
         if (consola.Activa && MessageBox.Show(Window.GetWindow(this), $"Detener {consola.NombreScript}?", "Detener ejecucion", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         await OperarAsync(() => Modelo.CerrarConsolaAsync(consola));
     }
-    private async void Limpiar_Click(object sender, RoutedEventArgs e)
+    private void Limpiar_Click(object sender, RoutedEventArgs e) => Modelo?.LimpiarFinalizadas();
+    private async void DetenerTodas_Click(object sender, RoutedEventArgs e)
     {
         if (Modelo is null) return;
-        if (Modelo.Activas > 0 && MessageBox.Show(Window.GetWindow(this), "Detener todas las ejecuciones activas?", "Limpiar consolas", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        await OperarAsync(Modelo.LimpiarAsync);
+        if (Modelo.Activas == 0 || MessageBox.Show(Window.GetWindow(this), "Detener todas las ejecuciones activas?", "Detener ejecuciones", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        await OperarAsync(Modelo.DetenerTodasAsync);
     }
     private async void Ajustes_Click(object sender, RoutedEventArgs e) { if (Modelo is not null) await OperarAsync(Modelo.AbrirAjustesAsync); }
     private void Volver_Click(object sender, RoutedEventArgs e) => Modelo?.CerrarAjustes();
@@ -143,10 +145,36 @@ public sealed class AlturaConsolasNativas : IMultiValueConverter
     {
         var viewport = values.Length > 0 && values[0] is double alto && double.IsFinite(alto) ? Math.Max(0, alto) : 0;
         var cantidad = values.Length > 1 && values[1] is int total ? Math.Max(1, total) : 1;
+        var ancho = values.Length > 2 && values[2] is double disponible ? disponible : 0;
+        var filas = Math.Ceiling((double)cantidad / ColumnasConsolasNativas.Calcular(cantidad, ancho));
         // Reserva 280 pixeles de consola y 12 de separacion sin crecer con el texto.
-        return Math.Max(viewport, cantidad * 292.0);
+        return Math.Max(viewport, filas * 292.0);
     }
 
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+        targetTypes.Select(_ => Binding.DoNothing).ToArray();
+}
+
+public sealed class ColumnasConsolasNativas : IMultiValueConverter
+{
+    // Muestra dos columnas solo cuando cada consola conserva anchura suficiente.
+    internal static int Calcular(int cantidad, double ancho) => cantidad > 1 && ancho >= 800 ? 2 : 1;
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
+        Calcular(values.Length > 0 && values[0] is int cantidad ? cantidad : 1,
+            values.Length > 1 && values[1] is double ancho ? ancho : 0);
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+        targetTypes.Select(_ => Binding.DoNothing).ToArray();
+}
+
+public sealed class TextoEjecucionesScript : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        // Actualiza el estado de cada script cuando cambia el contador de ejecuciones.
+        if (values.Length < 3 || values[0] is not string id || values[2] is not IEnumerable<ConsolaNativaModelo> consolas) return "";
+        var activas = consolas.Count(c => c.Activa && c.Script?.Id == id);
+        return activas == 0 ? "" : $"En ejecucion: {activas}";
+    }
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
         targetTypes.Select(_ => Binding.DoNothing).ToArray();
 }

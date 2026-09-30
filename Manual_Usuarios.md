@@ -1,12 +1,12 @@
 <!-- (Autor: Alex Roman) -->
-<!-- Descripcion: Uso del cliente LanzadorScripts 2.0.1. -->
+<!-- Descripcion: Uso del cliente LanzadorScripts 2.0.2. -->
 
 # Manual de usuarios
 
 ## Elegir version
 
-- Instalada: ejecutar `LanzadorScripts-2.0.1-x64.msi`. Conserva sus archivos instalados; los datos de sesion son temporales.
-- Portable: ejecutar `LanzadorScripts_Portable-2.0.1-x64.exe`. Elimina sus datos locales al cerrar.
+- Instalada: ejecutar `LanzadorScripts-2.0.2-x64.msi`. Conserva sus archivos instalados; los datos de sesion son temporales.
+- Portable: ejecutar `LanzadorScripts_Portable-2.0.2-x64.exe`. Elimina sus datos locales al cerrar.
 
 Ambas variantes necesitan conexion de dominio con el servidor central y acceso de lectura a la carpeta compartida de scripts.
 
@@ -26,6 +26,8 @@ La aplicacion usa automaticamente la cuenta de Windows iniciada. Si la cuenta no
 
 Antes de iniciar, el cliente valida permisos y SHA-256 contra el servidor y confirma el evento de auditoria. Si el servidor o la auditoria no responden, la ejecucion se bloquea.
 
+**Detener todo** cancela las ejecuciones activas tras confirmar y conserva sus salidas. El boton con papelera retira solo las consolas finalizadas; no detiene scripts activos. Las consolas se organizan en dos columnas cuando hay espacio y vuelven a una columna al reducir la ventana.
+
 ## Cierre y bandeja de Windows
 
 En la version instalada, el boton de cerrar oculta la aplicacion y la mantiene en la bandeja. Su menu permite mostrar, minimizar o cerrar. La opcion se llama **Cerrar** y solo avisa de cancelaciones cuando existen scripts activos.
@@ -40,7 +42,7 @@ No se puede comenzar la actualizacion mientras haya scripts activos. Al pulsar e
 
 ## Auditoria
 
-Los administradores pueden pulsar `Ctrl+Shift+M` para consultar la auditoria central. Los usuarios nominales no pueden abrir esa vista.
+Los administradores pueden pulsar el icono de auditoria del encabezado o `Ctrl+Shift+M` para consultar la auditoria central. Los usuarios nominales no pueden abrir esa vista.
 
 ## Errores habituales
 

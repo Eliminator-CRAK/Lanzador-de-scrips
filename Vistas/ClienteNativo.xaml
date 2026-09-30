@@ -8,32 +8,47 @@
   <BooleanToVisibilityConverter x:Key="VisibleSi" />
   <vistas:InvertirBooleano x:Key="InvertirBooleano" />
   <vistas:AlturaConsolasNativas x:Key="AlturaConsolas" />
+  <vistas:ColumnasConsolasNativas x:Key="ColumnasConsolas" />
+  <vistas:TextoEjecucionesScript x:Key="EjecucionesScript" />
   <Style x:Key="BotonIconoNativo" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
    <Setter Property="Width" Value="32"/><Setter Property="Height" Value="32"/><Setter Property="Padding" Value="7"/>
   </Style>
  </UserControl.Resources>
  <Grid>
-  <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="30"/></Grid.RowDefinitions>
-  <Grid Margin="20,0" >
-   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-    <Path Data="{StaticResource IconoTerminal}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource AccentBrush}" Margin="0,0,10,0"/>
-    <TextBlock Text="{Binding Usuario}" Foreground="{StaticResource TextBrush}" FontSize="12" VerticalAlignment="Center"/>
-   </StackPanel>
-   <TextBlock Grid.Column="1" Text="{Binding Resumen}" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="12,0"/>
-   <Button Grid.Column="2" Style="{StaticResource BotonIconoNativo}" Click="Limpiar_Click" ToolTip="Cerrar consolas finalizadas y detener ejecuciones" AutomationProperties.Name="Limpiar consolas">
-    <Path Data="{StaticResource IconoCerrar}" Style="{StaticResource EstiloIcono}"/>
-   </Button>
-  </Grid>
+  <Grid.RowDefinitions><RowDefinition Height="64"/><RowDefinition Height="*"/><RowDefinition Height="24"/></Grid.RowDefinitions>
+  <Border BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1" Margin="0,0,0,12">
+   <Grid Margin="24,0">
+    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBlock x:Name="SaludoUsuario" Foreground="{StaticResource TextBrush}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Usuario}" Margin="0,0,20,0"><Run Text="Hola, "/><Run Text="{Binding Usuario, Mode=OneWay}"/></TextBlock>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+     <Button x:Name="BotonDetenerTodas" Click="DetenerTodas_Click" IsEnabled="{Binding PuedeDetenerTodas}" Background="Transparent" BorderBrush="{StaticResource DangerBrush}" Foreground="{StaticResource DangerBrush}" ToolTip="Detener todas las ejecuciones conservando su salida" AutomationProperties.Name="Detener todas las ejecuciones" Margin="0,0,16,0">
+      <StackPanel Orientation="Horizontal"><Path Data="{StaticResource IconoCuadrado}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource DangerBrush}" Width="14" Height="14" Margin="0,0,7,0"/><TextBlock Text="Detener todo"/></StackPanel>
+     </Button>
+     <TextBlock Text="Ejecutando:" Foreground="{StaticResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center"/>
+     <Border Background="{StaticResource PanelAltBrush}" CornerRadius="4" MinWidth="30" Padding="7,4" Margin="7,0,12,0"><TextBlock x:Name="ContadorActivas" Text="{Binding Activas}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}" TextAlignment="Center"/></Border>
+     <TextBlock Text="Max:" Foreground="{StaticResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center"/>
+     <Border Background="{StaticResource PanelAltBrush}" CornerRadius="4" MinWidth="30" Padding="7,4" Margin="7,0,12,0"><TextBlock Text="{Binding Limite}" FontFamily="Consolas" Foreground="{StaticResource TextBrush}" TextAlignment="Center"/></Border>
+     <Button x:Name="BotonLimpiarFinalizadas" Style="{StaticResource BotonIconoNativo}" Click="Limpiar_Click" IsEnabled="{Binding PuedeLimpiarFinalizadas}" ToolTip="Cerrar solo las consolas finalizadas" AutomationProperties.Name="Limpiar consolas finalizadas" Margin="0,0,8,0"><Path Data="{StaticResource IconoPapelera}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource MutedTextBrush}"/></Button>
+     <Button x:Name="BotonAuditoria" Style="{StaticResource BotonIconoNativo}" Click="Auditoria_Click" Visibility="{Binding Administrador, Converter={StaticResource VisibleSi}}" ToolTip="Auditoria" AutomationProperties.Name="Abrir auditoria"><Path Data="{StaticResource IconoRegistro}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource MutedTextBrush}"/></Button>
+    </StackPanel>
+   </Grid>
+  </Border>
   <Grid Grid.Row="1">
    <Grid.Style><Style TargetType="Grid"><Style.Triggers><DataTrigger Binding="{Binding AjustesAbiertos}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Grid.Style>
-   <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <Grid Margin="16,0,12,0">
-    <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="40"/><RowDefinition Height="*"/><RowDefinition Height="44"/></Grid.RowDefinitions>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="320"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Grid Margin="24,0,16,0">
+    <Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition Height="40"/><RowDefinition Height="*"/><RowDefinition Height="48"/></Grid.RowDefinitions>
     <Grid>
-     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
-     <TextBox Text="{Binding Buscar, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" VerticalContentAlignment="Center" AutomationProperties.Name="Buscar scripts" ToolTip="Buscar scripts"/>
-     <Button Grid.Column="1" Style="{StaticResource BotonIconoNativo}" Click="Refrescar_Click" ToolTip="Actualizar scripts" AutomationProperties.Name="Actualizar scripts"><Path Data="{StaticResource IconoRefrescar}" Style="{StaticResource EstiloIcono}"/></Button>
+     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
+     <Border Background="{StaticResource InputBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="6" Margin="0,0,6,0">
+      <Grid>
+       <TextBlock Text="Buscar scripts..." Margin="32,0,32,0" Foreground="{StaticResource DimTextBrush}" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Buscar}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+       <TextBox x:Name="BuscadorScripts" Text="{Binding Buscar, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" Background="Transparent" BorderThickness="0" Padding="32,6,32,6" VerticalContentAlignment="Center" AutomationProperties.Name="Buscar scripts" ToolTip="Buscar scripts"/>
+       <Path Data="{StaticResource IconoBuscar}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource DimTextBrush}" HorizontalAlignment="Left" Margin="10,0,0,0" IsHitTestVisible="False"/>
+       <Button Click="VaciarBusqueda_Click" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="9" ToolTip="Borrar busqueda" AutomationProperties.Name="Borrar busqueda"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource BotonIconoNativo}"><Style.Triggers><DataTrigger Binding="{Binding Buscar}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Button.Style><Path Data="{StaticResource IconoCerrar}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource DimTextBrush}" Width="12" Height="12"/></Button>
+      </Grid>
+     </Border>
+     <Button Grid.Column="1" Style="{StaticResource BotonIconoNativo}" Click="Refrescar_Click" ToolTip="Actualizar scripts" AutomationProperties.Name="Actualizar scripts" HorizontalAlignment="Right"><Path Data="{StaticResource IconoRefrescar}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource MutedTextBrush}"/></Button>
     </Grid>
     <Grid Grid.Row="1" Margin="0,4">
      <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -42,33 +57,41 @@
     </Grid>
     <ListBox Grid.Row="2" x:Name="ListadoScripts" ItemsSource="{Binding Scripts}" Background="Transparent" BorderThickness="0" MouseDoubleClick="ListadoScripts_DobleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
      <ListBox.ContextMenu><ContextMenu><MenuItem Header="Diagnostico de ejecucion" Click="Diagnostico_Click"/></ContextMenu></ListBox.ContextMenu>
-     <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,8"/></Style></ListBox.ItemContainerStyle>
+     <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,12"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Seleccion" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Seleccion" Property="BorderBrush" Value="{StaticResource AccentBrush}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Seleccion" Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
      <ListBox.ItemTemplate><DataTemplate>
       <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1" CornerRadius="8" Padding="12" ToolTip="{Binding MotivoBloqueo}">
-       <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
-        <StackPanel Margin="0,0,8,0">
-         <TextBlock Text="{Binding Nombre}" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-         <TextBlock Text="{Binding Tipo}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0"/>
-         <TextBlock Text="{Binding Carpeta}" Foreground="{StaticResource DimTextBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/>
-        </StackPanel>
-        <Button Grid.Column="1" Tag="{Binding}" Style="{StaticResource BotonIconoNativo}" Click="Ejecutar_Click" VerticalAlignment="Center" ToolTip="Ejecutar o abrir" AutomationProperties.Name="Ejecutar o abrir script">
+       <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition/></Grid.ColumnDefinitions>
+         <Border Width="30" Height="30" Background="{StaticResource AccentSoftBrush}" CornerRadius="6" VerticalAlignment="Top"><Path Data="{StaticResource IconoTerminal}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource AccentBrush}" Width="19" Height="19"/></Border>
+         <StackPanel Grid.Column="1">
+          <TextBlock Text="{Binding Nombre}" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" TextWrapping="Wrap" FontSize="12"/>
+          <TextBlock Text="{Binding Tipo}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" Margin="0,4,0,0"/>
+          <TextBlock Text="{Binding Carpeta}" Foreground="{StaticResource DimTextBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/>
+         </StackPanel>
+        </Grid>
+        <TextBlock Grid.Row="1" Foreground="{StaticResource AccentBrush}" FontSize="10" Margin="0,7,0,0"><TextBlock.Text><MultiBinding Converter="{StaticResource EjecucionesScript}"><Binding Path="Id"/><Binding Path="DataContext.Activas" RelativeSource="{RelativeSource AncestorType={x:Type UserControl}}"/><Binding Path="DataContext.Consolas" RelativeSource="{RelativeSource AncestorType={x:Type UserControl}}"/></MultiBinding></TextBlock.Text><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+        <Button Grid.Row="2" Tag="{Binding}" Click="Ejecutar_Click" VerticalAlignment="Center" ToolTip="Ejecutar o abrir" AutomationProperties.Name="Ejecutar o abrir script" Margin="0,12,0,0" Padding="8,6">
          <Button.IsEnabled><Binding Path="EstaBloqueado" Converter="{StaticResource InvertirBooleano}"/></Button.IsEnabled>
-         <Path Data="{StaticResource IconoPlay}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource AccentBrush}"/>
+         <StackPanel Orientation="Horizontal"><Path Data="{StaticResource IconoPlay}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource MutedTextBrush}" Width="13" Height="13" Margin="0,0,7,0"/><TextBlock Foreground="{StaticResource MutedTextBrush}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="Ejecutar script"/><Style.Triggers><DataTrigger Binding="{Binding EsCarpeta}" Value="True"><Setter Property="Text" Value="Abrir carpeta"/></DataTrigger><DataTrigger Binding="{Binding EstaBloqueado}" Value="True"><Setter Property="Text" Value="Bloqueado"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></StackPanel>
         </Button>
        </Grid>
       </Border>
      </DataTemplate></ListBox.ItemTemplate>
     </ListBox>
-    <Button Grid.Row="3" Click="Ajustes_Click" Style="{StaticResource BotonMenu}" Visibility="{Binding Administrador, Converter={StaticResource VisibleSi}}">
-     <StackPanel Orientation="Horizontal"><Path Data="{StaticResource IconoAjustes}" Style="{StaticResource EstiloIcono}" Margin="0,0,8,0"/><TextBlock Text="Configuracion avanzada"/></StackPanel>
-    </Button>
+    <Grid Grid.Row="3" Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <Button Click="Ajustes_Click" Style="{StaticResource BotonMenu}" Visibility="{Binding Administrador, Converter={StaticResource VisibleSi}}" AutomationProperties.Name="Configuracion avanzada" Padding="0,8">
+      <StackPanel Orientation="Horizontal"><Path Data="{StaticResource IconoAjustes}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource MutedTextBrush}" Margin="0,0,8,0"/><TextBlock Text="Configuracion avanzada" FontSize="11"/></StackPanel>
+     </Button>
+     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding Administrador}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></StackPanel.Style><Path Data="{StaticResource IconoBloqueo}" Style="{StaticResource EstiloIcono}" Stroke="{StaticResource DimTextBrush}" Width="13" Height="13" Margin="0,0,6,0"/><TextBlock Text="Sin permisos de configuracion" Foreground="{StaticResource DimTextBrush}" FontSize="10"/></StackPanel>
+     <TextBlock Grid.Column="1" Text="{Binding Version}" FontSize="10" Foreground="{StaticResource DimTextBrush}" FontFamily="Consolas" VerticalAlignment="Center" Margin="6,0,0,0"/>
+    </Grid>
    </Grid>
-   <ScrollViewer Grid.Column="1" x:Name="DesplazamientoConsolas" Margin="0,0,16,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+   <ScrollViewer Grid.Column="1" x:Name="DesplazamientoConsolas" Margin="0,0,12,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <ItemsControl ItemsSource="{Binding Consolas}">
      <!-- Acota la salida y mantiene la entrada visible dentro de cada consola. -->
-     <ItemsControl.Height><MultiBinding Converter="{StaticResource AlturaConsolas}"><Binding Path="ViewportHeight" ElementName="DesplazamientoConsolas"/><Binding Path="Consolas.Count"/></MultiBinding></ItemsControl.Height>
-     <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-     <ItemsControl.ItemTemplate><DataTemplate><vistas:ConsolaNativa MinHeight="280" Margin="0,0,0,12" Enviar="Consola_Enviar" Cerrar="Consola_Cerrar"/></DataTemplate></ItemsControl.ItemTemplate>
+     <ItemsControl.Height><MultiBinding Converter="{StaticResource AlturaConsolas}"><Binding Path="ViewportHeight" ElementName="DesplazamientoConsolas"/><Binding Path="Consolas.Count"/><Binding Path="ActualWidth" ElementName="DesplazamientoConsolas"/></MultiBinding></ItemsControl.Height>
+     <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid><UniformGrid.Columns><MultiBinding Converter="{StaticResource ColumnasConsolas}"><Binding Path="Consolas.Count"/><Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType={x:Type ScrollViewer}}"/></MultiBinding></UniformGrid.Columns></UniformGrid></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+     <ItemsControl.ItemTemplate><DataTemplate><vistas:ConsolaNativa MinHeight="280" Margin="0,0,12,12" Enviar="Consola_Enviar" Cerrar="Consola_Cerrar"/></DataTemplate></ItemsControl.ItemTemplate>
     </ItemsControl>
    </ScrollViewer>
   </Grid>
@@ -111,7 +134,7 @@
    </TabControl>
    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0"><Button Click="Volver_Click" Content="Descartar cambios" Margin="0,0,8,0"/><Button x:Name="BotonGuardar" Click="Guardar_Click" Content="Guardar cambios" Background="{StaticResource AccentSoftBrush}"/></StackPanel>
   </Grid>
-  <Grid Grid.Row="2" Margin="16,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Estado}" FontSize="11" Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Estado}"/><TextBlock Grid.Column="1" Text="{Binding Version}" FontSize="10" Foreground="{StaticResource DimTextBrush}" VerticalAlignment="Center"/></Grid>
+  <TextBlock Grid.Row="2" Margin="24,0" Text="{Binding Estado}" FontSize="11" Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Estado}"/>
   <ProgressBar Grid.Row="0" Grid.RowSpan="3" Height="3" VerticalAlignment="Top" IsIndeterminate="True" Visibility="{Binding Cargando, Converter={StaticResource VisibleSi}}"/>
  </Grid>
 </UserControl>

@@ -1,17 +1,17 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 2.0.1
+# LanzadorScripts 2.0.2
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz completamente WPF nativa. El cliente y el servidor 2.0.1 administran configuracion global, permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz completamente WPF nativa. El cliente y el servidor 2.0.2 administran configuracion global, permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
 
 La version 1.9.1 incorpora [monitorizacion tecnica en GitLab con OpenTelemetry](Documentacion/MonitorizacionGitLab.md), sin exportar datos personales, scripts ni auditorias. Se puede desactivar con `LANZADOR_MONITORIZACION_HABILITADA=false`.
 
 ## Entregables
 
-- `LanzadorScripts-2.0.1-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-2.0.1-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-2.0.1-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-2.0.2-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-2.0.2-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-2.0.2-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64. Los clientes no utilizan WebView2, HTML, JavaScript ni un servidor HTTP local. No descargan ni instalan componentes de navegador y no eliminan el runtime compartido de Edge que utilicen otras aplicaciones.
 
@@ -47,12 +47,12 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Respaldar la base y su clave y extraer `LanzadorScripts_Servidor-2.0.1-x64.zip` en `MAD002MICROPRU`.
+1. Respaldar la base y su clave y extraer `LanzadorScripts_Servidor-2.0.2-x64.zip` en `MAD002MICROPRU`.
 2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
 3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado, que el resumen muestra `Kerberos remoto preparado` y que el firewall de dominio admite TCP 47831.
 4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.
 5. Revisar **Actualizaciones** y confirmar el recurso `LanzadorScriptsActualizaciones$`.
-6. En **Clientes**, revisar la ruta UNC de scripts y el limite global de ejecuciones simultaneas. Guardar antes de distribuir los clientes 2.0.1.
+6. En **Clientes**, revisar la ruta UNC de scripts y el limite global de ejecuciones simultaneas. Guardar antes de distribuir los clientes 2.0.2.
 
 La cuenta elevada que realiza la instalacion se registra como primer administrador. La identidad se entrega al servicio mediante un archivo DPAPI de un solo uso, se elimina tras crear o validar la base y no se guarda en `configuracion-servidor.json`.
 
@@ -73,6 +73,8 @@ La cuenta de dominio debe estar activa en la base central y disponer de lectura 
 Las consolas usan salida seleccionable y un campo de respuesta nativo inferior. Enter envia una linea, incluso vacia para Pause. Las respuestas tambien llegan a scripts elevados a traves del broker autenticado y no se registran en auditoria. La salida continua no cambia el foco del campo de respuesta.
 
 Desde 2.0.1 la altura de cada consola depende del espacio disponible y de las consolas abiertas, no del volumen de salida. La salida larga se desplaza dentro de su consola y mantiene accesible la entrada, tambien al redimensionar la ventana.
+
+La version 2.0.2 recupera el saludo, los contadores, el icono original, los controles de ventana y las consolas en dos columnas cuando hay anchura suficiente. **Detener todo** conserva las salidas; el boton de limpiar retira solo consolas finalizadas. La auditoria tiene acceso directo para administradores. Las pruebas visuales verifican la ventana real, no un contenedor de prueba con una barra estandar.
 
 El buscador recorre todas las carpetas autorizadas, muestra la ruta relativa de cada coincidencia y vuelve a la carpeta anterior al vaciarlo. Cambiar de carpeta o refrescar no destruye las consolas abiertas.
 
