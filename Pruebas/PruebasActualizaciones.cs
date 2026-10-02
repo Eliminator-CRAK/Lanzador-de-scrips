@@ -78,6 +78,32 @@ public sealed class PruebasActualizaciones
     }
 
     [Fact]
+    public void DesactivarVersionPersisteYEliminarExigeSeleccionIntegra()
+    {
+        var raiz = CrearDirectorioTemporal();
+        try
+        {
+            var anterior = CrearMsiFicticio(raiz, "1.9.1", 16);
+            var reciente = CrearMsiFicticio(raiz, "1.10.0", 32);
+            var catalogo = new CatalogoActualizacionesServidor(raiz, CrearResultadoValido);
+            var paquete = CrearResultadoValido(reciente);
+            var solicitud = new GestionarActualizacionServidor(paquete.NombreArchivo, paquete.Sha256, false);
+            Assert.Equal("1.9.1", catalogo.Gestionar(solicitud).VersionActiva);
+            var nuevo = new CatalogoActualizacionesServidor(raiz, CrearResultadoValido);
+            Assert.False(nuevo.ObtenerEstado().Paquetes.Single(p => p.NombreArchivo == paquete.NombreArchivo).Activo);
+            Assert.Throws<InvalidDataException>(() => nuevo.Gestionar(solicitud with { Sha256 = new string('0', 64) }));
+            Assert.Throws<InvalidDataException>(() => nuevo.Gestionar(solicitud with { NombreArchivo = "../fuera.msi" }));
+            Assert.Equal("1.10.0", nuevo.Gestionar(solicitud with { Activo = true }).VersionActiva);
+            Assert.Throws<InvalidOperationException>(() => nuevo.Gestionar(solicitud with { Activo = null, Eliminar = true }));
+            var viejo = CrearResultadoValido(anterior);
+            nuevo.Gestionar(new(viejo.NombreArchivo, viejo.Sha256, Eliminar: true));
+            Assert.False(File.Exists(anterior));
+            Assert.True(File.Exists(reciente));
+        }
+        finally { EliminarDirectorioTemporal(raiz); }
+    }
+
+    [Fact]
     public void CatalogoCacheaPorRutaTamanoYFecha()
     {
         var raiz = CrearDirectorioTemporal();

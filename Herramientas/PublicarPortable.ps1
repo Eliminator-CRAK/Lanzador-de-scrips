@@ -648,6 +648,9 @@ function Assert-PublishedMsi {
     return $hash
 }
 
+$certificadoFirma = Get-SigningCertificate
+$huellaAuxiliar = if ($null -ne $certificadoFirma) { $certificadoFirma.Thumbprint } else { '' }
+
 Write-Host 'Restaurando dependencias...'
 Invoke-NativeChecked -Descripcion 'dotnet restore' -Comando {
     dotnet restore (Join-Path $raiz 'Pruebas\LanzadorScripts.Pruebas.csproj')
@@ -691,6 +694,8 @@ Invoke-NativeChecked -Descripcion 'dotnet publish' -Comando {
         -p:UseAppHost=true `
         -p:DebugType=None `
         -p:DebugSymbols=false `
+        "-p:LANZADOR_SIGNING_THUMBPRINT=$huellaAuxiliar" `
+        "-p:LANZADOR_TIMESTAMP_SERVER=$TimestampServer" `
         -o $runtimeStagingCompleta
 }
 
@@ -699,7 +704,6 @@ Assert-PortableRuntimePayload `
     -RutaPayload $runtimeExe `
     -RutaCarpeta $runtimeStagingCompleta
 
-$certificadoFirma = Get-SigningCertificate
 if ($null -ne $certificadoFirma) {
     Write-Host 'Firmando runtime .NET interno...'
     Set-ExecutableSignature `

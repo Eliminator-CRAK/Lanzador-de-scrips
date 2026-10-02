@@ -90,7 +90,16 @@ public sealed record ScriptInterno
     public string RutaCompleta => RutaValidada.RutaCompleta;
 }
 
-public sealed record EventoCliente(string Tipo, string Mensaje, string? Color = null, bool Finalizado = false);
+public sealed record EventoCliente(string Tipo, string Mensaje, string? Color = null, bool Finalizado = false,
+    ProgresoScript? Progreso = null, bool? EntradaProtegida = null);
+
+// Conserva los valores reales emitidos por el motor, incluido el porcentaje desconocido.
+public sealed record ProgresoScript(long Origen, int Actividad, int ActividadPadre, string Descripcion,
+    string Estado, string Operacion, int Porcentaje, int SegundosRestantes, bool Completado)
+{
+    public bool Indeterminado => Porcentaje < 0;
+    public string Resumen => Estado + (SegundosRestantes >= 0 ? $"  ({SegundosRestantes} s)" : "");
+}
 
 public sealed record EstadoCatalogoScriptCliente(
     string ScriptId,

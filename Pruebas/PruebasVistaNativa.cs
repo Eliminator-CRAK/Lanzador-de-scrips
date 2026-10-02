@@ -107,6 +107,39 @@ public sealed class PruebasVistaNativa
     }
 
     [Fact]
+    public async Task ProgresoNativoMantieneEntradaYCarpetaRaizOcultaSubir()
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado();
+            using var vista = new ClienteNativo();
+            await vista.InicializarAsync(cliente);
+            Assert.False(vista.Modelo!.PuedeSubirCarpeta);
+            await vista.Modelo.AbrirCarpetaAsync("UTILIDADES");
+            Assert.True(vista.Modelo.PuedeSubirCarpeta);
+            await vista.Modelo.EjecutarAsync(ClienteNativoSimulado.Script);
+            var modelo = vista.Modelo.Consolas[0];
+            modelo.Agregar(new EventoCliente("progreso", "", Progreso: new ProgresoScript(1, 0, -1, "Instalacion", "Preparando", "", 20, -1, false)));
+            modelo.Agregar(new EventoCliente("progreso", "", Progreso: new ProgresoScript(1, 1, 0, "Copiando archivos", "Copia en curso", "", 37, 12, false)));
+            await Task.Delay(120);
+            modelo.AgregarLote([]);
+            Assert.Equal(37, modelo.ProgresoActual?.Porcentaje);
+            Assert.Equal(0, modelo.ProgresoPadre?.Actividad);
+            Dibujar(vista, 960, 600, 144, "progreso-padre-hijo");
+            var consola = Descendientes<ConsolaNativa>(vista).Single();
+            Assert.Equal(Visibility.Visible, ((StackPanel)consola.FindName("PanelProgreso")).Visibility);
+            var barras = Descendientes<ProgressBar>(consola).ToArray();
+            Assert.Equal(2, barras.Length);
+            var entrada = (TextBox)consola.FindName("Entrada");
+            Assert.True(entrada.TransformToAncestor(consola).Transform(new Point()).Y + entrada.ActualHeight <= consola.ActualHeight);
+            modelo.Finalizar();
+            Dibujar(vista, 960, 600, 96, "progreso-finalizado");
+            Assert.Equal(Visibility.Collapsed, ((StackPanel)consola.FindName("PanelProgreso")).Visibility);
+        }).Task.Unwrap();
+    }
+
+    [Fact]
     public async Task SalidaNoBorraRespuestaNiMueveFocoYEnterEnvia()
     {
         var dispatcher = await HiloVisual;

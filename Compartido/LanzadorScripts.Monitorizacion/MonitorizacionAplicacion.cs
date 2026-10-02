@@ -150,7 +150,7 @@ public sealed class MonitorizacionAplicacion : IDisposable
         or "catalogo.obtener" or "catalogo.guardar" or "auditoria.registrar" or "auditoria.consultar"
         or "usuarios.listar" or "usuarios.guardar" or "usuarios.eliminar"
         or "mantenimiento.copia" or "mantenimiento.integridad"
-        or "actualizacion.obtener" or "actualizacion.estado" or "actualizacion.publicar"
+        or "actualizacion.obtener" or "actualizacion.estado" or "actualizacion.publicar" or "actualizacion.gestionar"
         or "configuracion.obtener" or "configuracion.guardar" => operacion,
         _ => "operacion.desconocida"
     };

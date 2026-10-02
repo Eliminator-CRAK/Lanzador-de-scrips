@@ -61,6 +61,7 @@ jobs:
         shell: powershell
         run: |
           dotnet list .\Pruebas\LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+          dotnet list .\EjecutorPowerShell\LanzadorScripts.EjecutorPowerShell.csproj package --vulnerable --include-transitive --no-restore
           dotnet list .\Servidor\LanzadorScripts.Servidor.Servicio\LanzadorScripts.Servidor.Servicio.csproj package --vulnerable --include-transitive --no-restore
           dotnet list .\Servidor\LanzadorScripts.Servidor.Administracion\LanzadorScripts.Servidor.Administracion.csproj package --vulnerable --include-transitive --no-restore
 

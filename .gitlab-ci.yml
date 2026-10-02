@@ -39,6 +39,7 @@ nuget-audit:
   script:
     - dotnet restore Pruebas/LanzadorScripts.Pruebas.csproj -p:EnableWindowsTargeting=true
     - dotnet list Pruebas/LanzadorScripts.Pruebas.csproj package --vulnerable --include-transitive --no-restore
+    - dotnet list EjecutorPowerShell/LanzadorScripts.EjecutorPowerShell.csproj package --vulnerable --include-transitive --no-restore
     - dotnet restore Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj -p:EnableWindowsTargeting=true
     - dotnet list Servidor/LanzadorScripts.Servidor.Servicio/LanzadorScripts.Servidor.Servicio.csproj package --vulnerable --include-transitive --no-restore
     - dotnet restore Servidor/LanzadorScripts.Servidor.Administracion/LanzadorScripts.Servidor.Administracion.csproj -p:EnableWindowsTargeting=true

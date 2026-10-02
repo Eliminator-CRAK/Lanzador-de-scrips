@@ -231,15 +231,17 @@ public sealed class PruebasLanzadorScripts
     }
 
     [Fact]
-    public void EjecucionPowerShellTieneRutaRapidaNoInteractiva()
+    public void EjecucionPowerShellUtilizaHostAisladoSinAdaptadoresDeTexto()
     {
         var rutaGestor = Path.Combine(ObtenerRaizProyecto(), "Servicios", "GestorEjecucionesWeb.cs");
         var codigo = File.ReadAllText(rutaGestor);
 
-        Assert.Contains("CrearPlanPowerShell", codigo, StringComparison.Ordinal);
-        Assert.Contains("\"-File\"", codigo, StringComparison.Ordinal);
-        Assert.Contains("\"-NonInteractive\"", codigo, StringComparison.Ordinal);
-        Assert.Contains("RequiereAdaptadorInteractivo", codigo, StringComparison.Ordinal);
+        Assert.Contains("ServicioProcesoScript", codigo, StringComparison.Ordinal);
+        Assert.DoesNotContain("CrearPlanPowerShell", codigo, StringComparison.Ordinal);
+        var host = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "EjecutorPowerShell", "Programa.cs"));
+        Assert.Contains("PSAuthorizationManager", host, StringComparison.Ordinal);
+        Assert.Contains("InitialSessionState.CreateDefault", host, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetProfileCommands", host, StringComparison.Ordinal);
     }
 
     [Fact]

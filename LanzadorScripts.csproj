@@ -35,6 +35,9 @@
 
   <ItemGroup>
     <ProjectReference Include="Compartido\LanzadorScripts.Protocolo\LanzadorScripts.Protocolo.csproj" />
+    <ProjectReference Include="EjecutorPowerShell\LanzadorScripts.EjecutorPowerShell.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishSelfContained;PublishSingleFile;PublishReadyToRun;IncludeNativeLibrariesForSelfExtract;UseAppHost" />
+    <EmbeddedResource Include="EjecutorPowerShell\bin\$(Configuration)\net472\LanzadorScripts.EjecutorPowerShell.exe" LogicalName="LanzadorScripts.EjecutorPowerShell.exe" />
   </ItemGroup>
 
   <ItemGroup>
@@ -59,6 +62,8 @@
     <Compile Remove="Pruebas\**\*.cs" />
     <Compile Remove="Compartido\**\*.cs" />
     <Compile Remove="Servidor\**\*.cs" />
+    <Compile Remove="EjecutorPowerShell\**\*.cs" />
+    <None Remove="EjecutorPowerShell\**\*" />
     <Page Remove="Compartido\**\*.xaml" />
     <Page Remove="Servidor\**\*.xaml" />
     <ApplicationDefinition Remove="Compartido\**\*.xaml" />

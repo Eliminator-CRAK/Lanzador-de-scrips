@@ -1,0 +1,19 @@
+<!-- (Autor: Alex Roman) -->
+<!-- Descripcion: Aloja Windows PowerShell 5.1 en un proceso independiente sin perfiles. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugType>embedded</DebugType>
+    <AssemblyName>LanzadorScripts.EjecutorPowerShell</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.PowerShell.5.1.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <Target Name="FirmarAuxiliar" AfterTargets="Build" Condition="'$(LANZADOR_SIGNING_THUMBPRINT)' != '' and '$(OS)' == 'Windows_NT'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)\..\Herramientas\FirmarPublicacionInstalada.ps1&quot; -RutaArchivo &quot;$(TargetPath)&quot; -Thumbprint &quot;$(LANZADOR_SIGNING_THUMBPRINT)&quot; -TimestampServer &quot;$(LANZADOR_TIMESTAMP_SERVER)&quot;" />
+  </Target>
+</Project>

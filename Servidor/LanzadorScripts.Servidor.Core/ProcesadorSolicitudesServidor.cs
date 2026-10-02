@@ -57,6 +57,7 @@ public sealed class ProcesadorSolicitudesServidor
                 OperacionesServidor.Salud => ProcesarSalud(cuenta, solicitud),
                 OperacionesServidor.ObtenerConfiguracion => ProcesarConfiguracion(cuenta, solicitud, guardar: false),
                 OperacionesServidor.PublicarActualizacion => ProcesarPublicacion(cuenta, solicitud),
+                OperacionesServidor.GestionarActualizacion => ProcesarGestionActualizacion(cuenta, solicitud),
                 OperacionesServidor.GuardarConfiguracion => ProcesarConfiguracion(cuenta, solicitud, guardar: true),
                 OperacionesServidor.ObtenerPermisos => ProcesarObtenerPermisos(cuenta, solicitud),
                 OperacionesServidor.GuardarPermisos => ProcesarGuardarPermisos(cuenta, solicitud),
@@ -107,6 +108,16 @@ public sealed class ProcesadorSolicitudesServidor
                 "error_interno",
                 "El servidor no pudo procesar la solicitud.");
         }
+    }
+
+    private RespuestaServidor ProcesarGestionActualizacion(string cuenta, SolicitudServidor solicitud)
+    {
+        if (!_repositorio.EsAdministrador(cuenta)) return AccesoDenegado(solicitud.SolicitudId);
+        var cambio = Deserializar<GestionarActualizacionServidor>(solicitud.Datos);
+        var estado = (_catalogoActualizaciones ?? throw new InvalidOperationException("Actualizaciones no disponibles.")).Gestionar(cambio);
+        RegistrarAccionAdministrativa(cuenta, "administracion.actualizacion", cambio.Eliminar ? "eliminado" : cambio.Activo == true ? "activado" : "desactivado",
+            $"{cambio.NombreArchivo}; SHA256={cambio.Sha256}");
+        return Correcta(solicitud.SolicitudId, estado);
     }
 
     private RespuestaServidor ProcesarPublicacion(string cuenta, SolicitudServidor solicitud)
