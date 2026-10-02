@@ -1065,6 +1065,37 @@ public sealed class PruebasLanzadorScripts
         Assert.False(File.Exists(ServicioCatalogoScripts.ObtenerRuta(entorno.RutaPermisos)));
     }
 
+    [Theory]
+    [InlineData(false, "nominal", "ok.ps1", 403)]
+    [InlineData(true, "nominal", "sub/ok.cmd", 403)]
+    [InlineData(true, "nominal", "ok.ps1", 200)]
+    [InlineData(true, "admin", "sub/ok.cmd", 200)]
+    [InlineData(true, "admin", "ausente.ps1", 404)]
+    public async Task ApiDiagnosticoNoRevelaDatosDeScriptsNoAutorizados(bool registrado, string rol, string scriptId, int codigo)
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var permisos = CrearPermisosAdmin();
+        if (registrado) permisos["usuarios"]![0]!["rol"] = rol;
+        else permisos["usuarios"] = new JsonArray();
+        entorno.GuardarPermisosProtegidos(permisos);
+        entorno.GuardarCatalogo(["ok.ps1", "sub/ok.cmd"]);
+        using var servidor = ServidorLocalWeb.IniciarParaPruebas(entorno.CrearConfiguracion(), entorno.Artefactos);
+        using var cliente = CrearCliente(servidor);
+        await PrepararSesionAsync(cliente, servidor);
+        using var respuesta = await cliente.GetAsync("/api/diagnostico-ejecucion?scriptId=" + Uri.EscapeDataString(scriptId));
+        Assert.Equal(codigo, (int)respuesta.StatusCode);
+        var cuerpo = await LeerJsonAsync(respuesta);
+        if (codigo == 200) Assert.Equal(scriptId, cuerpo?["scriptId"]?.GetValue<string>());
+        else
+        {
+            Assert.NotNull(cuerpo?["error"]);
+            Assert.Null(cuerpo?["sha256"]);
+            Assert.Null(cuerpo?["firma"]);
+            Assert.Null(cuerpo?["executionPolicy"]);
+            Assert.Null(cuerpo?["modoDesarrolloFirmas"]);
+        }
+    }
+
     [Fact]
     public async Task ApiNominalSoloListaCarpetasPermitidas()
     {
