@@ -37,7 +37,8 @@ public partial class ConsolaNativa : UserControl
         foreach (var evento in _modelo.Eventos) AgregarSalida(evento);
         _modelo.Eventos.CollectionChanged += Salida_Cambiada;
         _modelo.PropertyChanged += Estado_Cambiado;
-        if (_modelo.Activa) Entrada.Focus();
+        AplicarEntradaProtegida(_modelo.EntradaProtegida);
+        if (_modelo.Activa) { if (_entradaProtegida) EntradaOculta.Focus(); else Entrada.Focus(); }
     }
 
     private void Desconectar()
@@ -52,7 +53,12 @@ public partial class ConsolaNativa : UserControl
     {
         // Solo desplaza la salida si el usuario no esta leyendo un punto anterior.
         var seguir = Salida.VerticalOffset + Salida.ViewportHeight >= Salida.ExtentHeight - 24;
-        if (e.NewItems is not null) foreach (EventoCliente evento in e.NewItems) AgregarSalida(evento);
+        if (e.Action is NotifyCollectionChangedAction.Remove or NotifyCollectionChangedAction.Replace or NotifyCollectionChangedAction.Reset)
+        {
+            _parrafo.Inlines.Clear();
+            if (_modelo is not null) foreach (var evento in _modelo.Eventos) AgregarSalida(evento);
+        }
+        else if (e.NewItems is not null) foreach (EventoCliente evento in e.NewItems) AgregarSalida(evento);
         if (seguir) Salida.ScrollToEnd();
     }
 
@@ -66,6 +72,7 @@ public partial class ConsolaNativa : UserControl
 
     private void Estado_Cambiado(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(ConsolaNativaModelo.EntradaProtegida)) AplicarEntradaProtegida(_modelo?.EntradaProtegida == true);
         if (e.PropertyName == nameof(ConsolaNativaModelo.Activa) && _modelo?.Activa == true) Entrada.Focus();
         if (e.PropertyName == nameof(ConsolaNativaModelo.Entrada) && EntradaOculta.Password != _modelo?.Entrada)
             EntradaOculta.Password = _modelo?.Entrada ?? "";
@@ -73,11 +80,17 @@ public partial class ConsolaNativa : UserControl
 
     private void Ocultar_Click(object sender, RoutedEventArgs e)
     {
-        _entradaProtegida = !_entradaProtegida;
+        if (_modelo is not null) _modelo.EntradaProtegida = !_modelo.EntradaProtegida;
+    }
+
+    private void AplicarEntradaProtegida(bool protegida)
+    {
+        var reenfocar = IsKeyboardFocusWithin;
+        _entradaProtegida = protegida;
         EntradaOculta.Password = _modelo?.Entrada ?? "";
         Entrada.Visibility = _entradaProtegida ? Visibility.Collapsed : Visibility.Visible;
         EntradaOculta.Visibility = _entradaProtegida ? Visibility.Visible : Visibility.Collapsed;
-        if (_entradaProtegida) EntradaOculta.Focus(); else Entrada.Focus();
+        if (reenfocar) { if (_entradaProtegida) EntradaOculta.Focus(); else Entrada.Focus(); }
     }
 
     private void EntradaOculta_Cambiada(object sender, RoutedEventArgs e)

@@ -3,7 +3,9 @@
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading.Channels;
 using LanzadorScripts.Servicios;
 
 namespace LanzadorScripts.ModelosVista;
@@ -42,9 +44,10 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public IReadOnlyList<string> Carpetas { get; private set; } = [];
     public IReadOnlyList<string> ScriptsAdmin { get; set; } = [];
     public IReadOnlyList<string> ScriptsElevados { get; set; } = [];
-    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.2");
+    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.3");
     public string Buscar { get => _buscar; set { if (Asignar(ref _buscar, value)) _ = RefrescarAsync(); } }
     public string Carpeta => string.IsNullOrEmpty(_carpeta) ? "Scripts" : "Scripts / " + _carpeta;
+    public bool PuedeSubirCarpeta => !string.IsNullOrEmpty(_carpeta);
     public string Estado { get => _estado; private set => Asignar(ref _estado, value); }
     public string Usuario { get => _usuario; private set => Asignar(ref _usuario, value); }
     public string RutaScripts { get => _rutaScripts; private set => Asignar(ref _rutaScripts, value); }
@@ -111,6 +114,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         _buscar = "";
         Notificar(nameof(Buscar));
         Notificar(nameof(Carpeta));
+        Notificar(nameof(PuedeSubirCarpeta));
         await RefrescarAsync();
     }
 
@@ -155,18 +159,42 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
 
     private async Task ObservarAsync(ConsolaNativaModelo consola)
     {
+        // La lectura queda fuera del hilo WPF y aplica contrapresion sin perder el fin.
+        var cola = Channel.CreateBounded<EventoCliente>(256);
+        var lectura = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var evento in _cliente.ObservarAsync(consola.EjecucionId, _vida.Token).ConfigureAwait(false))
+                    await cola.Writer.WriteAsync(evento, _vida.Token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { await cola.Writer.WriteAsync(new EventoCliente("error", ServicioRedaccionSecretos.Sanitizar(ex.Message), "#F44747", true)); }
+            finally { cola.Writer.TryComplete(); }
+        });
         try
         {
-            await foreach (var evento in _cliente.ObservarAsync(consola.EjecucionId, _vida.Token))
+            using var reloj = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
+            while (await reloj.WaitForNextTickAsync(_vida.Token))
             {
                 if (_desechado) break;
-                consola.Agregar(evento);
+                var lote = new List<EventoCliente>();
+                while (cola.Reader.TryRead(out var evento)) lote.Add(evento);
+                consola.AgregarLote(lote);
+                if (cola.Reader.Completion.IsCompleted) break;
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { consola.Agregar(new EventoCliente("error", ServicioRedaccionSecretos.Sanitizar(ex.Message), "#F44747", true)); }
         finally
         {
+            // Una vista cerrada no puede dejar un productor bloqueado en su cola.
+            while (!lectura.IsCompleted)
+            {
+                while (cola.Reader.TryRead(out _)) { }
+                await Task.WhenAny(lectura, Task.Delay(50));
+            }
+            await lectura;
             consola.Finalizar();
             if (!_desechado && consola.CerrarAlFinalizar) RetirarConsola(consola);
             ActualizarResumen();
@@ -313,6 +341,12 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
     private string _entrada = "";
     private bool _activa;
     private bool _enviando;
+    private bool _entradaProtegida;
+    private readonly Dictionary<(long, int), ProgresoScript> _actividades = [];
+    private ProgresoScript? _progresoActual;
+    private ProgresoScript? _progresoPadre;
+    private readonly Stopwatch _relojProgreso = Stopwatch.StartNew();
+    private readonly Dictionary<(long, int), ProgresoScript> _pendientes = [];
     public ConsolaNativaModelo(int numero) => Numero = numero;
     public int Numero { get; }
     public Guid EjecucionId { get; private set; }
@@ -323,6 +357,11 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
     public bool Activa { get => _activa; private set => Asignar(ref _activa, value); }
     public bool Enviando { get => _enviando; set => Asignar(ref _enviando, value); }
     public string Entrada { get => _entrada; set => Asignar(ref _entrada, value); }
+    public bool EntradaProtegida { get => _entradaProtegida; set => Asignar(ref _entradaProtegida, value); }
+    public ProgresoScript? ProgresoActual { get => _progresoActual; private set { if (Asignar(ref _progresoActual, value)) Notificar(nameof(TieneProgreso)); } }
+    public ProgresoScript? ProgresoPadre { get => _progresoPadre; private set { if (Asignar(ref _progresoPadre, value)) Notificar(nameof(TieneProgresoPadre)); } }
+    public bool TieneProgreso => ProgresoActual is not null;
+    public bool TieneProgresoPadre => ProgresoPadre is not null;
     public ObservableCollection<EventoCliente> Eventos { get; } = [];
     public void Iniciar(ElementoScriptNativo script, Guid id)
     {
@@ -333,10 +372,76 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
     }
     public void Agregar(EventoCliente evento)
     {
+        if (evento.Progreso is { } progreso)
+        {
+            _pendientes[(progreso.Origen, progreso.Actividad)] = progreso;
+            AplicarProgresos(progreso.Completado);
+        }
+        if (evento.EntradaProtegida is { } protegida) EntradaProtegida = protegida;
         if (!string.IsNullOrEmpty(evento.Mensaje)) Eventos.Add(evento);
         if (evento.Finalizado) Finalizar();
     }
-    public void Finalizar() { Entrada = ""; Activa = false; }
+
+    public void AgregarLote(IReadOnlyList<EventoCliente> eventos)
+    {
+        // Une fragmentos consecutivos para crear menos objetos y notificaciones de salida.
+        EventoCliente? bloque = null;
+        foreach (var evento in eventos)
+        {
+            if (evento.Progreso is not null || evento.EntradaProtegida is not null || evento.Finalizado)
+            {
+                if (bloque is not null) { Agregar(bloque); bloque = null; }
+                Agregar(evento);
+            }
+            else if (bloque is not null && bloque.Tipo == evento.Tipo && bloque.Color == evento.Color && bloque.Mensaje.Length < 32768)
+                bloque = bloque with { Mensaje = bloque.Mensaje + evento.Mensaje };
+            else { if (bloque is not null) Agregar(bloque); bloque = evento; }
+        }
+        if (bloque is not null) Agregar(bloque);
+        AplicarProgresos(false);
+        LimitarSalida();
+    }
+
+    private void AplicarProgresos(bool forzar)
+    {
+        if (!forzar && _relojProgreso.ElapsedMilliseconds < 100) return;
+        foreach (var progreso in _pendientes.Values)
+        {
+            var clave = (progreso.Origen, progreso.Actividad);
+            _actividades.Remove(clave);
+            if (!progreso.Completado && _actividades.Count < 128) _actividades[clave] = progreso;
+        }
+        _pendientes.Clear();
+        ProgresoActual = _actividades.Values.LastOrDefault();
+        ProgresoPadre = ProgresoActual is { ActividadPadre: >= 0 } actual
+            && _actividades.TryGetValue((actual.Origen, actual.ActividadPadre), out var padre) ? padre : null;
+        _relojProgreso.Restart();
+    }
+
+    private void LimitarSalida()
+    {
+        var lineas = Eventos.Sum(e => e.Mensaje.Count(c => c == '\n'));
+        var caracteres = Eventos.Sum(e => e.Mensaje.Length);
+        while (Eventos.Count > 1 && (lineas > 1999 || caracteres > 2_000_000))
+        {
+            lineas -= Eventos[0].Mensaje.Count(c => c == '\n');
+            caracteres -= Eventos[0].Mensaje.Length;
+            Eventos.RemoveAt(0);
+        }
+        if (Eventos.Count == 1 && lineas > 1999)
+        {
+            var texto = Eventos[0].Mensaje;
+            var inicio = 0;
+            for (var quitar = lineas - 1999; quitar > 0; quitar--) inicio = texto.IndexOf('\n', inicio) + 1;
+            Eventos[0] = Eventos[0] with { Mensaje = texto[inicio..] };
+        }
+    }
+
+    public void Finalizar()
+    {
+        Entrada = ""; EntradaProtegida = false; Activa = false;
+        _actividades.Clear(); _pendientes.Clear(); ProgresoActual = null; ProgresoPadre = null;
+    }
 }
 
 public sealed class UsuarioPermisoModelo : ModeloNotificable

@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private string? _usuarioSeleccionadoId;
     private bool _ocupado;
     private long _revisionConfiguracion;
+    private int _maximoGlobalLegado;
 
     public MainWindow()
     {
@@ -112,7 +113,7 @@ public partial class MainWindow : Window
 
     private async void MostrarConfiguracion_Click(object sender, RoutedEventArgs e)
     {
-        SeleccionarVista(6, "Configuracion de clientes", "Configuracion global");
+        SeleccionarVista(6, "Rutas", "Carpetas compartidas y almacenamiento local");
         await CargarConfiguracionGlobalAsync();
     }
 
@@ -128,7 +129,7 @@ public partial class MainWindow : Window
     {
         _revisionConfiguracion = datos.Revision;
         CampoRutaGlobal.Text = datos.RutaScripts;
-        CampoMaximoGlobal.Text = datos.MaximoEjecucionesParalelas.ToString();
+        _maximoGlobalLegado = datos.MaximoEjecucionesParalelas;
         TextoRevisionGlobal.Text = $"Revision {datos.Revision}";
     }
 
@@ -136,8 +137,7 @@ public partial class MainWindow : Window
     {
         await EjecutarOperacionAsync("Guardando configuracion...", async () =>
         {
-            if (!int.TryParse(CampoMaximoGlobal.Text, out var maximo))
-                throw new InvalidDataException("El maximo debe ser un numero entre 1 y 20.");
+            var maximo = _maximoGlobalLegado;
             new ConfiguracionGlobalServidorCentral(_revisionConfiguracion, CampoRutaGlobal.Text.Trim(), maximo).Validar();
             var respuesta = await _cliente.EnviarAsync<GuardarConfiguracionGlobalServidorCentral, ConfiguracionGlobalServidorCentral>(
                 OperacionesServidor.GuardarConfiguracion,
@@ -328,6 +328,34 @@ public partial class MainWindow : Window
             TextoResumenActualizaciones.Text =
                 $"{estado.Mensaje} Comprobado: {estado.ComprobadoUtc.ToLocalTime():dd/MM/yyyy HH:mm:ss}.";
         });
+    }
+
+    private async void CambiarActivoActualizacion_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.CheckBox { Tag: PaqueteActualizacionServidorCentral paquete } campo) return;
+        var activo = campo.IsChecked == true;
+        campo.IsEnabled = false;
+        await EjecutarOperacionAsync("Cambiando disponibilidad...", async () =>
+        {
+            var respuesta = await _cliente.EnviarAsync<GestionarActualizacionServidor, EstadoActualizacionesServidorCentral>(
+                OperacionesServidor.GestionarActualizacion, new(paquete.NombreArchivo, paquete.Sha256, activo), CancellationToken.None);
+            ExigirRespuesta(respuesta);
+        });
+        await CargarActualizacionesAsync(true);
+    }
+
+    private async void EliminarActualizacion_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: PaqueteActualizacionServidorCentral paquete }) return;
+        if (MessageBox.Show(this, $"Eliminar {paquete.NombreArchivo} del repositorio de actualizaciones?", "Eliminar version",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        await EjecutarOperacionAsync("Eliminando version...", async () =>
+        {
+            var respuesta = await _cliente.EnviarAsync<GestionarActualizacionServidor, EstadoActualizacionesServidorCentral>(
+                OperacionesServidor.GestionarActualizacion, new(paquete.NombreArchivo, paquete.Sha256, Eliminar: true), CancellationToken.None);
+            ExigirRespuesta(respuesta);
+        });
+        await CargarActualizacionesAsync(true);
     }
 
     private void AbrirCarpetaActualizaciones_Click(object sender, RoutedEventArgs e)

@@ -10,6 +10,7 @@ public static class OperacionesServidor
 {
     public const string ObtenerConfiguracion = "configuracion.obtener";
     public const string PublicarActualizacion = "actualizacion.publicar";
+    public const string GestionarActualizacion = "actualizacion.gestionar";
     public const string GuardarConfiguracion = "configuracion.guardar";
     public const string Salud = "salud";
     public const string ObtenerPermisos = "permisos.obtener";
@@ -145,7 +146,11 @@ public sealed record PaqueteActualizacionServidorCentral(
     DateTimeOffset FechaUtc,
     bool Valido,
     string EstadoFirma,
-    string Mensaje);
+    string Mensaje,
+    bool Activo = true);
+
+// Cambia disponibilidad o retira solo el archivo y hash seleccionados por el administrador.
+public sealed record GestionarActualizacionServidor(string NombreArchivo, string Sha256, bool? Activo = null, bool Eliminar = false);
 
 public sealed record EstadoActualizacionesServidorCentral(
     string Carpeta,

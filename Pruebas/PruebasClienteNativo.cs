@@ -118,7 +118,7 @@ public sealed class PruebasClienteNativo
         using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var salida = new StringBuilder();
         await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token)) salida.Append(evento.Mensaje);
-        Assert.Contains("RECIBIDO=aena", salida.ToString());
+        Assert.True(salida.ToString().Contains("RECIBIDO=aena", StringComparison.Ordinal), salida.ToString());
         Assert.Contains("' & literal", salida.ToString());
         Assert.Contains("PAUSA_OK", salida.ToString());
         Assert.Empty(cliente.ObtenerEjecucionesActivas());
@@ -144,6 +144,91 @@ public sealed class PruebasClienteNativo
     }
 
     [Fact]
+    public async Task ProgresoLlegaAntesDeFinalizarYNoSeConfundeConStdout()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        File.WriteAllText(Path.Combine(entorno.Raiz, "progreso.ps1"),
+            "# (Autor: Alex Roman)\n# Descripcion: Emite progreso antes de esperar una respuesta.\nWrite-Output 'texto progreso 99%'; Write-Progress -Id 0 -Activity 'Copia' -Status 'Copiando' -PercentComplete 37; $v=Read-Host 'Continuar'; Write-Progress -Id 0 -Activity 'Copia' -Completed; Write-Output ('FIN='+$v)");
+        entorno.GuardarCatalogo(["progreso.ps1"]);
+        using var cliente = CrearCliente(entorno);
+        var inicio = await cliente.IniciarAsync("progreso.ps1");
+        Assert.True(inicio.Exito, inicio.Mensaje);
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var vioProgreso = false;
+        var vioCompleto = false;
+        var salida = new StringBuilder();
+        await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token))
+        {
+            salida.Append(evento.Mensaje);
+            if (evento.Progreso is { Completado: false } progreso)
+            {
+                Assert.Equal(37, progreso.Porcentaje);
+                Assert.Equal("Copia", progreso.Descripcion);
+                Assert.Contains(cliente.ObtenerEjecucionesActivas(), e => e.Id == inicio.Datos);
+                if (!vioProgreso) await cliente.EnviarEntradaAsync(inicio.Datos, "prueba");
+                vioProgreso = true;
+            }
+            vioCompleto |= evento.Progreso?.Completado == true;
+        }
+        Assert.True(vioProgreso);
+        Assert.True(vioCompleto);
+        Assert.True(salida.ToString().Contains("FIN=prueba", StringComparison.Ordinal), salida.ToString());
+    }
+
+    [Fact]
+    public async Task CredencialesUsanEntradaProtegidaYCodigoDeSalidaSeConserva()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        File.WriteAllText(Path.Combine(entorno.Raiz, "credenciales.ps1"),
+            "# (Autor: Alex Roman)\n# Descripcion: Comprueba credenciales de prueba sin imprimirlas.\n$c=Get-Credential; Write-Output ('CREDENCIAL_LONGITUD='+$c.Password.Length); exit 7");
+        entorno.GuardarCatalogo(["credenciales.ps1"]);
+        using var cliente = CrearCliente(entorno);
+        var inicio = await cliente.IniciarAsync("credenciales.ps1");
+        Assert.True(inicio.Exito, inicio.Mensaje);
+        await cliente.EnviarEntradaAsync(inicio.Datos, "usuario_prueba");
+        var protegida = false;
+        var salida = new StringBuilder();
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token))
+        {
+            salida.Append(evento.Mensaje);
+            if (evento.EntradaProtegida == true && !protegida)
+            { protegida = true; await cliente.EnviarEntradaAsync(inicio.Datos, "credencial-ficticia"); }
+        }
+        Assert.True(protegida, salida.ToString());
+        Assert.Contains("CREDENCIAL_LONGITUD=" + "credencial-ficticia".Length, salida.ToString());
+        Assert.Contains("Codigo de salida: 7", salida.ToString());
+        Assert.DoesNotContain("credencial-ficticia", salida.ToString());
+    }
+
+    [Fact]
+    public async Task CarpetasVaciasAutorizadasSonNavegables()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        Directory.CreateDirectory(Path.Combine(entorno.Raiz, "vacia", "hija"));
+        using var cliente = CrearCliente(entorno);
+        Assert.Contains(await cliente.ListarScriptsAsync("", ""), s => s.EsCarpeta && s.Carpeta == "vacia");
+        Assert.Contains(await cliente.ListarScriptsAsync("vacia", ""), s => s.EsCarpeta && s.Carpeta == "vacia/hija");
+        Autorizar(entorno, "nominal");
+        Assert.DoesNotContain(await cliente.ListarScriptsAsync("", ""), s => s.EsCarpeta && s.Carpeta == "vacia");
+    }
+
+    [Fact]
+    public void ModeloRetiraProgresoYAcotaLineasSinPerderElFinal()
+    {
+        var consola = new ConsolaNativaModelo(1);
+        consola.Agregar(new EventoCliente("progreso", "", Progreso: new ProgresoScript(1, 0, -1, "Copia", "", "", -1, -1, false)));
+        consola.AgregarLote([new EventoCliente("info", string.Concat(Enumerable.Repeat("linea\n", 5000)))]);
+        Assert.True(consola.Eventos.Sum(e => e.Mensaje.Count(c => c == '\n')) <= 1999);
+        consola.Agregar(new EventoCliente("exito", "RESULTADO_FINAL", Finalizado: true));
+        Assert.Null(consola.ProgresoActual);
+        Assert.Contains(consola.Eventos, e => e.Mensaje == "RESULTADO_FINAL");
+    }
+
+    [Fact]
     public void SalidaTruncadaConservaResultadoFinalEnPosicionNueva()
     {
         using var entorno = EntornoPruebas.Crear();
@@ -161,6 +246,25 @@ public sealed class PruebasClienteNativo
         var nuevos = (IReadOnlyList<EventoCliente>)tipo.GetMethod("ObtenerEventosDesde")!.Invoke(ejecucion, [total])!;
         Assert.Equal(new[] { "RESULTADO_FINAL", "AUDITORIA_PENDIENTE" }, nuevos.Select(e => e.Mensaje));
         Assert.True((int)tipo.GetProperty("TotalEventos")!.GetValue(ejecucion)! <= 5003);
+    }
+
+    [Fact]
+    public void LimiteDeCaracteresConservaControlesYFinalizacion()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        var tipo = typeof(GestorEjecucionesWeb).GetNestedType("EjecucionWeb", BindingFlags.NonPublic)!;
+        var script = new ServicioValidacionScripts().ValidarRutaConocida(entorno.Raiz, Path.Combine(entorno.Raiz, "ok.ps1"), "ok.ps1", "ok.ps1", "powershell").Script!;
+        var catalogo = new ServicioCatalogoScripts(entorno.Artefactos).Crear([script], [script.Id], entorno.ConjuntoId);
+        using var ejecucion = (IDisposable)Activator.CreateInstance(tipo, script, "", new UsuarioCliente("prueba", "admin", 5, true),
+            true, new JsonObject(), catalogo, false, new string('A', 64))!;
+        var agregar = tipo.GetMethod("AgregarEvento")!;
+        for (var i = 0; i < 600; i++) agregar.Invoke(ejecucion, ["info", new string('x', 4096), null, false]);
+        tipo.GetMethod("AgregarControl")!.Invoke(ejecucion, [new EventoCliente("progreso", "", Progreso: new ProgresoScript(0, 0, -1, "Copia", "", "", 37, -1, false))]);
+        agregar.Invoke(ejecucion, ["exito", "RESULTADO_FINAL", null, true]);
+        var eventos = (IReadOnlyList<EventoCliente>)tipo.GetMethod("ObtenerEventosDesde")!.Invoke(ejecucion, [0])!;
+        Assert.True(eventos.Sum(e => e.Mensaje.Length) < 2_001_000);
+        Assert.Contains(eventos, e => e.Finalizado && e.Mensaje == "RESULTADO_FINAL");
+        Assert.NotNull(tipo.GetMethod("ObtenerControles")!.Invoke(ejecucion, null));
     }
 
     [Fact]

@@ -2,8 +2,8 @@
 <!-- Descripcion: Centraliza la version y los metadatos comunes de LanzadorScripts. -->
 <Project>
   <PropertyGroup>
-    <LanzadorScriptsVersion>2.0.2</LanzadorScriptsVersion>
-    <LanzadorScriptsFileVersion>2.0.2.0</LanzadorScriptsFileVersion>
+    <LanzadorScriptsVersion>2.0.3</LanzadorScriptsVersion>
+    <LanzadorScriptsFileVersion>2.0.3.0</LanzadorScriptsFileVersion>
     <Version>$(LanzadorScriptsVersion)</Version>
     <AssemblyVersion>$(LanzadorScriptsFileVersion)</AssemblyVersion>
     <FileVersion>$(LanzadorScriptsFileVersion)</FileVersion>

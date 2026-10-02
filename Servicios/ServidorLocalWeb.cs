@@ -1249,8 +1249,6 @@ public sealed partial class ServidorLocalWeb : IDisposable
         var maximo = usuario is null
             ? LeerEntero(permisos, "maxScriptsSimultaneos", 5)
             : LeerEntero(usuario, "maxScriptsSimultaneos", 5);
-        if (!_usarArtefactosLocales)
-            maximo = Math.Min(maximo, CargarConfiguracion().MaximoEjecucionesParalelas);
         var carpetasPermitidas = usuario is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : LeerCarpetasPermitidas(usuario["carpetasPermitidas"] as JsonArray);
@@ -1957,7 +1955,16 @@ public sealed partial class ServidorLocalWeb : IDisposable
         var resultado = new List<ScriptCliente>();
 
         buscar = buscar.Trim();
-        foreach (var carpeta in buscar.Length == 0 ? ObtenerCarpetasDirectas(scriptsVisibles, carpetaActual) : [])
+        // Incluye carpetas vacias y sus padres navegables sin revelar rutas no autorizadas.
+        var carpetasVisibles = _servicioValidacionScripts.DescubrirCarpetasScripts(CargarConfiguracion().RutaScripts)
+            .Where(carpeta => usuario.Rol == "admin" || (ObtenerEmergenciaActiva() is null &&
+                (UsuarioTienePermisoCarpeta(usuario, carpeta) || (usuario.CarpetasPermitidas ?? new HashSet<string>()).Any(p => p.Replace('\\', '/').StartsWith(carpeta + "/", StringComparison.OrdinalIgnoreCase)))))
+            .Select(carpeta => ObtenerRutaHija(carpetaActual, carpeta))
+            .Where(hija => !string.IsNullOrEmpty(hija))
+            .Select(hija => string.IsNullOrEmpty(carpetaActual) ? hija!.Split('/')[0] : carpetaActual + "/" + hija!.Split('/')[0]);
+        var carpetasDirectas = ObtenerCarpetasDirectas(scriptsVisibles, carpetaActual).Concat(carpetasVisibles)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.OrdinalIgnoreCase);
+        foreach (var carpeta in buscar.Length == 0 ? carpetasDirectas : Enumerable.Empty<string>())
         {
             resultado.Add(new ScriptCliente(
                 $"carpeta:{carpeta}",

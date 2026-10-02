@@ -181,7 +181,8 @@ public sealed class ServicioBrokerElevado
         }
 
         var script = validacion.Script!;
-        using var proceso = CrearProceso(script, comando.PermitirExecutionPolicyBypass);
+        using var ejecutor = GestorEjecucionesWeb.CrearProceso(script, comando.PermitirExecutionPolicyBypass);
+        var proceso = ejecutor.Proceso;
         using var cancelacionProceso = new CancellationTokenSource();
         var lectorComandos = Task.CompletedTask;
 
@@ -191,8 +192,10 @@ public sealed class ServicioBrokerElevado
             lectorComandos = EscucharComandosAsync(lector, tokenEsperado, proceso, cancelacionProceso);
             var salida = LeerFlujoAsync(proceso.StandardOutput, escritorFlujo, bloqueoEnvio, "info", null, cancelacionProceso.Token);
             var error = LeerFlujoAsync(proceso.StandardError, escritorFlujo, bloqueoEnvio, "error", "#F44747", cancelacionProceso.Token);
+            var control = ejecutor.LeerControlAsync(e => EnviarAsync(escritorFlujo, bloqueoEnvio,
+                new EventoBrokerElevado(e.Tipo, "", null, false, null, "", "", e.Progreso, e.EntradaProtegida)), cancelacionProceso.Token);
             await proceso.WaitForExitAsync(cancelacionProceso.Token);
-            await Task.WhenAll(salida, error);
+            await Task.WhenAll(salida, error, control);
 
             var resultado = proceso.ExitCode == 0 ? "correcto" : "error";
             var mensaje = proceso.ExitCode == 0
@@ -273,15 +276,9 @@ public sealed class ServicioBrokerElevado
         return Process.Start(inicio) ?? throw new InvalidOperationException("No se pudo iniciar el broker elevado.");
     }
 
-    private static Process CrearProceso(ScriptInterno script, bool permitirExecutionPolicyBypass)
-    {
-        // Comparte el adaptador de Read-Host, Pause y parametros con la ejecucion normal.
-        return GestorEjecucionesWeb.CrearProceso(script, permitirExecutionPolicyBypass);
-    }
-
     private static async Task LeerFlujoAsync(StreamReader lector, StreamWriter escritor, SemaphoreSlim bloqueoEnvio, string tipo, string? color, CancellationToken cancelacion)
     {
-        var buffer = new char[512];
+        var buffer = new char[4096];
         int leidos;
         while ((leidos = await lector.ReadAsync(buffer.AsMemory(0, buffer.Length), cancelacion)) > 0)
         {
@@ -346,29 +343,6 @@ public sealed class ServicioBrokerElevado
         }
     }
 
-    private static string CrearComandoPowerShell(string rutaScript)
-    {
-        var rutaEscapada = rutaScript.Replace("'", "''");
-        return "$ErrorActionPreference='Continue'; & '" + rutaEscapada + "' *>&1; exit $LASTEXITCODE";
-    }
-
-    private static string ObtenerRutaPowerShell()
-    {
-        var ruta = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe");
-
-        return File.Exists(ruta) ? ruta : "powershell.exe";
-    }
-
-    private static string ObtenerRutaCmd()
-    {
-        var ruta = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-        return File.Exists(ruta) ? ruta : "cmd.exe";
-    }
-
     private static string LeerArgumento(string[] argumentos, string nombre)
     {
         for (var indice = 0; indice < argumentos.Length - 1; indice++)
@@ -403,7 +377,9 @@ public sealed record EventoBrokerElevado(
     bool Finalizado,
     int? CodigoSalida,
     string Resultado,
-    string Detalle)
+    string Detalle,
+    ProgresoScript? Progreso = null,
+    bool? EntradaProtegida = null)
 {
     public static EventoBrokerElevado ErrorFinal(string mensaje, int? codigoSalida)
     {
