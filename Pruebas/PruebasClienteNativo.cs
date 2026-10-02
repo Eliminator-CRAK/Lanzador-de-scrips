@@ -52,6 +52,24 @@ public sealed class PruebasClienteNativo
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => cliente.AplicarExecutionPolicyAsync());
     }
 
+    [Theory]
+    [InlineData(null, "ok.ps1", false)]
+    [InlineData("nominal", "sub/ok.cmd", false)]
+    [InlineData("nominal", "ok.ps1", true)]
+    [InlineData("admin", "sub/ok.cmd", true)]
+    public async Task DiagnosticoNativoRespetaPermisosDelScript(string? rol, string scriptId, bool permitido)
+    {
+        using var entorno = EntornoPruebas.Crear();
+        if (rol is not null) Autorizar(entorno, rol);
+        entorno.GuardarCatalogo(["ok.ps1", "sub/ok.cmd"]);
+        using var cliente = CrearCliente(entorno);
+        if (permitido)
+            Assert.Equal(scriptId, (await cliente.DiagnosticarAsync(scriptId)).ScriptId);
+        else
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => cliente.DiagnosticarAsync(scriptId));
+        Assert.Empty(cliente.ObtenerEjecucionesActivas());
+    }
+
     [Fact]
     public async Task RevocarAdministradorBloqueaCambiosSinEsperarAlCache()
     {

@@ -1168,19 +1168,21 @@ public sealed partial class ServidorLocalWeb : IDisposable
         var validacion = _servicioValidacionScripts.ValidarScriptParaEjecucion(configuracion.RutaScripts, scriptId);
         if (!validacion.EsValido)
         {
-            await EscribirJsonAsync(contexto, 200, new
-            {
-                scriptId,
-                permitido = false,
-                motivoBloqueo = validacion.Mensaje,
-                powerShellDisponible = new ServicioFirmaAuthenticode().PowerShellDisponible(),
-                executionPolicy = new ServicioFirmaAuthenticode().ObtenerExecutionPolicy(),
-                modoDesarrolloFirmas = _modoDesarrolloFirmas
-            });
+            await EscribirJsonAsync(contexto, ServicioValidacionScripts.ObtenerCodigoHttp(validacion.Codigo),
+                new { error = validacion.Mensaje });
             return;
         }
 
         var diagnosticoPermisos = ObtenerDiagnosticoPermisos();
+        var usuario = ObtenerUsuarioActual(diagnosticoPermisos);
+        // El diagnostico no revela firmas ni politicas de scripts que el usuario no puede consultar.
+        if (ScriptBloqueado(validacion.Script!.Id, usuario, diagnosticoPermisos))
+        {
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.permisos", usuario.NombreUsuario,
+                validacion.Script.Id, "Acceso denegado para este script.");
+            await EscribirJsonAsync(contexto, 403, new { error = "Acceso denegado para este script." });
+            return;
+        }
         var diagnosticoCatalogo = ObtenerDiagnosticoCatalogo(diagnosticoPermisos);
         await EscribirJsonAsync(
             contexto,
