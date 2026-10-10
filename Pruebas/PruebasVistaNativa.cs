@@ -23,6 +23,67 @@ public sealed class PruebasVistaNativa
     private static readonly Task<Dispatcher> HiloVisual = CrearHiloVisual();
 
     [Theory]
+    [InlineData(96)]
+    [InlineData(144)]
+    public async Task AtajoTrasFalloAbreVistaVaciaSinAvisosNiPermisos(int dpi)
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado { FallarConexion = true };
+            var ventana = new VentanaPrincipal(cliente) { Left = -5000, Top = -5000, ShowInTaskbar = false, ShowActivated = false };
+            try
+            {
+                Assert.False(await ventana.EntrarSinConexionAsync(Key.S, ModifierKeys.Control));
+                ventana.Show();
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                var panel = (FrameworkElement)ventana.FindName("PanelArranque");
+                Assert.Equal(Visibility.Visible, panel.Visibility);
+                Assert.True(((Button)ventana.FindName("BotonReintentarArranque")).IsVisible);
+                Assert.False(await ventana.EntrarSinConexionAsync(Key.S, ModifierKeys.Control | ModifierKeys.Shift));
+                Assert.False(await ventana.EntrarSinConexionAsync(Key.R, ModifierKeys.Control));
+                Assert.True(await ventana.EntrarSinConexionAsync(Key.S, ModifierKeys.Control));
+                Assert.True(cliente.Desechado);
+                Assert.Equal(Visibility.Collapsed, panel.Visibility);
+                Assert.False(panel.IsHitTestVisible);
+                var vista = (ClienteNativo)ventana.FindName("VistaCliente");
+                Assert.Empty(vista.Modelo!.Scripts);
+                Assert.False(vista.Modelo.Administrador);
+                Assert.Empty(vista.Modelo.RutaScripts);
+                Assert.Empty(((TextBlock)vista.FindName("ServidorCentral")).Text);
+                await vista.Modelo.InicializarAsync();
+                Assert.Empty(vista.Modelo.Scripts);
+                Assert.False(await ventana.EntrarSinConexionAsync(Key.S, ModifierKeys.Control));
+                Dibujar(ventana, 1000, 680, dpi, "vista-vacia");
+                Assert.DoesNotContain(Descendientes<TextBlock>(ventana).Where(t => t.IsVisible),
+                    t => t.Text.Contains("Ctrl", StringComparison.OrdinalIgnoreCase) || t.Text.Contains("sin conexion", StringComparison.OrdinalIgnoreCase));
+                Assert.Single(Application.Current.Windows.Cast<Window>(), w => w.IsVisible);
+            }
+            finally { ventana.Close(); }
+        }).Task.Unwrap();
+    }
+
+    [Fact]
+    public async Task AtajoNoSustituyeClienteConectado()
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado();
+            var ventana = new VentanaPrincipal(cliente) { Left = -5000, Top = -5000, ShowInTaskbar = false, ShowActivated = false };
+            try
+            {
+                ventana.Show();
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                Assert.False(await ventana.EntrarSinConexionAsync(Key.S, ModifierKeys.Control));
+                Assert.False(cliente.Desechado);
+                Assert.NotEmpty(((ClienteNativo)ventana.FindName("VistaCliente")).Modelo!.Scripts);
+            }
+            finally { ventana.Close(); }
+        }).Task.Unwrap();
+    }
+
+    [Theory]
     [InlineData(1280, 820, 96)]
     [InlineData(1000, 680, 96)]
     [InlineData(1280, 820, 144)]

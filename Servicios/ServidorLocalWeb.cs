@@ -151,7 +151,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
     public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas()
     {
         // Expone solo los datos necesarios para confirmar el cierre.
-        return _gestorEjecuciones.ObtenerEjecucionesActivas();
+        return _gestorEjecuciones.ObtenerEjecucionesActivas(ObtenerUsuarioActual());
     }
 
     internal static ServidorLocalWeb IniciarParaPruebas(ConfiguracionLanzador configuracion)
@@ -267,6 +267,11 @@ public sealed partial class ServidorLocalWeb : IDisposable
 
             await EntregarClienteAsync(contexto, ruta);
             medicion.Completar(contexto.Response.StatusCode < 400);
+        }
+        catch (UnauthorizedAccessException) when (contexto.Request.Url?.AbsolutePath.StartsWith("/api/ejecuciones/", StringComparison.Ordinal) == true)
+        {
+            // La misma respuesta evita distinguir objetos inexistentes de objetos ajenos.
+            await EscribirJsonAsync(contexto, 404, new { error = "Recurso no disponible." });
         }
         catch (Exception ex)
         {
@@ -929,7 +934,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
                 return;
             }
 
-            await _gestorEjecuciones.EnviarEventosAsync(ejecucionId, contexto.Request, contexto.Response, _cancelacion.Token);
+            await _gestorEjecuciones.EnviarEventosAsync(ejecucionId, ObtenerUsuarioActual(), contexto.Request, contexto.Response, _cancelacion.Token);
             return;
         }
 
@@ -937,7 +942,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
         {
             if (Guid.TryParse(partes[2], out var ejecucionId))
             {
-                await _gestorEjecuciones.CancelarAsync(ejecucionId);
+                await _gestorEjecuciones.CancelarAsync(ejecucionId, ObtenerUsuarioActual());
             }
 
             await EscribirJsonAsync(contexto, 200, new { exito = true });
@@ -949,7 +954,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
             var cuerpo = await LeerJsonAsync(contexto.Request);
             if (Guid.TryParse(partes[2], out var ejecucionId))
             {
-                await _gestorEjecuciones.EnviarEntradaAsync(ejecucionId, LeerTexto(cuerpo, "texto", string.Empty));
+                await _gestorEjecuciones.EnviarEntradaAsync(ejecucionId, LeerTexto(cuerpo, "texto", string.Empty), ObtenerUsuarioActual());
             }
 
             await EscribirJsonAsync(contexto, 200, new { exito = true });
