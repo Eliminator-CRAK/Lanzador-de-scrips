@@ -58,12 +58,13 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas()
+    public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas(UsuarioCliente usuario)
     {
         // Devuelve una instantanea estable para confirmar el cierre.
         PurgarFinalizadasAntiguas();
+        using var identidad = WindowsIdentity.GetCurrent();
         return _ejecuciones.Values
-            .Where(ejecucion => !ejecucion.Finalizada)
+            .Where(ejecucion => !ejecucion.Finalizada && EsPropietario(ejecucion, usuario, identidad.User?.Value))
             .Select(ejecucion => new EjecucionActivaResumen(
                 ejecucion.Id,
                 ejecucion.Script.Nombre))
@@ -114,12 +115,31 @@ public sealed class GestorEjecucionesWeb : IDisposable
         return ResultadoInicioEjecucion.Correcto(ejecucion.Id);
     }
 
-    public async Task CancelarAsync(Guid id)
+    private static bool EsPropietario(EjecucionWeb ejecucion, UsuarioCliente usuario, string? sid)
     {
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada)
+        return usuario is not null && usuario.EstaAutorizado && !string.IsNullOrWhiteSpace(usuario.NombreUsuario)
+            && string.Equals(ejecucion.Usuario.NombreUsuario, usuario.NombreUsuario, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(ejecucion.SidPropietario)
+            && string.Equals(ejecucion.SidPropietario, sid, StringComparison.Ordinal);
+    }
+
+    private async Task<EjecucionWeb> ExigirPropietarioAsync(Guid id, UsuarioCliente usuario)
+    {
+        // Un identificador no autoriza a consultar ni controlar una ejecucion ajena.
+        using var identidad = WindowsIdentity.GetCurrent();
+        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || !EsPropietario(ejecucion, usuario, identidad.User?.Value))
         {
-            return;
+            await _servicioAuditoria.RegistrarDenegacionAsync("ejecucion.propietario", identidad.Name, null,
+                "Ejecucion no disponible para este usuario.");
+            throw new UnauthorizedAccessException("Ejecucion no disponible para este usuario.");
         }
+        return ejecucion;
+    }
+
+    public async Task CancelarAsync(Guid id, UsuarioCliente usuario)
+    {
+        var ejecucion = await ExigirPropietarioAsync(id, usuario);
+        if (ejecucion.Finalizada) return;
 
         // La cancelacion se conserva aunque el proceso todavia no haya arrancado.
         ejecucion.Cancelacion.Cancel();
@@ -131,25 +151,21 @@ public sealed class GestorEjecucionesWeb : IDisposable
             "Cancelacion solicitada por el usuario.");
     }
 
-    public Task EnviarEntradaAsync(Guid id, string texto)
+    public async Task EnviarEntradaAsync(Guid id, string texto, UsuarioCliente usuario)
     {
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion) || ejecucion.Finalizada || ejecucion.Cancelada)
+        var ejecucion = await ExigirPropietarioAsync(id, usuario);
+        if (ejecucion.Finalizada || ejecucion.Cancelada)
             throw new InvalidOperationException("La ejecucion no admite mas respuestas.");
         if (texto.Length > MaximoCaracteresEntrada || texto.Contains('\r') || texto.Contains('\n') || texto.Contains('\0'))
             throw new ArgumentException("La respuesta debe ser una linea de hasta 8192 caracteres.");
         // Conserva respuestas recibidas mientras el proceso o el broker termina de arrancar.
         if (!ejecucion.Entradas.Writer.TryWrite(texto))
             throw new InvalidOperationException("La cola de respuestas esta llena o la ejecucion ha terminado.");
-        return Task.CompletedTask;
     }
 
-    public async Task EnviarEventosAsync(Guid id, HttpListenerRequest peticion, HttpListenerResponse respuesta, CancellationToken cancelacion)
+    public async Task EnviarEventosAsync(Guid id, UsuarioCliente usuario, HttpListenerRequest peticion, HttpListenerResponse respuesta, CancellationToken cancelacion)
     {
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion))
-        {
-            respuesta.StatusCode = 404;
-            return;
-        }
+        var ejecucion = await ExigirPropietarioAsync(id, usuario);
 
         respuesta.StatusCode = 200;
         respuesta.ContentType = "text/event-stream; charset=utf-8";
@@ -200,10 +216,10 @@ public sealed class GestorEjecucionesWeb : IDisposable
         }
     }
 
-    public async IAsyncEnumerable<EventoCliente> ObservarEventosAsync(Guid id, [EnumeratorCancellation] CancellationToken cancelacion = default)
+    public async IAsyncEnumerable<EventoCliente> ObservarEventosAsync(Guid id, UsuarioCliente usuario, [EnumeratorCancellation] CancellationToken cancelacion = default)
     {
         // Entrega las mismas salidas a WPF directamente, sin SSE ni servidor HTTP.
-        if (!_ejecuciones.TryGetValue(id, out var ejecucion)) throw new ArgumentException("Ejecucion no encontrada.");
+        var ejecucion = await ExigirPropietarioAsync(id, usuario);
         var indice = 0;
         var revision = 0;
         while (!cancelacion.IsCancellationRequested)
@@ -682,6 +698,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
             Script = script;
             RutaLogs = rutaLogs;
             Usuario = usuario;
+            using var identidad = WindowsIdentity.GetCurrent();
+            SidPropietario = identidad.User?.Value ?? throw new UnauthorizedAccessException("Identidad Windows no disponible.");
             PermitirExecutionPolicyBypass = permitirExecutionPolicyBypass;
             Permisos = permisos;
             Catalogo = catalogo;
@@ -696,6 +714,8 @@ public sealed class GestorEjecucionesWeb : IDisposable
         public string RutaLogs { get; }
 
         public UsuarioCliente Usuario { get; }
+
+        public string SidPropietario { get; }
 
         public bool PermitirExecutionPolicyBypass { get; }
 

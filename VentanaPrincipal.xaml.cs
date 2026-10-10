@@ -47,6 +47,7 @@ public partial class VentanaPrincipal : Window
     private WindowState _estadoAntesOcultar = WindowState.Normal;
     private bool _inicioProgramado;
     private bool _cargaClienteEnCurso;
+    private bool _arranqueFallido;
     private bool _cierreDefinitivo;
     private bool _cierreEnCurso;
     private bool _confirmacionCierreAbierta;
@@ -154,7 +155,9 @@ public partial class VentanaPrincipal : Window
         // La vista aparece antes de consultar configuracion y permisos centrales.
         if (_cargaClienteEnCurso || _cierreEnCurso) return;
         _cargaClienteEnCurso = true;
+        _arranqueFallido = false;
         PanelArranque.Visibility = Visibility.Visible;
+        PanelArranque.IsHitTestVisible = true;
         BotonReintentarArranque.Visibility = Visibility.Collapsed;
         TextoArranque.Text = "Consultando configuracion y permisos...";
         try
@@ -169,6 +172,7 @@ public partial class VentanaPrincipal : Window
         }
         catch (Exception ex)
         {
+            _arranqueFallido = true;
             TextoArranque.Text = ServicioRedaccionSecretos.Sanitizar(ex.Message);
             BotonReintentarArranque.Visibility = Visibility.Visible;
             if (_integracionesSistema)
@@ -178,6 +182,27 @@ public partial class VentanaPrincipal : Window
     }
 
     private void BotonReintentarArranque_Click(object sender, RoutedEventArgs e) => CargarClienteAsync();
+
+    internal async Task<bool> EntrarSinConexionAsync(Key tecla, ModifierKeys modificadores)
+    {
+        // Solo un arranque fallido permite sustituir el motor por una interfaz vacia.
+        if (tecla != Key.S || modificadores != ModifierKeys.Control || !_arranqueFallido
+            || _cargaClienteEnCurso || _cierreEnCurso) return false;
+        _cargaClienteEnCurso = true;
+        try
+        {
+            var anterior = _servidorLocalIntegrado;
+            var cliente = new ClienteNativoSinConexion();
+            await VistaCliente.InicializarAsync(cliente);
+            _servidorLocalIntegrado = cliente;
+            anterior?.Dispose();
+            _arranqueFallido = false;
+            PanelArranque.Visibility = Visibility.Collapsed;
+            PanelArranque.IsHitTestVisible = false;
+            return true;
+        }
+        finally { _cargaClienteEnCurso = false; }
+    }
 
     private void BarraTitulo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -765,10 +790,16 @@ public partial class VentanaPrincipal : Window
         return new System.Windows.Point(x, y);
     }
 
-    private void VentanaPrincipal_PreviewKeyDown(
+    private async void VentanaPrincipal_PreviewKeyDown(
         object sender,
         System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control && _arranqueFallido)
+        {
+            e.Handled = true;
+            await EntrarSinConexionAsync(e.Key, Keyboard.Modifiers);
+            return;
+        }
         if (e.Key == Key.M
             && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
             && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)

@@ -14,16 +14,26 @@ namespace LanzadorScripts.Vistas;
 public partial class ClienteNativo : UserControl, IDisposable
 {
     public ClienteNativoModelo? Modelo { get; private set; }
+    private IClienteNativo? _clienteActual;
     public event EventHandler? SolicitarAuditoria;
     public ClienteNativo() => InitializeComponent();
 
     public async Task InicializarAsync(IClienteNativo cliente)
     {
-        Modelo ??= new ClienteNativoModelo(cliente);
+        if (!ReferenceEquals(_clienteActual, cliente))
+        {
+            Modelo?.Dispose();
+            Modelo = new ClienteNativoModelo(cliente);
+            _clienteActual = cliente;
+        }
         DataContext = Modelo;
-        var configuracion = new ServicioConfiguracion().Cargar();
-        ServidorCentral.Text = $"{configuracion.ServidorCentral}:{configuracion.PuertoServidorCentral}";
-        await Modelo.InicializarAsync();
+        if (cliente is ClienteNativoSinConexion) ServidorCentral.Text = "";
+        else
+        {
+            var configuracion = new ServicioConfiguracion().Cargar();
+            ServidorCentral.Text = $"{configuracion.ServidorCentral}:{configuracion.PuertoServidorCentral}";
+        }
+        await Modelo!.InicializarAsync();
     }
 
     private async Task OperarAsync(Func<Task> operacion)

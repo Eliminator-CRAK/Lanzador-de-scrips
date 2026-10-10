@@ -205,7 +205,8 @@ public sealed partial class ServidorLocalWeb
         return new ResultadoOperacionNativa<Guid>(false, default, motivo, codigo);
     }
 
-    internal Task EnviarEntradaNativaAsync(Guid id, string texto) => _gestorEjecuciones.EnviarEntradaAsync(id, texto);
-    internal Task CancelarEjecucionNativaAsync(Guid id) => _gestorEjecuciones.CancelarAsync(id);
-    internal IAsyncEnumerable<EventoCliente> ObservarEjecucionNativaAsync(Guid id, CancellationToken cancelacion) => _gestorEjecuciones.ObservarEventosAsync(id, cancelacion);
+    // La identidad se obtiene de la sesion local, nunca de parametros proporcionados por la vista.
+    internal Task EnviarEntradaNativaAsync(Guid id, string texto) => _gestorEjecuciones.EnviarEntradaAsync(id, texto, ObtenerUsuarioActual());
+    internal Task CancelarEjecucionNativaAsync(Guid id) => _gestorEjecuciones.CancelarAsync(id, ObtenerUsuarioActual());
+    internal IAsyncEnumerable<EventoCliente> ObservarEjecucionNativaAsync(Guid id, CancellationToken cancelacion) => _gestorEjecuciones.ObservarEventosAsync(id, ObtenerUsuarioActual(), cancelacion);
 }

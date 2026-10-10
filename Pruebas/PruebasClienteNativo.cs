@@ -512,7 +512,11 @@ internal sealed class ClienteNativoSimulado : IClienteNativo
     public static ElementoScriptNativo Script { get; } = new("prueba.ps1", "Prueba interactiva.ps1", "powershell", false, "", false, "");
     public List<string> Entradas { get; } = [];
     public List<Guid> Canceladas { get; } = [];
-    public Task<SesionClienteNativa> ObtenerSesionAsync(CancellationToken cancelacion = default) => Task.FromResult(new SesionClienteNativa(new UsuarioCliente("DOMINIO\\usuario", "admin", 5, true), "", "\\\\servidor\\scripts", false));
+    public bool FallarConexion { get; set; }
+    public bool Desechado { get; private set; }
+    public Task<SesionClienteNativa> ObtenerSesionAsync(CancellationToken cancelacion = default) => FallarConexion
+        ? Task.FromException<SesionClienteNativa>(new IOException("No se puede conectar con el servidor."))
+        : Task.FromResult(new SesionClienteNativa(new UsuarioCliente("DOMINIO\\usuario", "admin", 5, true), "", "\\\\servidor\\scripts", false));
     public Task<IReadOnlyList<ElementoScriptNativo>> ListarScriptsAsync(string carpeta, string buscar, CancellationToken cancelacion = default) => Task.FromResult<IReadOnlyList<ElementoScriptNativo>>([Script]);
     public Task<PermisosClienteNativo> ObtenerPermisosAsync(CancellationToken cancelacion = default) => Task.FromResult(new PermisosClienteNativo([new UsuarioPermisoNativo("1", "usuario", "admin", 5, [])], [], [], false));
     public Task GuardarPermisosAsync(PermisosClienteNativo permisos, CancellationToken cancelacion = default) => Task.CompletedTask;
@@ -527,5 +531,5 @@ internal sealed class ClienteNativoSimulado : IClienteNativo
     public Task CancelarAsync(Guid ejecucionId) { Canceladas.Add(ejecucionId); _eventos.Writer.TryWrite(new EventoCliente("fin", "", null, true)); return Task.CompletedTask; }
     public IAsyncEnumerable<EventoCliente> ObservarAsync(Guid ejecucionId, CancellationToken cancelacion = default) => _eventos.Reader.ReadAllAsync(cancelacion);
     public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas() => [];
-    public void Dispose() => _eventos.Writer.TryComplete();
+    public void Dispose() { Desechado = true; _eventos.Writer.TryComplete(); }
 }
