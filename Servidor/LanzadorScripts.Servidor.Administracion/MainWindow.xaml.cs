@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly RutasServidor _rutas = new();
     private readonly ConfiguracionServidor _configuracion;
     private readonly ClienteAdministracionLocal _cliente;
+    private readonly ClienteAdministracionLocal _clientePaquetes = new(TimeSpan.FromMinutes(2));
     private readonly GeneradorCatalogoServidor _generadorCatalogo = new();
     private readonly ObservableCollection<UsuarioServidorCentral> _usuarios = [];
     private readonly ObservableCollection<AuditoriaVista> _auditoria = [];
@@ -40,7 +41,7 @@ public partial class MainWindow : Window
         _configuracion = new AlmacenConfiguracionServidor(_rutas).CargarOCrear();
         _cliente = new ClienteAdministracionLocal(TimeSpan.FromSeconds(8));
         TextoVersionServidor.Text =
-            $"Servidor {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "--"}";
+            $"Consola {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "--"}";
         TextoCuentaActual.Text = WindowsIdentity.GetCurrent().Name;
         TextoRutasServidor.Text = $"Base: {_rutas.RutaBaseDatos}\nCopias: {_rutas.RutaCopias}\nLogs: {_rutas.RutaLogs}";
         TablaUsuarios.ItemsSource = _usuarios;
@@ -306,7 +307,7 @@ public partial class MainWindow : Window
     {
         await EjecutarOperacionAsync("Validando paquetes MSI...", async () =>
         {
-            var respuesta = await _cliente.EnviarAsync<
+            var respuesta = await _clientePaquetes.EnviarAsync<
                 ConsultaEstadoActualizacionesServidor,
                 EstadoActualizacionesServidorCentral>(
                 OperacionesServidor.ObtenerEstadoActualizaciones,
@@ -333,25 +334,29 @@ public partial class MainWindow : Window
     private async void CambiarActivoActualizacion_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not System.Windows.Controls.CheckBox { Tag: PaqueteActualizacionServidorCentral paquete } campo) return;
+        if (_ocupado) { campo.IsChecked = paquete.Activo; return; }
         var activo = campo.IsChecked == true;
         campo.IsEnabled = false;
         await EjecutarOperacionAsync("Cambiando disponibilidad...", async () =>
         {
-            var respuesta = await _cliente.EnviarAsync<GestionarActualizacionServidor, EstadoActualizacionesServidorCentral>(
+            var respuesta = await _clientePaquetes.EnviarAsync<GestionarActualizacionServidor, EstadoActualizacionesServidorCentral>(
                 OperacionesServidor.GestionarActualizacion, new(paquete.NombreArchivo, paquete.Sha256, activo), CancellationToken.None);
             ExigirRespuesta(respuesta);
         });
         await CargarActualizacionesAsync(true);
+        campo.IsChecked = _actualizaciones.FirstOrDefault(p => p.NombreArchivo == paquete.NombreArchivo)?.Activo ?? paquete.Activo;
+        campo.IsEnabled = paquete.Valido;
     }
 
     private async void EliminarActualizacion_Click(object sender, RoutedEventArgs e)
     {
+        if (_ocupado) return;
         if (sender is not System.Windows.Controls.Button { Tag: PaqueteActualizacionServidorCentral paquete }) return;
         if (MessageBox.Show(this, $"Eliminar {paquete.NombreArchivo} del repositorio de actualizaciones?", "Eliminar version",
             MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         await EjecutarOperacionAsync("Eliminando version...", async () =>
         {
-            var respuesta = await _cliente.EnviarAsync<GestionarActualizacionServidor, EstadoActualizacionesServidorCentral>(
+            var respuesta = await _clientePaquetes.EnviarAsync<GestionarActualizacionServidor, EstadoActualizacionesServidorCentral>(
                 OperacionesServidor.GestionarActualizacion, new(paquete.NombreArchivo, paquete.Sha256, Eliminar: true), CancellationToken.None);
             ExigirRespuesta(respuesta);
         });
@@ -461,6 +466,13 @@ public partial class MainWindow : Window
         });
     }
 
+    private async void ActualizarServicio_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ocupado || MessageBox.Show(this, "Actualizar los binarios del servicio instalado? La base, clave y configuracion se conservaran.",
+            "Actualizar servicio", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        await ControlarServicioAsync("Actualizando servicio...", _controlServicio.Actualizar);
+    }
+
     private async void IniciarServicio_Click(object sender, RoutedEventArgs e)
     {
         await ControlarServicioAsync("Iniciando el servicio...", _controlServicio.Iniciar);
@@ -536,6 +548,15 @@ public partial class MainWindow : Window
 
     private void AplicarEstadoAutenticacion(EstadoServidorCentral estado)
     {
+        var consola = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+        TextoVersionServidor.Text = $"Consola {consola} / Servicio {estado.Version}";
+        TextoVersionServidor.ToolTip = TextoVersionServidor.Text;
+        if (Version.TryParse(estado.Version, out var servicio) && Version.TryParse(consola, out var actual) && servicio != actual)
+        {
+            TextoEstadoConexion.Text = "La consola y el servicio tienen versiones distintas. Actualice el servicio desde el nuevo paquete.";
+            TextoEstadoConexion.Foreground = (Brush)FindResource("Ambar");
+            return;
+        }
         if (estado.AutenticacionRemotaPreparada)
         {
             TextoEstadoConexion.Text =
@@ -548,6 +569,13 @@ public partial class MainWindow : Window
             $"Canal local disponible, pero Kerberos remoto no esta preparado: "
             + estado.MensajeAutenticacion;
         TextoEstadoConexion.Foreground = (Brush)FindResource("Ambar");
+    }
+
+    private void CopiarHash_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string hash } || hash.Length != 64 || hash.Any(c => !Uri.IsHexDigit(c))) return;
+        try { Clipboard.SetText(hash); }
+        catch (System.Runtime.InteropServices.COMException) { MostrarError("El portapapeles esta ocupado."); }
     }
 
     private void TablaUsuarios_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -757,6 +785,9 @@ public partial class MainWindow : Window
         }
 
         _ocupado = true;
+        Vistas.IsEnabled = false;
+        MenuServidor.IsEnabled = false;
+        BotonRefrescarServidor.IsEnabled = false;
         ProgresoOperacion.Visibility = Visibility.Visible;
         TextoEstadoOperacion.Text = estado;
         try
@@ -773,6 +804,9 @@ public partial class MainWindow : Window
         {
             ProgresoOperacion.Visibility = Visibility.Collapsed;
             _ocupado = false;
+            Vistas.IsEnabled = true;
+            MenuServidor.IsEnabled = true;
+            BotonRefrescarServidor.IsEnabled = true;
         }
     }
 
@@ -793,6 +827,7 @@ public partial class MainWindow : Window
                 ? (Brush)FindResource("Ambar")
                 : (Brush)FindResource("Rojo");
         BotonInstalarServicio.IsEnabled = !estado.Instalado;
+        BotonActualizarServicio.IsEnabled = estado.Instalado;
         BotonIniciarServicio.IsEnabled = estado.Instalado && !estado.EnEjecucion;
         BotonDetenerServicio.IsEnabled = estado.EnEjecucion;
         BotonReiniciarServicio.IsEnabled = estado.EnEjecucion;

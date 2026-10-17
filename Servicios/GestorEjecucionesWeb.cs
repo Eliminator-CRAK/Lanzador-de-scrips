@@ -178,8 +178,9 @@ public sealed class GestorEjecucionesWeb : IDisposable
         {
             while (!cancelacion.IsCancellationRequested)
             {
-                var eventos = ejecucion.ObtenerEventosDesde(indice);
-                foreach (var evento in eventos)
+                var lote = ejecucion.LeerEventosDesde(indice);
+                indice = lote.Inicio;
+                foreach (var evento in lote.Eventos)
                 {
                     var idEvento = indice + 1;
                     var json = JsonSerializer.Serialize(evento, OpcionesJsonEventos);
@@ -230,7 +231,9 @@ public sealed class GestorEjecucionesWeb : IDisposable
                 revision = controles.Revision;
                 foreach (var evento in controles.Eventos) yield return evento;
             }
-            foreach (var evento in ejecucion.ObtenerEventosDesde(indice))
+            var lote = ejecucion.LeerEventosDesde(indice);
+            indice = lote.Inicio;
+            foreach (var evento in lote.Eventos)
             {
                 indice++;
                 yield return evento;
@@ -679,7 +682,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
         private readonly List<EventoCliente> _eventos = [];
         private readonly SemaphoreSlim _senal = new(0);
         private readonly object _bloqueo = new();
-        private bool _salidaTruncada;
+        private int _primerEvento;
         private int _caracteresSalida;
         private int _revisionControl;
         private readonly Dictionary<(long, int), EventoCliente> _progresos = [];
@@ -751,7 +754,7 @@ public sealed class GestorEjecucionesWeb : IDisposable
             {
                 lock (_bloqueo)
                 {
-                    return _eventos.Count;
+                    return _primerEvento + _eventos.Count;
                 }
             }
         }
@@ -760,19 +763,14 @@ public sealed class GestorEjecucionesWeb : IDisposable
         {
             lock (_bloqueo)
             {
-                if (!finalizado && (_eventos.Count >= MaximoEventosPorEjecucion || _caracteresSalida + mensaje.Length > MaximoCaracteresSalida))
+                if (mensaje.Length > MaximoCaracteresSalida) mensaje = mensaje[^MaximoCaracteresSalida..];
+                // Conserva siempre preguntas, errores y salida reciente dentro del limite.
+                var retirar = 0;
+                while (_eventos.Count - retirar > 0 && (_eventos.Count - retirar >= MaximoEventosPorEjecucion || _caracteresSalida + mensaje.Length > MaximoCaracteresSalida))
                 {
-                    // Agrega posiciones nuevas para que los observadores no pierdan el resultado final.
-                    if (!_salidaTruncada)
-                    {
-                        _eventos.Add(new EventoCliente("error", "> Salida truncada por limite de memoria.", "#F44747"));
-                        _salidaTruncada = true;
-                        _senal.Release();
-                    }
-                    return;
+                    _caracteresSalida -= _eventos[retirar++].Mensaje.Length;
                 }
-
-                if (finalizado && _eventos.Count >= MaximoEventosPorEjecucion + 3) return;
+                if (retirar > 0) { _eventos.RemoveRange(0, retirar); _primerEvento += retirar; }
                 _caracteresSalida += mensaje.Length;
                 _eventos.Add(new EventoCliente(tipo, mensaje, color, finalizado));
             }
@@ -809,9 +807,15 @@ public sealed class GestorEjecucionesWeb : IDisposable
 
         public IReadOnlyList<EventoCliente> ObtenerEventosDesde(int indice)
         {
+            return LeerEventosDesde(indice).Eventos;
+        }
+
+        public (int Inicio, IReadOnlyList<EventoCliente> Eventos) LeerEventosDesde(int indice)
+        {
             lock (_bloqueo)
             {
-                return _eventos.Skip(indice).ToList();
+                var inicio = Math.Max(indice, _primerEvento);
+                return (inicio, _eventos.Skip(inicio - _primerEvento).ToArray());
             }
         }
 

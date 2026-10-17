@@ -221,6 +221,53 @@ public sealed class PruebasClienteNativo
         Assert.DoesNotContain("credencial-ficticia", salida.ToString());
     }
 
+    [Theory]
+    [InlineData("cmd.exe /d /c exit 1; Write-Output 'COPIA_OK'", 0)]
+    [InlineData("cmd.exe /d /c exit 7; exit 0", 0)]
+    [InlineData("cmd.exe /d /c exit 0; exit 7", 7)]
+    [InlineData("if ($false) { exit 5 }; Write-Output 'SIN_EXIT'", 0)]
+    [InlineData("throw 'FALLO_CONTROLADO'", 1)]
+    public async Task MotorDistingueExitExplicitoDeUltimoProgramaNativo(string contenido, int codigo)
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        File.WriteAllText(Path.Combine(entorno.Raiz, "salida.ps1"), "# (Autor: Alex Roman)\n# Descripcion: Verifica el codigo de salida sin instalar programas.\n" + contenido);
+        entorno.GuardarCatalogo(["salida.ps1"]);
+        using var cliente = CrearCliente(entorno);
+        var inicio = await cliente.IniciarAsync("salida.ps1");
+        Assert.True(inicio.Exito, inicio.Mensaje);
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var salida = new StringBuilder();
+        await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token)) salida.Append(evento.Mensaje);
+        Assert.Contains("Codigo de salida: " + codigo, salida.ToString());
+    }
+
+    [Fact]
+    public async Task TeclaDisponibleYReadKeyConservanCaracterYDespuesAdmitenLineas()
+    {
+        using var entorno = EntornoPruebas.Crear();
+        Autorizar(entorno);
+        File.WriteAllText(Path.Combine(entorno.Raiz, "tecla.ps1"),
+            "# (Autor: Alex Roman)\n# Descripcion: Verifica teclado y respuestas sin consola externa.\n" +
+            "while(!$Host.UI.RawUI.KeyAvailable){Start-Sleep -Milliseconds 10}; $k=$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown'); Write-Output ('TECLA='+$k.Character); " +
+            "$Host.UI.RawUI.FlushInputBuffer(); $v=Read-Host 'Linea'; Write-Output ('LINEA='+$v)");
+        entorno.GuardarCatalogo(["tecla.ps1"]);
+        using var cliente = CrearCliente(entorno);
+        var inicio = await cliente.IniciarAsync("tecla.ps1");
+        Assert.True(inicio.Exito, inicio.Mensaje);
+        await cliente.EnviarEntradaAsync(inicio.Datos, "s");
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var salida = new StringBuilder();
+        var enviado = false;
+        await foreach (var evento in cliente.ObservarAsync(inicio.Datos, tiempo.Token))
+        {
+            salida.Append(evento.Mensaje);
+            if (!enviado && salida.ToString().Contains("Linea")) { enviado = true; await cliente.EnviarEntradaAsync(inicio.Datos, "respuesta"); }
+        }
+        Assert.Contains("TECLA=s", salida.ToString());
+        Assert.Contains("LINEA=respuesta", salida.ToString());
+    }
+
     [Fact]
     public async Task CarpetasVaciasAutorizadasSonNavegables()
     {
@@ -277,11 +324,13 @@ public sealed class PruebasClienteNativo
             true, new JsonObject(), catalogo, false, new string('A', 64))!;
         var agregar = tipo.GetMethod("AgregarEvento")!;
         for (var i = 0; i < 600; i++) agregar.Invoke(ejecucion, ["info", new string('x', 4096), null, false]);
+        agregar.Invoke(ejecucion, ["info", "PREGUNTA_RECIENTE", null, false]);
         tipo.GetMethod("AgregarControl")!.Invoke(ejecucion, [new EventoCliente("progreso", "", Progreso: new ProgresoScript(0, 0, -1, "Copia", "", "", 37, -1, false))]);
         agregar.Invoke(ejecucion, ["exito", "RESULTADO_FINAL", null, true]);
         var eventos = (IReadOnlyList<EventoCliente>)tipo.GetMethod("ObtenerEventosDesde")!.Invoke(ejecucion, [0])!;
         Assert.True(eventos.Sum(e => e.Mensaje.Length) < 2_001_000);
         Assert.Contains(eventos, e => e.Finalizado && e.Mensaje == "RESULTADO_FINAL");
+        Assert.Contains(eventos, e => e.Mensaje == "PREGUNTA_RECIENTE");
         Assert.NotNull(tipo.GetMethod("ObtenerControles")!.Invoke(ejecucion, null));
     }
 
@@ -492,6 +541,38 @@ public sealed class PruebasClienteNativo
         Assert.Contains(nameof(modelo.PuedeLimpiarFinalizadas), cambios);
     }
 
+    [Fact]
+    public async Task ModoDesarrolloSoloSeAplicaAlGuardarYDescartarLoRevierte()
+    {
+        using var cliente = new ClienteNativoSimulado();
+        using var modelo = new ClienteNativoModelo(cliente);
+        await modelo.InicializarAsync();
+        await modelo.AbrirAjustesAsync();
+        modelo.ModoDesarrolloPendiente = true;
+        Assert.Equal(0, cliente.CambiosDesarrollo);
+        modelo.CerrarAjustes();
+        Assert.False(modelo.ModoDesarrolloPendiente);
+        Assert.False(cliente.Desarrollo);
+        await modelo.AbrirAjustesAsync();
+        modelo.ModoDesarrolloPendiente = true;
+        await modelo.GuardarAjustesAsync();
+        Assert.Equal(1, cliente.CambiosDesarrollo);
+        Assert.True(cliente.Desarrollo);
+        Assert.True(modelo.ModoDesarrollo);
+    }
+
+    [Fact]
+    public void RecorteDeConsolaSoloReconstruyeUnaVezPorLote()
+    {
+        var modelo = new ConsolaNativaModelo(1);
+        for (var i = 0; i < 100; i++) modelo.Agregar(new EventoCliente("info", string.Concat(Enumerable.Repeat("linea\n", 100))));
+        var reinicios = 0;
+        modelo.Eventos.CollectionChanged += (_, e) => { if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) reinicios++; };
+        modelo.AgregarLote([]);
+        Assert.Equal(1, reinicios);
+        Assert.True(modelo.Eventos.Sum(e => e.Mensaje.Count(c => c == '\n')) <= 1999);
+    }
+
     private static ServicioClienteNativo CrearCliente(EntornoPruebas entorno) => new(ServidorLocalWeb.CrearMotorNativoParaPruebas(entorno.CrearConfiguracion(), entorno.Artefactos));
 
     private static void Autorizar(EntornoPruebas entorno, string rol = "admin")
@@ -514,20 +595,23 @@ internal sealed class ClienteNativoSimulado : IClienteNativo
     public List<Guid> Canceladas { get; } = [];
     public bool FallarConexion { get; set; }
     public bool Desechado { get; private set; }
+    public int CambiosDesarrollo { get; private set; }
+    public bool Desarrollo { get; private set; }
+    public int DemoraEntrada { get; set; }
     public Task<SesionClienteNativa> ObtenerSesionAsync(CancellationToken cancelacion = default) => FallarConexion
         ? Task.FromException<SesionClienteNativa>(new IOException("No se puede conectar con el servidor."))
-        : Task.FromResult(new SesionClienteNativa(new UsuarioCliente("DOMINIO\\usuario", "admin", 5, true), "", "\\\\servidor\\scripts", false));
+        : Task.FromResult(new SesionClienteNativa(new UsuarioCliente("DOMINIO\\usuario", "admin", 5, true), "", "\\\\servidor\\scripts", Desarrollo));
     public Task<IReadOnlyList<ElementoScriptNativo>> ListarScriptsAsync(string carpeta, string buscar, CancellationToken cancelacion = default) => Task.FromResult<IReadOnlyList<ElementoScriptNativo>>([Script]);
     public Task<PermisosClienteNativo> ObtenerPermisosAsync(CancellationToken cancelacion = default) => Task.FromResult(new PermisosClienteNativo([new UsuarioPermisoNativo("1", "usuario", "admin", 5, [])], [], [], false));
     public Task GuardarPermisosAsync(PermisosClienteNativo permisos, CancellationToken cancelacion = default) => Task.CompletedTask;
     public Task<IReadOnlyList<string>> ObtenerCarpetasAsync(CancellationToken cancelacion = default) => Task.FromResult<IReadOnlyList<string>>(["sub"]);
     public Task<CatalogoClienteNativo> ObtenerCatalogoAsync(CancellationToken cancelacion = default) => Task.FromResult(new CatalogoClienteNativo(true, "", [new EstadoCatalogoScriptCliente(Script.Id, "powershell", 100, new string('A', 64), "autorizado", true)]));
     public Task PublicarCatalogoAsync(IReadOnlyList<string> seleccionados, CancellationToken cancelacion = default) => Task.CompletedTask;
-    public Task CambiarModoDesarrolloAsync(bool activo, CancellationToken cancelacion = default) => Task.CompletedTask;
+    public Task CambiarModoDesarrolloAsync(bool activo, CancellationToken cancelacion = default) { CambiosDesarrollo++; Desarrollo = activo; return Task.CompletedTask; }
     public Task<ResultadoExecutionPolicy> AplicarExecutionPolicyAsync(CancellationToken cancelacion = default) => Task.FromResult(new ResultadoExecutionPolicy(true, "Prueba"));
     public Task<DiagnosticoEjecucionScript> DiagnosticarAsync(string scriptId, CancellationToken cancelacion = default) => throw new NotSupportedException();
     public Task<ResultadoOperacionNativa<Guid>> IniciarAsync(string scriptId, CancellationToken cancelacion = default) => Task.FromResult(new ResultadoOperacionNativa<Guid>(true, Guid.NewGuid(), ""));
-    public Task EnviarEntradaAsync(Guid ejecucionId, string texto) { Entradas.Add(texto); return Task.CompletedTask; }
+    public async Task EnviarEntradaAsync(Guid ejecucionId, string texto) { Entradas.Add(texto); if (DemoraEntrada > 0) await Task.Delay(DemoraEntrada); }
     public Task CancelarAsync(Guid ejecucionId) { Canceladas.Add(ejecucionId); _eventos.Writer.TryWrite(new EventoCliente("fin", "", null, true)); return Task.CompletedTask; }
     public IAsyncEnumerable<EventoCliente> ObservarAsync(Guid ejecucionId, CancellationToken cancelacion = default) => _eventos.Reader.ReadAllAsync(cancelacion);
     public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas() => [];

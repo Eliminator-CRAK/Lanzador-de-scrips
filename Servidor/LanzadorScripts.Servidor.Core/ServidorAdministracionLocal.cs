@@ -114,6 +114,8 @@ public sealed class ServidorAdministracionLocal : IAsyncDisposable
                     limite.Token);
                 // Windows expone la identidad del cliente despues de recibir su primera escritura.
                 var cuenta = IdentidadClienteCanalLocal.ObtenerCuenta(canal);
+                if (solicitud.Operacion is OperacionesServidor.ObtenerEstadoActualizaciones or OperacionesServidor.GestionarActualizacion or OperacionesServidor.PublicarActualizacion)
+                    limite.CancelAfter(TimeSpan.FromMinutes(2));
                 var respuesta = _procesador.Procesar(cuenta, solicitud);
                 await TransporteProtocolo.EscribirAsync(canal, respuesta, limite.Token);
             }

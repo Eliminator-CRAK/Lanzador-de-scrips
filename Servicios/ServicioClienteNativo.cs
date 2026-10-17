@@ -34,8 +34,8 @@ public sealed class ServicioClienteNativo : IClienteNativo
         Task.Run(() => _motor.DiagnosticarNativoAsync(scriptId, cancelacion), cancelacion);
     public Task<ResultadoOperacionNativa<Guid>> IniciarAsync(string scriptId, CancellationToken cancelacion = default) =>
         Task.Run(() => _motor.IniciarEjecucionNativaAsync(scriptId, cancelacion), cancelacion);
-    public Task EnviarEntradaAsync(Guid ejecucionId, string texto) => _motor.EnviarEntradaNativaAsync(ejecucionId, texto);
-    public Task CancelarAsync(Guid ejecucionId) => _motor.CancelarEjecucionNativaAsync(ejecucionId);
+    public Task EnviarEntradaAsync(Guid ejecucionId, string texto) => Task.Run(() => _motor.EnviarEntradaNativaAsync(ejecucionId, texto));
+    public Task CancelarAsync(Guid ejecucionId) => Task.Run(() => _motor.CancelarEjecucionNativaAsync(ejecucionId));
     public IAsyncEnumerable<EventoCliente> ObservarAsync(Guid ejecucionId, CancellationToken cancelacion = default) => _motor.ObservarEjecucionNativaAsync(ejecucionId, cancelacion);
     public IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas() => _motor.ObtenerEjecucionesActivas();
     public void Dispose() => _motor.Dispose();

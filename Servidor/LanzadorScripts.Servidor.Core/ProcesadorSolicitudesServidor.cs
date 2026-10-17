@@ -61,6 +61,7 @@ public sealed class ProcesadorSolicitudesServidor
                 OperacionesServidor.GuardarConfiguracion => ProcesarConfiguracion(cuenta, solicitud, guardar: true),
                 OperacionesServidor.ObtenerPermisos => ProcesarObtenerPermisos(cuenta, solicitud),
                 OperacionesServidor.GuardarPermisos => ProcesarGuardarPermisos(cuenta, solicitud),
+                OperacionesServidor.GuardarPermisosVersionados => ProcesarGuardarPermisosVersionados(cuenta, solicitud),
                 OperacionesServidor.ObtenerCatalogo => ProcesarObtenerCatalogo(cuenta, solicitud),
                 OperacionesServidor.GuardarCatalogo => ProcesarGuardarCatalogo(cuenta, solicitud),
                 OperacionesServidor.RegistrarAuditoria => ProcesarRegistrarAuditoria(cuenta, solicitud),
@@ -94,7 +95,7 @@ public sealed class ProcesadorSolicitudesServidor
                 "solicitud_invalida",
                 "La solicitud no contiene datos validos.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
             return Error(
                 solicitud.SolicitudId,
@@ -176,6 +177,16 @@ public sealed class ProcesadorSolicitudesServidor
             _repositorio.ObtenerPermisos(cuenta, incluirTodos: _repositorio.EsAdministrador(cuenta)));
     }
 
+    private RespuestaServidor ProcesarGuardarPermisosVersionados(string cuenta, SolicitudServidor solicitud)
+    {
+        if (!_repositorio.EsAdministrador(cuenta)) return AccesoDenegado(solicitud.SolicitudId);
+        var datos = Deserializar<GuardarPermisosServidorCentral>(solicitud.Datos);
+        if (datos.Revision < 1) throw new InvalidDataException("La revision de permisos no es valida.");
+        var resultado = _repositorio.GuardarPermisos(datos.Permisos, datos.Revision);
+        RegistrarAccionAdministrativa(cuenta, "administracion.permisos", "guardado", string.Empty);
+        return Correcta(solicitud.SolicitudId, resultado, "Permisos guardados en la base central.");
+    }
+
     private RespuestaServidor ProcesarGuardarPermisos(string cuenta, SolicitudServidor solicitud)
     {
         if (!_repositorio.EsAdministrador(cuenta))
@@ -183,10 +194,8 @@ public sealed class ProcesadorSolicitudesServidor
             return AccesoDenegado(solicitud.SolicitudId);
         }
 
-        var permisos = Deserializar<JsonObject>(solicitud.Datos);
-        var resultado = _repositorio.GuardarPermisos(permisos);
-        RegistrarAccionAdministrativa(cuenta, "administracion.permisos", "guardado", string.Empty);
-        return Correcta(solicitud.SolicitudId, resultado, "Permisos guardados en la base central.");
+        // Sin revision no se puede detectar una edicion obsoleta de la lista completa.
+        return Error(solicitud.SolicitudId, "cliente_desactualizado", "Actualice el cliente para guardar permisos sin sobrescribir cambios recientes.");
     }
 
     private RespuestaServidor ProcesarObtenerCatalogo(string cuenta, SolicitudServidor solicitud)

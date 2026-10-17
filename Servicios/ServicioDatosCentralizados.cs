@@ -28,7 +28,11 @@ public sealed class ServicioDatosCentralizados
         out JsonObject permisos,
         out string conjuntoId,
         out string error)
+        => IntentarObtenerPermisos(out permisos, out conjuntoId, out error, out _);
+
+    public bool IntentarObtenerPermisos(out JsonObject permisos, out string conjuntoId, out string error, out long revision)
     {
+        revision = 0;
         var respuesta = CrearCliente().Enviar<object, PermisosServidorCentral>(
             OperacionesServidor.ObtenerPermisos,
             new { });
@@ -42,8 +46,16 @@ public sealed class ServicioDatosCentralizados
 
         permisos = respuesta.Datos.Permisos.DeepClone().AsObject();
         conjuntoId = respuesta.Datos.ConjuntoId;
+        revision = respuesta.Datos.Revision;
         error = string.Empty;
         return true;
+    }
+
+    public void GuardarPermisosVersionados(JsonObject permisos, long revision)
+    {
+        var respuesta = CrearCliente().Enviar<GuardarPermisosServidorCentral, PermisosServidorCentral>(
+            OperacionesServidor.GuardarPermisosVersionados, new(revision, permisos));
+        if (!respuesta.Exito) throw new InvalidOperationException(respuesta.Mensaje);
     }
 
     public void GuardarPermisos(JsonObject permisos)

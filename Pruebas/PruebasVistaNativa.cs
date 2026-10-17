@@ -284,6 +284,116 @@ public sealed class PruebasVistaNativa
         }).Task.Unwrap();
     }
 
+    [Theory]
+    [InlineData(96)]
+    [InlineData(144)]
+    public async Task CamposNumericosYCantidadSeCentranEnAmbosEjes(int dpi)
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado();
+            using var vista = new ClienteNativo();
+            await vista.InicializarAsync(cliente);
+            await vista.Modelo!.AbrirAjustesAsync();
+            Dibujar(vista, 1000, 680, dpi, "numeros-centrados");
+            var limite = (TextBlock)vista.FindName("ContadorLimite");
+            Assert.Equal(VerticalAlignment.Center, limite.VerticalAlignment);
+            var borde = (Border)VisualTreeHelper.GetParent(limite);
+            var y = limite.TransformToAncestor(borde).Transform(new Point()).Y;
+            Assert.InRange(Math.Abs(y + limite.ActualHeight / 2 - borde.ActualHeight / 2), 0, 1);
+            var campo = Descendientes<TextBox>((DataGrid)vista.FindName("TablaUsuarios")).Single();
+            Assert.Equal(TextAlignment.Center, campo.TextAlignment);
+            Assert.Equal(VerticalAlignment.Center, campo.VerticalContentAlignment);
+            Assert.Equal("5", campo.Text);
+        }).Task.Unwrap();
+    }
+
+    [Fact]
+    public async Task EnvioPendienteNoBloqueaWpfNiBorraLaRespuestaSiguiente()
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(async () =>
+        {
+            using var cliente = new ClienteNativoSimulado { DemoraEntrada = 250 };
+            using var vista = new ClienteNativo();
+            await vista.InicializarAsync(cliente);
+            await vista.Modelo!.EjecutarAsync(ClienteNativoSimulado.Script);
+            var consola = vista.Modelo.Consolas[0];
+            consola.Entrada = "primera";
+            var envio = vista.Modelo.EnviarAsync(consola);
+            Assert.False(envio.IsCompleted);
+            Assert.False(consola.PuedeEnviar);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            consola.Entrada = "segunda";
+            await envio;
+            Assert.Equal("segunda", consola.Entrada);
+            Assert.Equal(new[] { "primera" }, cliente.Entradas);
+            Assert.True(consola.PuedeEnviar);
+        }).Task.Unwrap();
+    }
+
+    [Theory]
+    [InlineData(980, 650, 96)]
+    [InlineData(1220, 780, 96)]
+    [InlineData(980, 650, 144)]
+    public async Task ServidorDibujaTodasLasVistasSinRecortarFiltrosNiCampos(int ancho, int alto, int dpi)
+    {
+        var dispatcher = await HiloVisual;
+        await dispatcher.InvokeAsync(() =>
+        {
+            // Carga el XAML real sin arrancar servicios ni tocar datos del equipo.
+            var raiz = new DirectoryInfo(AppContext.BaseDirectory);
+            while (raiz is not null && !File.Exists(Path.Combine(raiz.FullName, "Aplicacion.xaml"))) raiz = raiz.Parent;
+            Assert.NotNull(raiz);
+            var carpeta = Path.Combine(raiz.FullName, "Servidor", "LanzadorScripts.Servidor.Administracion");
+            XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var estilos = XDocument.Load(Path.Combine(carpeta, "App.xaml"));
+            var recursos = new XElement(wpf + "ResourceDictionary", new XAttribute(XNamespace.Xmlns + "x", x),
+                estilos.Root!.Element(wpf + "Application.Resources")!.Elements());
+            var anteriores = Application.Current.Resources;
+            Window? ventana = null;
+            try
+            {
+                Application.Current.Resources = (ResourceDictionary)XamlReader.Parse(recursos.ToString());
+                var fuente = XDocument.Load(Path.Combine(carpeta, "MainWindow.xaml"));
+                fuente.Root!.Attribute(x + "Class")!.Remove();
+                foreach (var atributo in fuente.Descendants().Attributes().Where(a => a.Name.LocalName is "Click" or "SelectionChanged").ToArray()) atributo.Remove();
+                var icono = new Uri(Path.Combine(raiz.FullName, "Recursos", "IconoLanzador.ico")).AbsoluteUri;
+                fuente.Root.SetAttributeValue("Icon", icono);
+                foreach (var imagen in fuente.Descendants(wpf + "Image")) imagen.SetAttributeValue("Source", icono);
+                ventana = (Window)XamlReader.Parse(fuente.ToString());
+                ventana.Left = -5000;
+                ventana.Top = -5000;
+                ventana.ShowInTaskbar = false;
+                ventana.ShowActivated = false;
+                ventana.Show();
+                var vistas = (TabControl)ventana.FindName("Vistas");
+                for (var i = 0; i < vistas.Items.Count; i++)
+                {
+                    vistas.SelectedIndex = i;
+                    Dibujar(ventana, ancho, alto, dpi, "servidor-" + i);
+                    if (i == 2)
+                    {
+                        var maximo = (TextBox)ventana.FindName("CampoMaximoUsuario");
+                        Assert.Equal(TextAlignment.Center, maximo.TextAlignment);
+                        Assert.Equal(VerticalAlignment.Center, maximo.VerticalContentAlignment);
+                        Assert.True(((TextBox)ventana.FindName("CampoCuentaUsuario")).ActualWidth >= 90);
+                    }
+                    if (i == 3)
+                        foreach (var nombre in new[] { "FiltroUsuarioAuditoria", "FiltroDesdeAuditoria", "FiltroHastaAuditoria", "FiltroResultadoAuditoria", "FiltroScriptAuditoria" })
+                        {
+                            var campo = (FrameworkElement)ventana.FindName(nombre);
+                            var posicion = campo.TransformToAncestor(ventana).Transform(new Point());
+                            Assert.InRange(posicion.X + campo.ActualWidth, 0, ancho);
+                        }
+                }
+            }
+            finally { ventana?.Close(); Application.Current.Resources = anteriores; }
+        });
+    }
+
     private static void Dibujar(FrameworkElement vista, int ancho, int alto, int dpi, string nombre)
     {
         vista.Width = ancho;

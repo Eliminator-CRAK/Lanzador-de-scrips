@@ -78,7 +78,12 @@ public partial class ClienteNativo : UserControl, IDisposable
     private void Volver_Click(object sender, RoutedEventArgs e) => Modelo?.CerrarAjustes();
     private async void Guardar_Click(object sender, RoutedEventArgs e)
     {
-        if (Modelo is null || !TablaUsuarios.CommitEdit(DataGridEditingUnit.Cell, true) || !TablaUsuarios.CommitEdit(DataGridEditingUnit.Row, true)) return;
+        if (Modelo is null) return;
+        if (!TablaUsuarios.CommitEdit(DataGridEditingUnit.Cell, true) || !TablaUsuarios.CommitEdit(DataGridEditingUnit.Row, true) || TieneErrores(TablaUsuarios))
+        {
+            MessageBox.Show(Window.GetWindow(this), "Revise los campos marcados antes de guardar.", "Ajustes", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         BotonGuardar.IsEnabled = false;
         try { await OperarAsync(Modelo.GuardarAjustesAsync); }
         finally { BotonGuardar.IsEnabled = true; }
@@ -116,9 +121,18 @@ public partial class ClienteNativo : UserControl, IDisposable
         TablaCatalogo.CommitEdit(DataGridEditingUnit.Row, true);
         await OperarAsync(Modelo.PublicarCatalogoAsync);
     }
-    private async void ModoDesarrollo_Click(object sender, RoutedEventArgs e)
+    private static bool TieneErrores(DependencyObject objeto)
     {
-        if (Modelo is not null) await OperarAsync(() => Modelo.CambiarDesarrolloAsync(ModoDesarrollo.IsChecked == true));
+        if (Validation.GetHasError(objeto)) return true;
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(objeto); i++)
+            if (TieneErrores(System.Windows.Media.VisualTreeHelper.GetChild(objeto, i))) return true;
+        return false;
+    }
+    private void CopiarHash_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string hash } || hash.Length != 64) return;
+        try { Clipboard.SetText(hash); }
+        catch (System.Runtime.InteropServices.COMException) { MessageBox.Show("El portapapeles esta ocupado. Vuelva a intentarlo."); }
     }
     private void Auditoria_Click(object sender, RoutedEventArgs e) => SolicitarAuditoria?.Invoke(this, EventArgs.Empty);
     private async void ExecutionPolicy_Click(object sender, RoutedEventArgs e)
@@ -185,6 +199,15 @@ public sealed class TextoEjecucionesScript : IMultiValueConverter
         var activas = consolas.Count(c => c.Activa && c.Script?.Id == id);
         return activas == 0 ? "" : $"En ejecucion: {activas}";
     }
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+        targetTypes.Select(_ => Binding.DoNothing).ToArray();
+}
+
+// Mantiene navegables las carpetas cuando ya se ha alcanzado el limite de ejecuciones.
+public sealed class DisponibilidadScript : IMultiValueConverter
+{
+    public object Convert(object[] valores, Type targetType, object parameter, CultureInfo culture) =>
+        valores.Length == 3 && valores[0] is false && (valores[1] is true || valores[2] is true);
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
         targetTypes.Select(_ => Binding.DoNothing).ToArray();
 }

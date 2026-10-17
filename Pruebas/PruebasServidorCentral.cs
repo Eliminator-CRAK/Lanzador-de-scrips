@@ -732,6 +732,53 @@ public sealed class PruebasServidorCentral
         Assert.Contains(zip.Entries, entrada => entrada.FullName == "configuracion-servidor.json");
     }
 
+    [Fact]
+    public void GuardadoVersionadoConservaInactivosYRechazaEdicionesAntiguas()
+    {
+        using var entorno = EntornoServidor.Crear();
+        entorno.Repositorio.GuardarPermisos(CrearPermisos());
+        entorno.Repositorio.GuardarUsuario(new("usuario-1", @"MAD00\aroperez_micro", "nominal", 5, [], false));
+        var original = entorno.Repositorio.ObtenerPermisos(@"PCERA\alero", true);
+        Assert.False(original.Permisos["usuarios"]!.AsArray().OfType<JsonObject>().Single(u => u["id"]!.GetValue<string>() == "usuario-1")["activo"]!.GetValue<bool>());
+        entorno.Repositorio.GuardarPermisos(original.Permisos, original.Revision);
+        Assert.False(entorno.Repositorio.EstaAutorizado(@"MAD00\aroperez_micro"));
+        Assert.Throws<InvalidOperationException>(() => entorno.Repositorio.GuardarPermisos(original.Permisos, original.Revision));
+        var vigente = entorno.Repositorio.ObtenerPermisos(@"PCERA\alero", true);
+        vigente.Permisos["usuarios"]!.AsArray().OfType<JsonObject>().Single(u => u["id"]!.GetValue<string>() == "usuario-1")["activo"] = true;
+        entorno.Repositorio.GuardarPermisos(vigente.Permisos, vigente.Revision);
+        Assert.True(entorno.Repositorio.EstaAutorizado(@"MAD00\aroperez_micro"));
+    }
+
+    [Fact]
+    public void ClienteAntiguoNoReactivaCuentasNiEliminaUltimoAdministradorActivo()
+    {
+        using var entorno = EntornoServidor.Crear();
+        entorno.Repositorio.GuardarPermisos(CrearPermisos());
+        entorno.Repositorio.GuardarUsuario(new("usuario-1", @"MAD00\aroperez_micro", "nominal", 5, [], false));
+        var procesador = new ProcesadorSolicitudesServidor(entorno.Repositorio);
+        var solicitud = new SolicitudServidor(TransporteProtocolo.VersionActual, Guid.NewGuid(), OperacionesServidor.GuardarPermisos, TransporteProtocolo.CrearDatos(CrearPermisos()));
+        Assert.Equal("cliente_desactualizado", procesador.Procesar(@"PCERA\alero", solicitud).Codigo);
+        Assert.False(entorno.Repositorio.EstaAutorizado(@"MAD00\aroperez_micro"));
+        var permisos = entorno.Repositorio.ObtenerPermisos(@"PCERA\alero", true);
+        permisos.Permisos["usuarios"]!.AsArray().OfType<JsonObject>().Single(u => u["id"]!.GetValue<string>() == "admin-1")["activo"] = false;
+        Assert.Throws<InvalidDataException>(() => entorno.Repositorio.GuardarPermisos(permisos.Permisos, permisos.Revision));
+        Assert.True(entorno.Repositorio.EsAdministrador(@"PCERA\alero"));
+    }
+
+    [Fact]
+    public void ProtocoloVersionadoExigeAdministradorYRevisionVigente()
+    {
+        using var entorno = EntornoServidor.Crear();
+        entorno.Repositorio.GuardarPermisos(CrearPermisos());
+        var permisos = entorno.Repositorio.ObtenerPermisos(@"PCERA\alero", true);
+        var solicitud = new SolicitudServidor(TransporteProtocolo.VersionActual, Guid.NewGuid(), OperacionesServidor.GuardarPermisosVersionados,
+            TransporteProtocolo.CrearDatos(new GuardarPermisosServidorCentral(permisos.Revision, permisos.Permisos)));
+        var procesador = new ProcesadorSolicitudesServidor(entorno.Repositorio);
+        Assert.Equal("acceso_denegado", procesador.Procesar(@"MAD00\aroperez_micro", solicitud).Codigo);
+        Assert.True(procesador.Procesar(@"PCERA\alero", solicitud).Exito);
+        Assert.False(procesador.Procesar(@"PCERA\alero", solicitud).Exito);
+    }
+
     private static JsonObject CrearPermisos(bool sinAdministrador = false)
     {
         return new JsonObject

@@ -188,6 +188,10 @@ public sealed class PruebasLanzadorScripts
         Assert.Single(vista.Descendants(), e => (string?)e.Attribute("Click") == "ExecutionPolicy_Click");
         var motor = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServidorLocalWeb.Nativo.cs"));
         Assert.Contains("ExigirAdministradorNativoAsync", motor, StringComparison.Ordinal);
+        var politica = File.ReadAllText(Path.Combine(ObtenerRaizProyecto(), "Servicios", "ServicioExecutionPolicy.cs"));
+        Assert.Contains("-ErrorAction Stop", politica, StringComparison.Ordinal);
+        Assert.Contains("(Get-ExecutionPolicy) -ne 'Unrestricted'", politica, StringComparison.Ordinal);
+        Assert.DoesNotContain("ArgumentList.Add(\"Bypass\")", politica, StringComparison.Ordinal);
     }
 
     [Fact]

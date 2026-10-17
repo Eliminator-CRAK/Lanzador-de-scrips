@@ -57,7 +57,7 @@ public sealed class PruebasCicloVidaAplicacion
         Assert.Contains("if (!_esPortable)", ventana, StringComparison.Ordinal);
         Assert.Contains("ServicioIconoBandeja?", ventana, StringComparison.Ordinal);
         Assert.Contains("SolicitarCierreDesdeBandeja", ventana, StringComparison.Ordinal);
-        Assert.Contains("ObtenerEjecucionesActivas()", ventana, StringComparison.Ordinal);
+        Assert.Contains("ObtenerEjecucionesActivasAsync()", ventana, StringComparison.Ordinal);
         Assert.Contains("while (ejecuciones.Count > 0)", ventana, StringComparison.Ordinal);
         Assert.Contains("Shutdown(CodigoSalidaCierreDefinitivo)", ventana, StringComparison.Ordinal);
 

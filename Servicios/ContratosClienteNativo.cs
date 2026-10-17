@@ -5,8 +5,8 @@ namespace LanzadorScripts.Servicios;
 
 public sealed record SesionClienteNativa(UsuarioCliente Usuario, string AvisoConexion, string RutaScripts, bool ModoDesarrolloFirmas);
 public sealed record ElementoScriptNativo(string Id, string Nombre, string Tipo, bool EstaBloqueado, string MotivoBloqueo, bool EsCarpeta, string Carpeta);
-public sealed record UsuarioPermisoNativo(string Id, string NombreUsuario, string Rol, int MaxScriptsSimultaneos, IReadOnlyList<string> CarpetasPermitidas);
-public sealed record PermisosClienteNativo(IReadOnlyList<UsuarioPermisoNativo> Usuarios, IReadOnlyList<string> ScriptsAdmin, IReadOnlyList<string> ScriptsElevadosPermitidos, bool PermitirExecutionPolicyBypass);
+public sealed record UsuarioPermisoNativo(string Id, string NombreUsuario, string Rol, int MaxScriptsSimultaneos, IReadOnlyList<string> CarpetasPermitidas, bool Activo = true);
+public sealed record PermisosClienteNativo(IReadOnlyList<UsuarioPermisoNativo> Usuarios, IReadOnlyList<string> ScriptsAdmin, IReadOnlyList<string> ScriptsElevadosPermitidos, bool PermitirExecutionPolicyBypass, long Revision = 0);
 public sealed record CatalogoClienteNativo(bool Valido, string Mensaje, IReadOnlyList<EstadoCatalogoScriptCliente> Scripts);
 public sealed record ResultadoOperacionNativa<T>(bool Exito, T? Datos, string Mensaje, int Codigo = 200);
 
@@ -28,4 +28,7 @@ public interface IClienteNativo : IDisposable
     Task CancelarAsync(Guid ejecucionId);
     IAsyncEnumerable<EventoCliente> ObservarAsync(Guid ejecucionId, CancellationToken cancelacion = default);
     IReadOnlyList<EjecucionActivaResumen> ObtenerEjecucionesActivas();
+    // La consulta de permisos nunca debe bloquear el dispatcher de la ventana.
+    Task<IReadOnlyList<EjecucionActivaResumen>> ObtenerEjecucionesActivasAsync(CancellationToken cancelacion = default) =>
+        Task.Run(ObtenerEjecucionesActivas, cancelacion);
 }

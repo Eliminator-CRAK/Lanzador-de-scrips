@@ -281,6 +281,7 @@ public sealed class RepositorioServidor : IDisposable
             ["id"] = usuario.Id,
             ["nombreUsuario"] = usuario.NombreUsuario,
             ["rol"] = usuario.Rol,
+            ["activo"] = usuario.Activo,
             ["maxScriptsSimultaneos"] = usuario.MaxScriptsSimultaneos,
             ["carpetasPermitidas"] = new JsonArray(
                 usuario.CarpetasPermitidas
@@ -311,7 +312,7 @@ public sealed class RepositorioServidor : IDisposable
             permisos);
     }
 
-    public PermisosServidorCentral GuardarPermisos(JsonObject permisos)
+    public PermisosServidorCentral GuardarPermisos(JsonObject permisos, long? revisionEsperada = null)
     {
         var datos = ValidadorDatosServidor.ValidarPermisos(permisos);
         _escritura.Wait();
@@ -319,11 +320,20 @@ public sealed class RepositorioServidor : IDisposable
         {
             using var conexion = AbrirConexion();
             using var transaccion = conexion.BeginTransaction();
+            if (revisionEsperada is not null && revisionEsperada != long.Parse(LeerMetadato(conexion, "revision_permisos", transaccion)))
+                throw new InvalidOperationException("Los permisos han cambiado. Actualice los ajustes antes de guardar.");
+            var anteriores = ListarUsuariosInterno(conexion, transaccion).ToDictionary(u => u.Id, StringComparer.OrdinalIgnoreCase);
+            var originales = permisos["usuarios"]!.AsArray().OfType<JsonObject>().ToDictionary(u => u["id"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase);
             Ejecutar(conexion, transaccion, OperacionSql.EliminarUsuarios);
             foreach (var usuario in datos.Usuarios)
             {
-                InsertarUsuario(conexion, transaccion, usuario);
+                // Un cliente antiguo no puede reactivar una cuenta al omitir su estado.
+                anteriores.TryGetValue(usuario.Id, out var anterior);
+                var conservar = !originales[usuario.Id].ContainsKey("activo") && anterior is not null
+                    && string.Equals(anterior.NombreUsuario, usuario.NombreUsuario, StringComparison.OrdinalIgnoreCase);
+                InsertarUsuario(conexion, transaccion, conservar ? usuario with { Activo = anterior!.Activo } : usuario);
             }
+            ValidarExisteAdministrador(conexion, transaccion);
 
             Ejecutar(conexion, transaccion, OperacionSql.EliminarPermisos);
             EscribirFila(
@@ -930,11 +940,12 @@ public sealed class RepositorioServidor : IDisposable
             : null;
     }
 
-    private List<UsuarioServidorCentral> ListarUsuariosInterno(SqliteConnection conexion)
+    private List<UsuarioServidorCentral> ListarUsuariosInterno(SqliteConnection conexion, SqliteTransaction? transaccion = null)
     {
         var usuarios = new List<UsuarioServidorCentral>();
         using var comando = conexion.CreateCommand();
         comando.CommandText = "SELECT Id, Datos FROM Usuarios;";
+        comando.Transaction = transaccion;
         using var lector = comando.ExecuteReader();
         while (lector.Read())
         {
