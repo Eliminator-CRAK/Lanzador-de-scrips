@@ -1,17 +1,17 @@
 <!-- (Autor: Alex Roman) -->
 <!-- Descripcion: Arquitectura, compilacion y despliegue de LanzadorScripts. -->
 
-# LanzadorScripts 2.0.4
+# LanzadorScripts 2.0.5
 
-LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz completamente WPF nativa. El cliente y el servidor 2.0.4 administran configuracion global, permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
+LanzadorScripts ejecuta scripts PowerShell, BAT y CMD autorizados desde una interfaz completamente WPF nativa. El cliente y el servidor 2.0.5 administran configuracion global, permisos, catalogo, auditoria y actualizaciones opcionales del MSI instalado.
 
 La version 1.9.1 incorpora [monitorizacion tecnica en GitLab con OpenTelemetry](Documentacion/MonitorizacionGitLab.md), sin exportar datos personales, scripts ni auditorias. Se puede desactivar con `LANZADOR_MONITORIZACION_HABILITADA=false`.
 
 ## Entregables
 
-- `LanzadorScripts-2.0.4-x64.msi`: cliente instalado para todos los usuarios.
-- `LanzadorScripts_Portable-2.0.4-x64.exe`: cliente portable de sesion efimera.
-- `LanzadorScripts_Servidor-2.0.4-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
+- `LanzadorScripts-2.0.5-x64.msi`: cliente instalado para todos los usuarios.
+- `LanzadorScripts_Portable-2.0.5-x64.exe`: cliente portable de sesion efimera.
+- `LanzadorScripts_Servidor-2.0.5-x64.zip`: consola administrativa, servicio Windows y scripts de despliegue.
 
 Los tres paquetes son autocontenidos para Windows x64. Los clientes no utilizan WebView2, HTML, JavaScript ni un servidor HTTP local. No descargan ni instalan componentes de navegador y no eliminan el runtime compartido de Edge que utilicen otras aplicaciones.
 
@@ -47,12 +47,12 @@ Las ACL de `ProgramData` permiten acceso completo solo a `SYSTEM` y administrado
 
 ## Puesta en marcha
 
-1. Respaldar la base y su clave y extraer `LanzadorScripts_Servidor-2.0.4-x64.zip` en `MAD002MICROPRU`.
-2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar**, o ejecutar `Instalar-Servidor.ps1` desde PowerShell 7.
+1. Respaldar la base y su clave y extraer `LanzadorScripts_Servidor-2.0.5-x64.zip` en `MAD002MICROPRU`.
+2. Ejecutar `LanzadorScripts.Servidor.exe` como administrador y pulsar **Instalar** si es nuevo, o **Actualizar servicio** si ya esta instalado. Abrir siempre la consola del ZIP nuevo para actualizar. La actualizacion comprueba firmas, respalda binarios y restaura la version anterior si falla; no sustituye la copia de la base y clave. Tambien puede utilizarse `Instalar-Servidor.ps1` desde PowerShell 7.
 3. Confirmar que el servicio `LanzadorScriptsServidor` esta iniciado, que el resumen muestra `Kerberos remoto preparado` y que el firewall de dominio admite TCP 47831.
 4. Abrir la consola servidor, revisar el administrador registrado y recrear el catalogo desde la carpeta local de scripts.
 5. Revisar **Actualizaciones** y confirmar el recurso `LanzadorScriptsActualizaciones$`.
-6. En **Rutas**, revisar la ruta UNC de scripts. El limite de ejecuciones se configura por cuenta en **Usuarios**. Guardar antes de distribuir los clientes 2.0.4.
+6. En **Rutas**, revisar la ruta UNC de scripts. El limite de ejecuciones se configura por cuenta en **Usuarios**. Guardar antes de distribuir los clientes 2.0.5. Confirmar las versiones de consola y servicio que muestra el resumen.
 
 La cuenta elevada que realiza la instalacion se registra como primer administrador. La identidad se entrega al servicio mediante un archivo DPAPI de un solo uso, se elimina tras crear o validar la base y no se guarda en `configuracion-servidor.json`.
 
@@ -72,7 +72,9 @@ La cuenta de dominio debe estar activa en la base central y disponer de lectura 
 
 Desde 2.0.4, consultar o controlar una ejecucion exige autorizacion vigente, el mismo propietario y la misma identidad Windows que la inicio. El rol administrador no permite controlar ejecuciones ajenas. Los identificadores ajenos e inexistentes producen la misma respuesta y las denegaciones se auditan.
 
-Las consolas usan salida seleccionable y un campo de respuesta nativo inferior. Enter envia una linea, incluso vacia para Pause. Las respuestas tambien llegan a scripts elevados a traves del broker autenticado y no se registran en auditoria. La salida continua no cambia el foco del campo de respuesta.
+Las consolas usan salida seleccionable y un campo de respuesta nativo inferior. Enter envia una linea, incluso vacia para Pause. Las respuestas tambien llegan a scripts elevados a traves del broker autenticado y no se registran en auditoria. La salida continua no cambia el foco del campo de respuesta. En 2.0.5, enviar, detener, cerrar y consultar ejecuciones no realizan consultas remotas en el hilo visual. El buffer conserva los mensajes recientes al alcanzar el limite; las lecturas de teclas conservan el caracter enviado. El resultado de PowerShell respeta el exit explicito y no convierte el ultimo codigo de Robocopy en el resultado del script.
+
+Los ajustes conservan las cuentas inactivas y utilizan una revision para rechazar ediciones antiguas. El modo desarrollo permanece pendiente hasta guardar y se descarta al volver. Un servicio antiguo rechaza el nuevo guardado versionado, sin recurrir a un guardado inseguro; actualizar primero el servidor.
 
 Desde 2.0.1 la altura de cada consola depende del espacio disponible y de las consolas abiertas, no del volumen de salida. La salida larga se desplaza dentro de su consola y mantiene accesible la entrada, tambien al redimensionar la ventana.
 

@@ -74,6 +74,11 @@
             <Setter Property="Padding" Value="9,6" />
             <Setter Property="MinHeight" Value="34" />
         </Style>
+        <Style x:Key="CampoNumerico" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="MaxLength" Value="2"/>
+        </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="#101318" />
             <Setter Property="Foreground" Value="{StaticResource Texto}" />

@@ -48,7 +48,7 @@
     <TextBox Grid.Column="1" x:Name="Entrada" Text="{Binding Entrada, UpdateSourceTrigger=PropertyChanged}" MaxLength="8192" IsEnabled="{Binding Activa}" AcceptsReturn="False" FontFamily="Consolas" Background="Transparent" BorderThickness="0" Padding="4" PreviewKeyDown="Entrada_Tecla" AutomationProperties.Name="Respuesta al script"/>
     <PasswordBox Grid.Column="1" x:Name="EntradaOculta" MaxLength="8192" IsEnabled="{Binding Activa}" Visibility="Collapsed" FontFamily="Consolas" Background="Transparent" Foreground="{StaticResource TextBrush}" BorderThickness="0" Padding="4" PasswordChanged="EntradaOculta_Cambiada" PreviewKeyDown="Entrada_Tecla" AutomationProperties.Name="Respuesta protegida al script"/>
     <Button Grid.Column="2" Click="Ocultar_Click" IsEnabled="{Binding Activa}" Padding="7" ToolTip="Mostrar u ocultar respuesta" AutomationProperties.Name="Mostrar u ocultar respuesta"><TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets"/></Button>
-    <Button Grid.Column="3" Click="Enviar_Click" IsEnabled="{Binding Activa}" Padding="7" ToolTip="Enviar respuesta" AutomationProperties.Name="Enviar respuesta"><Path Data="{StaticResource IconoEnviar}" Style="{StaticResource EstiloIcono}" Width="16" Height="16"/></Button>
+    <Button Grid.Column="3" Click="Enviar_Click" IsEnabled="{Binding PuedeEnviar}" Padding="7" ToolTip="Enviar respuesta" AutomationProperties.Name="Enviar respuesta"><Path Data="{StaticResource IconoEnviar}" Style="{StaticResource EstiloIcono}" Width="16" Height="16"/></Button>
    </Grid>
   </Grid>
  </Border>

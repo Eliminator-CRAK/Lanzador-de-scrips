@@ -15,6 +15,7 @@ public static class OperacionesServidor
     public const string Salud = "salud";
     public const string ObtenerPermisos = "permisos.obtener";
     public const string GuardarPermisos = "permisos.guardar";
+    public const string GuardarPermisosVersionados = "permisos.guardar-versionados";
     public const string ObtenerCatalogo = "catalogo.obtener";
     public const string GuardarCatalogo = "catalogo.guardar";
     public const string RegistrarAuditoria = "auditoria.registrar";
@@ -60,6 +61,9 @@ public sealed record PermisosServidorCentral(
     string ConjuntoId,
     long Revision,
     JsonObject Permisos);
+
+// Rechaza ediciones realizadas sobre una revision que otro administrador ya ha cambiado.
+public sealed record GuardarPermisosServidorCentral(long Revision, JsonObject Permisos);
 
 public sealed record CatalogoServidorCentral(
     string ConjuntoId,

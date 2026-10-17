@@ -81,7 +81,8 @@ internal static class ValidadorDatosServidor
         foreach (var nodo in usuarios)
         {
             if (nodo is not JsonObject usuario
-                || !TienePropiedadesExactas(usuario, PropiedadesUsuario))
+                || usuario.Count != PropiedadesUsuario.Count + (usuario.ContainsKey("activo") ? 1 : 0)
+                || usuario.Any(p => p.Key != "activo" && !PropiedadesUsuario.Contains(p.Key)))
             {
                 throw new InvalidDataException("La lista de permisos contiene un usuario no valido.");
             }
@@ -115,13 +116,16 @@ internal static class ValidadorDatosServidor
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(carpeta => carpeta, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+            var activo = true;
+            if (usuario.ContainsKey("activo") && (usuario["activo"] is not JsonValue activoJson || !activoJson.TryGetValue(out activo)))
+                throw new InvalidDataException("El estado activo del usuario no es valido.");
             resultadoUsuarios.Add(new UsuarioServidorCentral(
                 id,
                 nombre,
                 rol,
                 maximo,
                 carpetasNormalizadas,
-                true));
+                activo));
         }
 
         if (!resultadoUsuarios.Any(usuario => usuario.Activo && usuario.Rol == "admin"))

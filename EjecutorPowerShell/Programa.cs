@@ -8,6 +8,7 @@ using System.IO.Pipes;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Text;
+using System.Reflection;
 using Microsoft.PowerShell;
 
 namespace LanzadorScripts.EjecutorPowerShell
@@ -51,16 +52,28 @@ namespace LanzadorScripts.EjecutorPowerShell
                             shell.AddCommand(argumentos[0]);
                             shell.Commands.Commands[0].MergeMyResults(PipelineResultTypes.Error, PipelineResultTypes.Output);
                             shell.AddCommand("Out-Default");
+                            PrepararSalidaDeArchivo(sesion);
                             try { shell.Invoke(); }
                             catch (RuntimeException ex) { Console.Error.WriteLine(ex.Message); return host.SolicitoSalida ? host.CodigoSalida : 1; }
                             if (host.SolicitoSalida) return host.CodigoSalida;
-                            var ultimo = sesion.SessionStateProxy.GetVariable("LASTEXITCODE");
-                            return ultimo == null ? 0 : Convert.ToInt32(ultimo, CultureInfo.InvariantCulture);
+                            // Como -File, solo exit explicito o una excepcion terminante cambia el resultado.
+                            return 0;
                         }
                     }
                 }
             }
             catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+        }
+
+        private static void PrepararSalidaDeArchivo(Runspace sesion)
+        {
+            // Activa el mismo tratamiento de exit que Windows PowerShell 5.1 utiliza con -File.
+            var intrinsecos = sesion.SessionStateProxy.GetVariable("ExecutionContext");
+            var campo = typeof(EngineIntrinsics).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic);
+            var contexto = campo == null ? null : campo.GetValue(intrinsecos);
+            var propiedad = contexto == null ? null : contexto.GetType().GetProperty("ScriptCommandProcessorShouldRethrowExit", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (propiedad == null || !propiedad.CanWrite) throw new NotSupportedException("El motor no permite conservar los codigos de salida de archivos.");
+            propiedad.SetValue(contexto, true, null);
         }
     }
 }

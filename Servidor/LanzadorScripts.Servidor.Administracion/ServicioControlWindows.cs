@@ -6,6 +6,7 @@ using System.IO;
 using System.Security.Principal;
 using System.ServiceProcess;
 using LanzadorScripts.Servidor.Core;
+using LanzadorScripts.Protocolo;
 using Microsoft.Win32;
 
 namespace LanzadorScripts.Servidor.Administracion;
@@ -52,6 +53,50 @@ public sealed class ServicioControlWindows
         EjecutarSc("sidtype", NombreServicio, "unrestricted");
         ConfigurarFirewall(ejecutable, puerto);
         CrearAccesoMenuInicio();
+    }
+
+    public void Actualizar()
+    {
+        var estado = ObtenerEstado();
+        if (!estado.Instalado) throw new InvalidOperationException("Instale el servicio antes de actualizarlo.");
+        var origenServicio = ResolverEjecutableServicio();
+        var origenConsola = Environment.ProcessPath ?? throw new InvalidOperationException("No se pudo localizar la consola.");
+        var destinoServicio = Path.Combine(CarpetaInstalacion, "Servicio", "LanzadorScripts.Servidor.Servicio.exe");
+        var destinoConsola = Path.Combine(CarpetaInstalacion, "LanzadorScripts.Servidor.exe");
+        if (string.Equals(Path.GetFullPath(origenServicio), destinoServicio, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Abra la consola del nuevo ZIP para actualizar el servicio instalado.");
+        using var registro = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + NombreServicio);
+        var rutaRegistrada = Convert.ToString(registro?.GetValue("ImagePath"))?.Trim().Trim('"');
+        if (!string.Equals(rutaRegistrada, destinoServicio, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("La ruta del servicio instalado no es la esperada.");
+        foreach (var ruta in new[] { origenServicio, origenConsola, destinoServicio, destinoConsola }) RechazarPuntoReanalisis(ruta);
+        ValidadorPaqueteActualizacion.ValidarFirmaAuthenticode(origenServicio);
+        ValidadorPaqueteActualizacion.ValidarFirmaAuthenticode(origenConsola);
+        var nueva = new Version(FileVersionInfo.GetVersionInfo(origenServicio).FileVersion!);
+        var anterior = new Version(FileVersionInfo.GetVersionInfo(destinoServicio).FileVersion!);
+        if (nueva <= anterior) throw new InvalidOperationException("El paquete debe ser posterior al servicio instalado.");
+        var respaldo = Path.Combine(CarpetaInstalacion, "Respaldo-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(respaldo);
+        File.Copy(destinoServicio, Path.Combine(respaldo, "servicio.exe"));
+        File.Copy(destinoConsola, Path.Combine(respaldo, "consola.exe"));
+        if (estado.EnEjecucion) Detener();
+        try
+        {
+            // Solo sustituye binarios firmados; no modifica la base, clave ni configuracion.
+            CopiarArchivoAtomico(origenServicio, destinoServicio);
+            CopiarArchivoAtomico(origenConsola, destinoConsola);
+            ValidadorPaqueteActualizacion.ValidarFirmaAuthenticode(destinoServicio);
+            ValidadorPaqueteActualizacion.ValidarFirmaAuthenticode(destinoConsola);
+            if (estado.EnEjecucion) Iniciar();
+        }
+        catch
+        {
+            if (ObtenerEstado().EnEjecucion) Detener();
+            CopiarArchivoAtomico(Path.Combine(respaldo, "servicio.exe"), destinoServicio);
+            CopiarArchivoAtomico(Path.Combine(respaldo, "consola.exe"), destinoConsola);
+            if (estado.EnEjecucion) Iniciar();
+            throw;
+        }
     }
 
     public void Desinstalar()

@@ -34,11 +34,11 @@
                     </Border>
                     <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="LanzadorScripts" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock x:Name="TextoVersionServidor" Text="Servidor" Foreground="{StaticResource TextoSecundario}" FontSize="11" />
+                        <TextBlock x:Name="TextoVersionServidor" Text="Servidor" Foreground="{StaticResource TextoSecundario}" FontSize="11" TextWrapping="Wrap" MaxWidth="145" />
                     </StackPanel>
                 </StackPanel>
 
-                <StackPanel Grid.Row="2">
+                <StackPanel x:Name="MenuServidor" Grid.Row="2">
                     <Button x:Name="BotonResumen" Click="MostrarResumen_Click" HorizontalContentAlignment="Left" Margin="0,0,0,6">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0" /><TextBlock Text="Resumen" /></StackPanel>
                     </Button>
@@ -77,11 +77,12 @@
             </Grid.RowDefinitions>
             <Border Grid.Row="0" Background="{StaticResource Fondo}" BorderBrush="#292E36" BorderThickness="0,0,0,1" Padding="24,0">
                 <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock x:Name="TituloVista" Text="Resumen del servidor" FontSize="21" FontWeight="SemiBold" />
                         <TextBlock x:Name="SubtituloVista" Text="Estado operativo y controles principales" Foreground="{StaticResource TextoSecundario}" Margin="0,3,0,0" />
                     </StackPanel>
-                    <Button HorizontalAlignment="Right" VerticalAlignment="Center" Click="ActualizarTodo_Click" ToolTip="Actualizar datos">
+                    <Button x:Name="BotonRefrescarServidor" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ActualizarTodo_Click" ToolTip="Actualizar datos">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" /><TextBlock Text="Actualizar" /></StackPanel>
                     </Button>
                 </Grid>
@@ -111,8 +112,9 @@
                                         </StackPanel>
                                         <TextBlock x:Name="TextoEstadoConexion" Foreground="{StaticResource TextoSecundario}" Margin="0,5,0,0" />
                                     </StackPanel>
-                                    <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <WrapPanel Grid.Column="1" VerticalAlignment="Center" MaxWidth="280">
                                         <Button x:Name="BotonInstalarServicio" Click="InstalarServicio_Click" Margin="0,0,8,0" Background="#1E3A5F" BorderBrush="#315B8A" Content="Instalar" />
+                                        <Button x:Name="BotonActualizarServicio" Click="ActualizarServicio_Click" Margin="0,0,8,6" ToolTip="Actualizar el servicio desde este paquete firmado" Content="Actualizar servicio" />
                                         <Button x:Name="BotonIniciarServicio" Click="IniciarServicio_Click" Margin="0,0,8,0" Background="#123B31" BorderBrush="#1C6B57" Content="Iniciar" />
                                         <Button x:Name="BotonDetenerServicio" Click="DetenerServicio_Click" Margin="0,0,8,0" Background="#4A2525" BorderBrush="#7F3636" Content="Detener" />
                                         <Button x:Name="BotonReiniciarServicio" Click="ReiniciarServicio_Click" Content="Reiniciar" />
@@ -163,7 +165,7 @@
                                     <TextBlock x:Name="TextoCarpetaActualizaciones" Foreground="{StaticResource TextoSecundario}" Margin="0,8,0,0" TextWrapping="Wrap" />
                                     <TextBlock x:Name="TextoRecursoActualizaciones" Foreground="{StaticResource TextoSecundario}" Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                <WrapPanel Grid.Column="1" VerticalAlignment="Center" MaxWidth="280">
                                     <Button Click="AbrirCarpetaActualizaciones_Click" Margin="0,0,8,0">
                                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xED25;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" /><TextBlock Text="Abrir carpeta" /></StackPanel>
                                     </Button>
@@ -183,18 +185,18 @@
                                 <TextBlock x:Name="TextoResumenActualizaciones" Grid.Column="1" Foreground="{StaticResource TextoSecundario}" VerticalAlignment="Center" TextWrapping="Wrap" />
                             </Grid>
                         </Border>
-                        <DataGrid x:Name="TablaActualizaciones" Grid.Row="2">
+                        <DataGrid x:Name="TablaActualizaciones" Grid.Row="2" FrozenColumnCount="1">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Archivo" Binding="{Binding NombreArchivo}" Width="2*" />
+                                <DataGridTemplateColumn Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Tag="{Binding}" Click="EliminarActualizacion_Click" ToolTip="Eliminar version" AutomationProperties.Name="Eliminar version" Padding="6" MinHeight="28"><TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets"/></Button></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Archivo" Binding="{Binding NombreArchivo}" Width="2*" MinWidth="180" />
                                 <DataGridTextColumn Header="Versión" Binding="{Binding Version}" Width="90" />
                                 <DataGridTextColumn Header="Tamaño" Binding="{Binding Longitud, StringFormat={}{0:N0}}" Width="110" />
                                 <DataGridTextColumn Header="Fecha UTC" Binding="{Binding FechaUtc, StringFormat={}{0:dd/MM/yyyy HH:mm:ss}}" Width="155" />
                                 <DataGridTemplateColumn Header="Activo" Width="70"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Activo, Mode=OneWay}" IsEnabled="{Binding Valido}" Tag="{Binding}" Click="CambiarActivoActualizacion_Click" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Activar o desactivar esta version"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                 <DataGridCheckBoxColumn Header="Valido" Binding="{Binding Valido, Mode=OneWay}" Width="70" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Firma" Binding="{Binding EstadoFirma}" Width="150" />
-                                <DataGridTextColumn Header="SHA-256" Binding="{Binding Sha256}" Width="2*" />
+                                <DataGridTemplateColumn Header="SHA-256" Width="2*" MinWidth="110"><DataGridTemplateColumn.CellTemplate><DataTemplate><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Sha256}" ToolTip="{Binding Sha256}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/><Button Grid.Column="1" Tag="{Binding Sha256}" Click="CopiarHash_Click" ToolTip="Copiar SHA-256" AutomationProperties.Name="Copiar SHA-256" Padding="5" MinHeight="28"><TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets"/></Button></Grid></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                 <DataGridTextColumn Header="Validación" Binding="{Binding Mensaje}" Width="2*" />
-                                <DataGridTemplateColumn Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Tag="{Binding}" Click="EliminarActualizacion_Click" ToolTip="Eliminar version" AutomationProperties.Name="Eliminar version" Padding="6" MinHeight="28"><TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets"/></Button></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
@@ -208,27 +210,27 @@
                         </Grid.RowDefinitions>
                         <DataGrid x:Name="TablaUsuarios" SelectionChanged="TablaUsuarios_SelectionChanged">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Cuenta de Windows" Binding="{Binding NombreUsuario}" Width="2*" />
+                                <DataGridTextColumn Header="Cuenta de Windows" Binding="{Binding NombreUsuario}" Width="2*" MinWidth="180" />
                                 <DataGridTextColumn Header="Rol" Binding="{Binding Rol}" Width="110" />
-                                <DataGridTextColumn Header="Máximo" Binding="{Binding MaxScriptsSimultaneos}" Width="90" />
+                                <DataGridTextColumn Header="Máximo" Binding="{Binding MaxScriptsSimultaneos}" Width="90"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextAlignment" Value="Center"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
                                 <DataGridCheckBoxColumn Header="Activo" Binding="{Binding Activo}" Width="80" />
                                 <DataGridTextColumn Header="Carpetas permitidas" Binding="{Binding CarpetasPermitidas.Count}" Width="140" />
                             </DataGrid.Columns>
                         </DataGrid>
                         <Border Grid.Row="1" Background="{StaticResource Superficie}" BorderBrush="{StaticResource Borde}" BorderThickness="1" CornerRadius="6" Padding="16" Margin="0,14,0,0">
                             <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="2*" />
                                     <ColumnDefinition Width="120" />
                                     <ColumnDefinition Width="100" />
                                     <ColumnDefinition Width="2*" />
-                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" Margin="0,0,10,0"><TextBlock Text="Cuenta de Windows" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><TextBox x:Name="CampoCuentaUsuario" /></StackPanel>
                                 <StackPanel Grid.Column="1" Margin="0,0,10,0"><TextBlock Text="Rol" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><ComboBox x:Name="CampoRolUsuario"><ComboBoxItem Content="admin" /><ComboBoxItem Content="nominal" /></ComboBox></StackPanel>
-                                <StackPanel Grid.Column="2" Margin="0,0,10,0"><TextBlock Text="Máximo" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><TextBox x:Name="CampoMaximoUsuario" Text="5" /></StackPanel>
+                                <StackPanel Grid.Column="2" Margin="0,0,10,0"><TextBlock Text="Máximo" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><TextBox x:Name="CampoMaximoUsuario" Text="5" Style="{StaticResource CampoNumerico}" /></StackPanel>
                                 <StackPanel Grid.Column="3" Margin="0,0,10,0"><TextBlock Text="Carpetas relativas, una por línea" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><TextBox x:Name="CampoCarpetasUsuario" AcceptsReturn="True" Height="62" VerticalScrollBarVisibility="Auto" /></StackPanel>
-                                <StackPanel Grid.Column="4" VerticalAlignment="Bottom" Orientation="Horizontal">
+                                <StackPanel Grid.Row="1" Grid.ColumnSpan="4" HorizontalAlignment="Right" Margin="0,12,0,0" Orientation="Horizontal">
                                     <CheckBox x:Name="CampoUsuarioActivo" Content="Activo" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" />
                                     <Button Click="NuevoUsuario_Click" Content="Nuevo" Margin="0,0,8,0" />
                                     <Button Click="GuardarUsuario_Click" Content="Guardar" Background="#123B31" BorderBrush="#1C6B57" Margin="0,0,8,0" />
@@ -245,24 +247,16 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <Grid Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="220" />
-                                <ColumnDefinition Width="145" />
-                                <ColumnDefinition Width="145" />
-                                <ColumnDefinition Width="150" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,9,0"><TextBlock Text="Usuario" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><ComboBox x:Name="FiltroUsuarioAuditoria" /></StackPanel>
-                            <StackPanel Grid.Column="1" Margin="0,0,9,0"><TextBlock Text="Desde" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><DatePicker x:Name="FiltroDesdeAuditoria" /></StackPanel>
-                            <StackPanel Grid.Column="2" Margin="0,0,9,0"><TextBlock Text="Hasta" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><DatePicker x:Name="FiltroHastaAuditoria" /></StackPanel>
-                            <StackPanel Grid.Column="3" Margin="0,0,9,0"><TextBlock Text="Resultado" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><ComboBox x:Name="FiltroResultadoAuditoria"><ComboBoxItem Content="Todos" /><ComboBoxItem Content="correcto" /><ComboBoxItem Content="error" /><ComboBoxItem Content="denegado" /><ComboBoxItem Content="iniciado" /><ComboBoxItem Content="finalizado" /></ComboBox></StackPanel>
-                            <StackPanel Grid.Column="4" Margin="0,0,9,0"><TextBlock Text="Script" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><TextBox x:Name="FiltroScriptAuditoria" /></StackPanel>
-                            <Button Grid.Column="5" VerticalAlignment="Bottom" Click="BuscarAuditoria_Click" Background="#1E3A5F" BorderBrush="#315B8A">
+                        <WrapPanel Margin="0,0,0,12">
+                            <StackPanel Width="190" Margin="0,0,9,8"><TextBlock Text="Usuario" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><ComboBox x:Name="FiltroUsuarioAuditoria" /></StackPanel>
+                            <StackPanel Width="140" Margin="0,0,9,8"><TextBlock Text="Desde" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><DatePicker x:Name="FiltroDesdeAuditoria" /></StackPanel>
+                            <StackPanel Width="140" Margin="0,0,9,8"><TextBlock Text="Hasta" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><DatePicker x:Name="FiltroHastaAuditoria" /></StackPanel>
+                            <StackPanel Width="140" Margin="0,0,9,8"><TextBlock Text="Resultado" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><ComboBox x:Name="FiltroResultadoAuditoria"><ComboBoxItem Content="Todos" /><ComboBoxItem Content="correcto" /><ComboBoxItem Content="error" /><ComboBoxItem Content="denegado" /><ComboBoxItem Content="iniciado" /><ComboBoxItem Content="finalizado" /></ComboBox></StackPanel>
+                            <StackPanel Width="190" Margin="0,0,9,8"><TextBlock Text="Script" Foreground="{StaticResource TextoSecundario}" Margin="0,0,0,5" /><TextBox x:Name="FiltroScriptAuditoria" /></StackPanel>
+                            <Button VerticalAlignment="Bottom" Margin="0,0,0,8" Click="BuscarAuditoria_Click" Background="#1E3A5F" BorderBrush="#315B8A">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" Margin="0,0,7,0" /><TextBlock Text="Buscar" /></StackPanel>
                             </Button>
-                        </Grid>
+                        </WrapPanel>
                         <DataGrid x:Name="TablaAuditoria" Grid.Row="1">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Fecha" Binding="{Binding FechaLocal, StringFormat={}{0:dd/MM/yyyy HH:mm:ss}}" Width="145" />
@@ -302,7 +296,7 @@
                                 <DataGridTextColumn Header="Script" Binding="{Binding ScriptId}" Width="2*" />
                                 <DataGridTextColumn Header="Tipo" Binding="{Binding Extension}" Width="90" />
                                 <DataGridTextColumn Header="Bytes" Binding="{Binding Longitud}" Width="110" />
-                                <DataGridTextColumn Header="SHA-256" Binding="{Binding Sha256}" Width="3*" />
+                                <DataGridTextColumn Header="SHA-256" Binding="{Binding Sha256}" Width="3*"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="ToolTip" Value="{Binding Sha256}"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>

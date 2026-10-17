@@ -61,9 +61,9 @@ public sealed partial class ServidorLocalWeb
             .OfType<JsonObject>().Select(u => new UsuarioPermisoNativo(
                 LeerTexto(u, "id", Guid.NewGuid().ToString("N")), LeerTexto(u, "nombreUsuario", ""),
                 LeerTexto(u, "rol", "nominal"), LeerEntero(u, "maxScriptsSimultaneos", 5),
-                LeerArrayTexto(u["carpetasPermitidas"] as JsonArray))).ToArray();
+                LeerArrayTexto(u["carpetasPermitidas"] as JsonArray), LeerBooleano(u, "activo", true))).ToArray();
         return new PermisosClienteNativo(usuarios, LeerArrayTexto(diagnostico.Permisos["scriptsAdmin"] as JsonArray),
-            politica.ScriptsElevadosPermitidos.ToArray(), politica.PermitirExecutionPolicyBypass);
+            politica.ScriptsElevadosPermitidos.ToArray(), politica.PermitirExecutionPolicyBypass, diagnostico.Revision);
     }
 
     internal async Task GuardarPermisosNativosAsync(PermisosClienteNativo permisos, CancellationToken cancelacion)
@@ -82,10 +82,11 @@ public sealed partial class ServidorLocalWeb
             {
                 ["id"] = usuario.Id, ["nombreUsuario"] = usuario.NombreUsuario.Trim(), ["rol"] = usuario.Rol,
                 ["maxScriptsSimultaneos"] = usuario.MaxScriptsSimultaneos,
+                ["activo"] = usuario.Activo,
                 ["carpetasPermitidas"] = CrearArrayNativo(usuario.CarpetasPermitidas)
             });
         }
-        var resultado = GuardarPermisos(new JsonObject
+        var datos = new JsonObject
         {
             ["usuarios"] = usuarios, ["scriptsAdmin"] = CrearArrayNativo(permisos.ScriptsAdmin),
             ["seguridadScripts"] = new JsonObject
@@ -93,8 +94,13 @@ public sealed partial class ServidorLocalWeb
                 ["scriptsElevadosPermitidos"] = CrearArrayNativo(permisos.ScriptsElevadosPermitidos),
                 ["permitirExecutionPolicyBypass"] = permisos.PermitirExecutionPolicyBypass
             }
-        });
-        if (!resultado.PermisosGuardados) throw new InvalidOperationException(resultado.AvisoConexion);
+        };
+        if (_usarArtefactosLocales)
+        {
+            var resultado = GuardarPermisos(datos);
+            if (!resultado.PermisosGuardados) throw new InvalidOperationException(resultado.AvisoConexion);
+        }
+        else _servicioDatosCentralizados.GuardarPermisosVersionados(NormalizarPermisos(datos), permisos.Revision);
         InvalidarDiagnosticoAjustes();
     }
 

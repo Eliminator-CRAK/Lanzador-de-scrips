@@ -1245,7 +1245,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
             return new UsuarioCliente(identidad, "nominal", 1, false, diagnosticoPermisos.Mensaje, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
 
-        if (usuario is null)
+        if (usuario is null || !LeerBooleano(usuario, "activo", true))
         {
             return new UsuarioCliente(identidad, "nominal", 1, false, "Usuario no incluido en el archivo de permisos.", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         }
@@ -1554,7 +1554,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
             if (!_servicioDatosCentralizados.IntentarObtenerPermisos(
                     out var permisos,
                     out var conjuntoId,
-                    out var error))
+                    out var error, out var revision))
             {
                 return new DiagnosticoPermisos(
                     EstadoPermisos.Inaccesible,
@@ -1570,7 +1570,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
                 ruta,
                 NormalizarPermisos(permisos),
                 string.Empty,
-                conjuntoId);
+                conjuntoId, revision);
         }
         catch (Exception ex) when (ex is IOException
             or InvalidOperationException
@@ -1904,6 +1904,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
                 ["id"] = LeerTexto(item, "id", Guid.NewGuid().ToString("N")),
                 ["nombreUsuario"] = nombre,
                 ["rol"] = NormalizarRol(LeerTexto(item, "rol", "nominal")),
+                ["activo"] = LeerBooleano(item, "activo", true),
                 ["maxScriptsSimultaneos"] = Math.Clamp(LeerEntero(item, "maxScriptsSimultaneos", 5), 1, 50),
                 ["carpetasPermitidas"] = NormalizarCarpetasPermitidas(item["carpetasPermitidas"] as JsonArray)
             });
@@ -2460,7 +2461,7 @@ public sealed partial class ServidorLocalWeb : IDisposable
         string Ruta,
         JsonObject Permisos,
         string Mensaje,
-        string ConjuntoId = "")
+        string ConjuntoId = "", long Revision = 0)
     {
         public bool EstaDisponible => Estado == EstadoPermisos.Disponible;
 

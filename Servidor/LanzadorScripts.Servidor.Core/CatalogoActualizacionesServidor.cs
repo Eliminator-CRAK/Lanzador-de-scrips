@@ -3,6 +3,7 @@
 
 using LanzadorScripts.Protocolo;
 using System.Text.Json;
+using System.Security.Cryptography;
 
 namespace LanzadorScripts.Servidor.Core;
 
@@ -146,7 +147,8 @@ public sealed class CatalogoActualizacionesServidor
             RutasServidor.RechazarPuntoReanalisis(_carpeta);
             var ruta = Path.Combine(_carpeta, solicitud.NombreArchivo);
             RutasServidor.RechazarPuntoReanalisis(ruta);
-            var paquete = _validar(ruta);
+            _cache.Remove(ruta);
+            var paquete = ObtenerResultado(ruta);
             if (!string.Equals(paquete.Sha256, solicitud.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("El paquete ha cambiado. Actualice la lista antes de continuar.");
             var desactivados = LeerDesactivados();
@@ -154,7 +156,9 @@ public sealed class CatalogoActualizacionesServidor
             {
                 if (paquete.Valido && !desactivados.Contains(paquete.Sha256) && ObtenerEstado().VersionActiva == paquete.Version?.ToString(3))
                     throw new InvalidOperationException("Desactive la version actual antes de eliminarla.");
-                File.Delete(ruta);
+                RetiradaPaqueteSeguro.Eliminar(ruta, solicitud.Sha256);
+                desactivados.Remove(paquete.Sha256);
+                GuardarDesactivados(desactivados);
             }
             else
             {
@@ -162,8 +166,8 @@ public sealed class CatalogoActualizacionesServidor
                 if (solicitud.Activo == true) desactivados.Remove(paquete.Sha256); else desactivados.Add(paquete.Sha256);
                 GuardarDesactivados(desactivados);
             }
-            _cache.Clear();
-            return ObtenerEstado(true);
+            _cache.Remove(ruta);
+            return ObtenerEstado();
         }
     }
 
@@ -206,6 +210,12 @@ public sealed class CatalogoActualizacionesServidor
             }
 
             var resultado = _validar(ruta);
+            if (string.IsNullOrEmpty(resultado.Sha256))
+            {
+                // La identidad del archivo se conserva aunque su firma o formato se rechacen.
+                using var lectura = new FileStream(ruta, FileMode.Open, FileAccess.Read, FileShare.Read);
+                resultado = resultado with { Sha256 = Convert.ToHexString(SHA256.HashData(lectura)) };
+            }
             _cache[ruta] = new EntradaCache(clave, resultado);
             return resultado;
         }

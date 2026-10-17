@@ -338,8 +338,7 @@ public partial class VentanaPrincipal : Window
         IReadOnlyList<EjecucionActivaResumen> ejecuciones;
         try
         {
-            ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
-                ?? Array.Empty<EjecucionActivaResumen>();
+            ejecuciones = _servidorLocalIntegrado is null ? [] : await _servidorLocalIntegrado.ObtenerEjecucionesActivasAsync();
             while (ejecuciones.Count > 0)
             {
                 var dialogo = new DialogoCerrarAplicacion(ejecuciones);
@@ -354,8 +353,7 @@ public partial class VentanaPrincipal : Window
                     return;
                 }
 
-                var actuales = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
-                    ?? Array.Empty<EjecucionActivaResumen>();
+                var actuales = _servidorLocalIntegrado is null ? [] : await _servidorLocalIntegrado.ObtenerEjecucionesActivasAsync();
                 if (ejecuciones.Select(ejecucion => ejecucion.Id)
                     .SequenceEqual(actuales.Select(ejecucion => ejecucion.Id)))
                 {
@@ -381,8 +379,7 @@ public partial class VentanaPrincipal : Window
             return;
         }
 
-        var ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
-            ?? Array.Empty<EjecucionActivaResumen>();
+        var ejecuciones = _servidorLocalIntegrado is null ? [] : await _servidorLocalIntegrado.ObtenerEjecucionesActivasAsync();
         if (ejecuciones.Count > 0)
         {
             MostrarVentana(WindowState.Normal);
@@ -503,8 +500,7 @@ public partial class VentanaPrincipal : Window
             return;
         }
 
-        var ejecuciones = _servidorLocalIntegrado?.ObtenerEjecucionesActivas()
-            ?? Array.Empty<EjecucionActivaResumen>();
+        var ejecuciones = _servidorLocalIntegrado is null ? [] : await _servidorLocalIntegrado.ObtenerEjecucionesActivasAsync();
         if (ejecuciones.Count > 0)
         {
             MessageBox.Show(
@@ -540,7 +536,7 @@ public partial class VentanaPrincipal : Window
                 consulta.Actualizacion,
                 progreso,
                 CancellationToken.None);
-            if (_servidorLocalIntegrado?.ObtenerEjecucionesActivas().Count > 0)
+            if (_servidorLocalIntegrado is not null && (await _servidorLocalIntegrado.ObtenerEjecucionesActivasAsync()).Count > 0)
             {
                 throw new InvalidOperationException(
                     "Hay scripts en ejecucion. Finalicelos antes de actualizar.");

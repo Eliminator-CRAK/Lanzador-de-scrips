@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Management.Automation;
 using System.Management.Automation.Host;
 using System.Security;
@@ -34,8 +35,9 @@ namespace LanzadorScripts.EjecutorPowerShell
     internal sealed class InterfazScript : PSHostUserInterface
     {
         private readonly CanalProgreso _canal;
-        private readonly InterfazBruta _raw = new InterfazBruta();
-        internal InterfazScript(CanalProgreso canal) { _canal = canal; }
+        private readonly EntradaScript _entrada = new EntradaScript();
+        private readonly InterfazBruta _raw;
+        internal InterfazScript(CanalProgreso canal) { _canal = canal; _raw = new InterfazBruta(_entrada, () => _canal.Entrada(false)); }
         public override PSHostRawUserInterface RawUI { get { return _raw; } }
         public override void Write(string value) { Console.Write(value); }
         public override void Write(ConsoleColor foregroundColor, ConsoleColor backgroundColor, string value) { Write(value); }
@@ -45,12 +47,12 @@ namespace LanzadorScripts.EjecutorPowerShell
         public override void WriteVerboseLine(string message) { Console.WriteLine(message); }
         public override void WriteWarningLine(string message) { Console.WriteLine(message); }
         public override void WriteProgress(long sourceId, ProgressRecord record) { _canal.Progreso(sourceId, record); }
-        public override string ReadLine() { _canal.Entrada(false); return Console.ReadLine() ?? ""; }
+        public override string ReadLine() { _canal.Entrada(false); return _entrada.LeerLinea(); }
         public override SecureString ReadLineAsSecureString()
         {
             _canal.Entrada(true);
             var segura = new SecureString();
-            var valor = Console.ReadLine() ?? "";
+            var valor = _entrada.LeerLinea();
             foreach (var caracter in valor) segura.AppendChar(caracter);
             segura.MakeReadOnly();
             return segura;
@@ -109,27 +111,44 @@ namespace LanzadorScripts.EjecutorPowerShell
 
     internal sealed class InterfazBruta : PSHostRawUserInterface
     {
+        private readonly EntradaScript _entrada;
+        private readonly Action _solicitarEntrada;
+        private KeyInfo? _soltar;
+        internal InterfazBruta(EntradaScript entrada, Action solicitarEntrada) { _entrada = entrada; _solicitarEntrada = solicitarEntrada; }
         public override ConsoleColor BackgroundColor { get; set; } = ConsoleColor.Black;
         public override ConsoleColor ForegroundColor { get; set; } = ConsoleColor.Gray;
         public override Size BufferSize { get; set; } = new Size(160, 3000);
         public override Coordinates CursorPosition { get; set; }
         public override int CursorSize { get; set; } = 25;
-        public override bool KeyAvailable { get { return false; } }
+        public override bool KeyAvailable { get { return _soltar.HasValue || _entrada.Disponible; } }
         public override Size MaxPhysicalWindowSize { get { return new Size(160, 80); } }
         public override Size MaxWindowSize { get { return MaxPhysicalWindowSize; } }
         public override Coordinates WindowPosition { get; set; }
         public override Size WindowSize { get; set; } = new Size(160, 40);
         public override string WindowTitle { get; set; } = "LanzadorScripts";
-        public override void FlushInputBuffer() { }
+        public override void FlushInputBuffer() { _soltar = null; while (_entrada.Disponible) if (_entrada.LeerCaracter() < 0) break; }
         public override BufferCell[,] GetBufferContents(Rectangle rectangle) { throw new NotSupportedException(); }
         public override void ScrollBufferContents(Rectangle source, Coordinates destination, Rectangle clip, BufferCell fill) { }
         public override void SetBufferContents(Coordinates origin, BufferCell[,] contents) { }
         public override void SetBufferContents(Rectangle rectangle, BufferCell fill) { }
         public override KeyInfo ReadKey(ReadKeyOptions options)
         {
-            // Pause recibe Enter por la entrada redirigida sin necesitar una consola de Windows.
-            Console.ReadLine();
-            return new KeyInfo(13, '\r', 0, true);
+            if ((options & (ReadKeyOptions.IncludeKeyDown | ReadKeyOptions.IncludeKeyUp)) == 0)
+                throw new ArgumentException("Indique el tipo de evento de teclado.");
+            if (_soltar.HasValue)
+            {
+                var pendiente = _soltar.Value; _soltar = null;
+                if ((options & ReadKeyOptions.IncludeKeyUp) != 0) return pendiente;
+            }
+            _solicitarEntrada();
+            var valor = _entrada.LeerCaracter();
+            if (valor < 0) throw new EndOfStreamException("La entrada del script se ha cerrado.");
+            var caracter = valor == '\n' ? '\r' : (char)valor;
+            var codigo = caracter == '\r' ? 13 : char.ToUpperInvariant(caracter);
+            var bajada = (options & ReadKeyOptions.IncludeKeyDown) != 0;
+            if (bajada && (options & ReadKeyOptions.IncludeKeyUp) != 0) _soltar = new KeyInfo(codigo, caracter, 0, false);
+            if ((options & ReadKeyOptions.NoEcho) == 0) Console.Write(caracter);
+            return new KeyInfo(codigo, caracter, 0, bajada);
         }
     }
 }

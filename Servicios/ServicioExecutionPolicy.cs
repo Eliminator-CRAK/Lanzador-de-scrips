@@ -19,7 +19,9 @@ public sealed class ServicioExecutionPolicy
             return new ResultadoExecutionPolicy(false, "PowerShell 5.1 no esta disponible.");
         }
 
-        var comando = "Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Force; Get-ExecutionPolicy -List | Out-String";
+        var comando = "$ErrorActionPreference='Stop'; try { Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Scope LocalMachine -Force -ErrorAction Stop; "
+            + "$p=Get-ExecutionPolicy -Scope LocalMachine; if($p -ne 'Unrestricted' -or (Get-ExecutionPolicy) -ne 'Unrestricted'){throw 'Otra politica impide aplicar Unrestricted.'}; "
+            + "Get-ExecutionPolicy -List | Out-String; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
         using var proceso = new Process
         {
             StartInfo = new ProcessStartInfo
@@ -36,8 +38,6 @@ public sealed class ServicioExecutionPolicy
 
         proceso.StartInfo.ArgumentList.Add("-NoLogo");
         proceso.StartInfo.ArgumentList.Add("-NoProfile");
-        proceso.StartInfo.ArgumentList.Add("-ExecutionPolicy");
-        proceso.StartInfo.ArgumentList.Add("Bypass");
         proceso.StartInfo.ArgumentList.Add("-Command");
         proceso.StartInfo.ArgumentList.Add(comando);
 

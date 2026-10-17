@@ -104,6 +104,32 @@ public sealed class PruebasActualizaciones
     }
 
     [Fact]
+    public void PaqueteInvalidoSeRetiraSoloSiCoincideElArchivoSeleccionado()
+    {
+        var raiz = CrearDirectorioTemporal();
+        try
+        {
+            var ruta = CrearMsiFicticio(raiz, "1.0.0", 32);
+            var catalogo = new CatalogoActualizacionesServidor(raiz, ValidadorPaqueteActualizacion.Validar);
+            var paquete = Assert.Single(catalogo.ObtenerEstado().Paquetes);
+            Assert.False(paquete.Valido);
+            Assert.False(paquete.Activo);
+            Assert.Equal(64, paquete.Sha256.Length);
+            var solicitud = new GestionarActualizacionServidor(paquete.NombreArchivo, paquete.Sha256, Eliminar: true);
+            File.WriteAllBytes(ruta, new byte[32]);
+            Assert.Throws<InvalidDataException>(() => catalogo.Gestionar(solicitud));
+            Assert.True(File.Exists(ruta));
+            paquete = Assert.Single(catalogo.ObtenerEstado(true).Paquetes);
+            using (var bloqueo = new FileStream(ruta, FileMode.Open, FileAccess.Read, FileShare.Read))
+                Assert.ThrowsAny<Exception>(() => catalogo.Gestionar(solicitud with { Sha256 = paquete.Sha256 }));
+            Assert.True(File.Exists(ruta));
+            Assert.Empty(catalogo.Gestionar(solicitud with { Sha256 = paquete.Sha256 }).Paquetes);
+            Assert.False(File.Exists(ruta));
+        }
+        finally { EliminarDirectorioTemporal(raiz); }
+    }
+
+    [Fact]
     public void CatalogoCacheaPorRutaTamanoYFecha()
     {
         var raiz = CrearDirectorioTemporal();

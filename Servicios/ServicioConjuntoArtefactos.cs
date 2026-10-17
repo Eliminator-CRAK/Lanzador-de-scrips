@@ -293,7 +293,9 @@ public sealed class ServicioConjuntoArtefactos
         foreach (var usuario in usuarios)
         {
             if (usuario is not JsonObject objetoUsuario
-                || !TienePropiedadesExactas(objetoUsuario, PropiedadesUsuario)
+                || objetoUsuario.Count != PropiedadesUsuario.Count + (objetoUsuario.ContainsKey("activo") ? 1 : 0)
+                || objetoUsuario.Any(p => p.Key != "activo" && !PropiedadesUsuario.Contains(p.Key))
+                || (objetoUsuario.ContainsKey("activo") && !EsBooleano(objetoUsuario["activo"]))
                 || !EsTexto(objetoUsuario["id"])
                 || !EsTexto(objetoUsuario["nombreUsuario"])
                 || !EsTexto(objetoUsuario["rol"])

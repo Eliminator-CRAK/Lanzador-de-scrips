@@ -146,7 +146,7 @@ public sealed class MonitorizacionAplicacion : IDisposable
     {
         "aplicacion.inicio" or "webview2.inicio" or "servicio.inicio" or "servicio.cierre"
         or "backend.solicitud" or "script.ejecucion" or "servidor.conexion" or "monitorizacion.prueba"
-        or "consola.inicio" or "salud" or "permisos.obtener" or "permisos.guardar"
+        or "consola.inicio" or "salud" or "permisos.obtener" or "permisos.guardar" or "permisos.guardar-versionados"
         or "catalogo.obtener" or "catalogo.guardar" or "auditoria.registrar" or "auditoria.consultar"
         or "usuarios.listar" or "usuarios.guardar" or "usuarios.eliminar"
         or "mantenimiento.copia" or "mantenimiento.integridad"

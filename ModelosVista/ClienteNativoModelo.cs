@@ -25,6 +25,8 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     private bool _ajustes;
     private bool _bypass;
     private bool _desarrollo;
+    private bool _desarrolloPendiente;
+    private long _revisionPermisos;
     private int _limite = 1;
     private int _numeroConsola;
     private bool _iniciando;
@@ -44,7 +46,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public IReadOnlyList<string> Carpetas { get; private set; } = [];
     public IReadOnlyList<string> ScriptsAdmin { get; set; } = [];
     public IReadOnlyList<string> ScriptsElevados { get; set; } = [];
-    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.4");
+    public string Version => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.5");
     public string Buscar { get => _buscar; set { if (Asignar(ref _buscar, value)) _ = RefrescarAsync(); } }
     public string Carpeta => string.IsNullOrEmpty(_carpeta) ? "Scripts" : "Scripts / " + _carpeta;
     public bool PuedeSubirCarpeta => !string.IsNullOrEmpty(_carpeta);
@@ -56,10 +58,12 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
     public bool AjustesAbiertos { get => _ajustes; private set => Asignar(ref _ajustes, value); }
     public bool PermitirBypass { get => _bypass; set => Asignar(ref _bypass, value); }
     public bool ModoDesarrollo { get => _desarrollo; private set => Asignar(ref _desarrollo, value); }
+    public bool ModoDesarrolloPendiente { get => _desarrolloPendiente; set => Asignar(ref _desarrolloPendiente, value); }
     public int Activas => Consolas.Count(c => c.Activa);
     public int Limite => _limite;
     public bool PuedeDetenerTodas => Activas > 0;
     public bool PuedeLimpiarFinalizadas => Consolas.Any(c => c.Script is not null && !c.Activa);
+    public bool PuedeIniciar => !_iniciando && Activas < Limite;
     public string Resumen => $"Ejecutando: {Activas}   Max: {_limite}";
 
     public async Task InicializarAsync()
@@ -130,6 +134,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         if (script.EstaBloqueado) { Estado = script.MotivoBloqueo; return; }
         if (_iniciando || _desechado) return;
         _iniciando = true;
+        Notificar(nameof(PuedeIniciar));
         try
         {
             var inicio = await _cliente.IniciarAsync(script.Id, _vida.Token);
@@ -142,7 +147,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { Estado = ServicioRedaccionSecretos.Sanitizar(ex.Message); }
-        finally { _iniciando = false; }
+        finally { _iniciando = false; Notificar(nameof(PuedeIniciar)); }
     }
 
     private ConsolaNativaModelo CrearConsola()
@@ -214,8 +219,8 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         try
         {
             // Una linea vacia permite responder a Pause sin exponer el contenido escrito.
-            await _cliente.EnviarEntradaAsync(consola.EjecucionId, texto);
-            consola.Entrada = "";
+            await _cliente.EnviarEntradaAsync(consola.EjecucionId, texto).WaitAsync(_vida.Token);
+            if (consola.Entrada == texto) consola.Entrada = "";
         }
         catch (Exception ex) { Estado = ServicioRedaccionSecretos.Sanitizar(ex.Message); }
         finally { consola.Enviando = false; }
@@ -270,6 +275,7 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         Notificar(nameof(Resumen));
         Notificar(nameof(PuedeDetenerTodas));
         Notificar(nameof(PuedeLimpiarFinalizadas));
+        Notificar(nameof(PuedeIniciar));
     }
 
     public async Task AbrirAjustesAsync()
@@ -279,6 +285,8 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
         try
         {
             var permisos = await _cliente.ObtenerPermisosAsync(_vida.Token);
+            _revisionPermisos = permisos.Revision;
+            ModoDesarrolloPendiente = ModoDesarrollo;
             Usuarios.Clear();
             foreach (var usuario in permisos.Usuarios) Usuarios.Add(new UsuarioPermisoModelo(usuario));
             ScriptsAdmin = permisos.ScriptsAdmin;
@@ -294,12 +302,13 @@ public sealed class ClienteNativoModelo : ModeloNotificable, IDisposable
 
     public async Task GuardarAjustesAsync()
     {
-        await _cliente.GuardarPermisosAsync(new PermisosClienteNativo(Usuarios.Select(u => u.CrearContrato()).ToArray(), ScriptsAdmin, ScriptsElevados, PermitirBypass), _vida.Token);
+        await _cliente.GuardarPermisosAsync(new PermisosClienteNativo(Usuarios.Select(u => u.CrearContrato()).ToArray(), ScriptsAdmin, ScriptsElevados, PermitirBypass, _revisionPermisos), _vida.Token);
+        if (ModoDesarrolloPendiente != ModoDesarrollo) await CambiarDesarrolloAsync(ModoDesarrolloPendiente);
         AjustesAbiertos = false;
         await InicializarAsync();
     }
 
-    public void CerrarAjustes() => AjustesAbiertos = false;
+    public void CerrarAjustes() { ModoDesarrolloPendiente = ModoDesarrollo; AjustesAbiertos = false; }
 
     public async Task RefrescarCatalogoAsync()
     {
@@ -342,6 +351,8 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
     private bool _activa;
     private bool _enviando;
     private bool _entradaProtegida;
+    private int _lineasSalida;
+    private int _caracteresSalida;
     private readonly Dictionary<(long, int), ProgresoScript> _actividades = [];
     private ProgresoScript? _progresoActual;
     private ProgresoScript? _progresoPadre;
@@ -354,15 +365,16 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
     public ElementoScriptNativo? Script { get; private set; }
     public string Titulo => $"Consola #{Numero}";
     public string NombreScript => Script?.Nombre ?? "";
-    public bool Activa { get => _activa; private set => Asignar(ref _activa, value); }
-    public bool Enviando { get => _enviando; set => Asignar(ref _enviando, value); }
+    public bool Activa { get => _activa; private set { if (Asignar(ref _activa, value)) Notificar(nameof(PuedeEnviar)); } }
+    public bool Enviando { get => _enviando; set { if (Asignar(ref _enviando, value)) Notificar(nameof(PuedeEnviar)); } }
+    public bool PuedeEnviar => Activa && !Enviando;
     public string Entrada { get => _entrada; set => Asignar(ref _entrada, value); }
     public bool EntradaProtegida { get => _entradaProtegida; set => Asignar(ref _entradaProtegida, value); }
     public ProgresoScript? ProgresoActual { get => _progresoActual; private set { if (Asignar(ref _progresoActual, value)) Notificar(nameof(TieneProgreso)); } }
     public ProgresoScript? ProgresoPadre { get => _progresoPadre; private set { if (Asignar(ref _progresoPadre, value)) Notificar(nameof(TieneProgresoPadre)); } }
     public bool TieneProgreso => ProgresoActual is not null;
     public bool TieneProgresoPadre => ProgresoPadre is not null;
-    public ObservableCollection<EventoCliente> Eventos { get; } = [];
+    public SalidaConsolaColeccion Eventos { get; } = [];
     public void Iniciar(ElementoScriptNativo script, Guid id)
     {
         Script = script;
@@ -378,7 +390,12 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
             AplicarProgresos(progreso.Completado);
         }
         if (evento.EntradaProtegida is { } protegida) EntradaProtegida = protegida;
-        if (!string.IsNullOrEmpty(evento.Mensaje)) Eventos.Add(evento);
+        if (!string.IsNullOrEmpty(evento.Mensaje))
+        {
+            Eventos.Add(evento);
+            _lineasSalida += evento.Mensaje.Count(c => c == '\n');
+            _caracteresSalida += evento.Mensaje.Length;
+        }
         if (evento.Finalizado) Finalizar();
     }
 
@@ -420,20 +437,23 @@ public sealed class ConsolaNativaModelo : ModeloNotificable
 
     private void LimitarSalida()
     {
-        var lineas = Eventos.Sum(e => e.Mensaje.Count(c => c == '\n'));
-        var caracteres = Eventos.Sum(e => e.Mensaje.Length);
-        while (Eventos.Count > 1 && (lineas > 1999 || caracteres > 2_000_000))
+        var retirar = 0;
+        while (Eventos.Count - retirar > 1 && (_lineasSalida > 1999 || _caracteresSalida > 2_000_000))
         {
-            lineas -= Eventos[0].Mensaje.Count(c => c == '\n');
-            caracteres -= Eventos[0].Mensaje.Length;
-            Eventos.RemoveAt(0);
+            _lineasSalida -= Eventos[retirar].Mensaje.Count(c => c == '\n');
+            _caracteresSalida -= Eventos[retirar].Mensaje.Length;
+            retirar++;
         }
-        if (Eventos.Count == 1 && lineas > 1999)
+        if (retirar > 0) Eventos.RetirarIniciales(retirar);
+        if (Eventos.Count == 1 && (_lineasSalida > 1999 || _caracteresSalida > 2_000_000))
         {
             var texto = Eventos[0].Mensaje;
             var inicio = 0;
-            for (var quitar = lineas - 1999; quitar > 0; quitar--) inicio = texto.IndexOf('\n', inicio) + 1;
+            for (var quitar = _lineasSalida - 1999; quitar > 0; quitar--) inicio = texto.IndexOf('\n', inicio) + 1;
+            inicio = Math.Max(inicio, texto.Length - 2_000_000);
             Eventos[0] = Eventos[0] with { Mensaje = texto[inicio..] };
+            _lineasSalida = Eventos[0].Mensaje.Count(c => c == '\n');
+            _caracteresSalida = Eventos[0].Mensaje.Length;
         }
     }
 
@@ -449,18 +469,20 @@ public sealed class UsuarioPermisoModelo : ModeloNotificable
     private string _nombre;
     private string _rol;
     private int _limite;
+    private bool _activo;
     private IReadOnlyList<string> _carpetas;
     public UsuarioPermisoModelo(UsuarioPermisoNativo usuario)
     {
-        Id = usuario.Id; _nombre = usuario.NombreUsuario; _rol = usuario.Rol; _limite = usuario.MaxScriptsSimultaneos; _carpetas = usuario.CarpetasPermitidas;
+        Id = usuario.Id; _nombre = usuario.NombreUsuario; _rol = usuario.Rol; _limite = usuario.MaxScriptsSimultaneos; _carpetas = usuario.CarpetasPermitidas; _activo = usuario.Activo;
     }
     public string Id { get; }
     public string NombreUsuario { get => _nombre; set => Asignar(ref _nombre, value); }
     public string Rol { get => _rol; set => Asignar(ref _rol, value); }
-    public int MaxScriptsSimultaneos { get => _limite; set => Asignar(ref _limite, value); }
+    public int MaxScriptsSimultaneos { get => _limite; set { if (value is < 1 or > 50) throw new ArgumentOutOfRangeException(nameof(value), "Entre 1 y 50."); Asignar(ref _limite, value); } }
+    public bool Activo { get => _activo; set => Asignar(ref _activo, value); }
     public IReadOnlyList<string> CarpetasPermitidas { get => _carpetas; set { if (Asignar(ref _carpetas, value)) Notificar(nameof(ResumenCarpetas)); } }
     public string ResumenCarpetas => _carpetas.Count == 0 ? "Raiz" : string.Join(", ", _carpetas);
-    public UsuarioPermisoNativo CrearContrato() => new(Id, NombreUsuario, Rol, MaxScriptsSimultaneos, CarpetasPermitidas);
+    public UsuarioPermisoNativo CrearContrato() => new(Id, NombreUsuario, Rol, MaxScriptsSimultaneos, CarpetasPermitidas, Activo);
 }
 
 public sealed class EntradaCatalogoModelo : ModeloNotificable
